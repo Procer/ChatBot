@@ -924,4 +924,6 @@ async def resolve_gap(gap_id: int):
     return RedirectResponse(url="/admin/gaps", status_code=303)
 
 if __name__ == "__main__":
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
+    import uvicorn
+    # En producción (VPS) el reload debe ser False para evitar reinicios por cambios en la BD
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=False)
