@@ -188,15 +188,27 @@ async def setup_whatsapp_webhook(base_url: str):
 # --- PROXY EVOLUTION API ---
 async def get_whatsapp_status():
     if not EVOLUTION_API_URL or not INSTANCE_NAME: return {"status": "disconnected", "error": "Faltan variables de entorno"}
-    url = f"{EVOLUTION_API_URL}/instance/connectionStatus/{INSTANCE_NAME}"
+    # En V2 el endpoint suele ser connectionState
+    url = f"{EVOLUTION_API_URL}/instance/connectionState/{INSTANCE_NAME}"
     headers = {"apikey": EVOLUTION_API_KEY}
     async with httpx.AsyncClient() as client:
         try:
             r = await client.get(url, headers=headers)
             if r.status_code == 200:
                 data = r.json()
-                state = data.get("instance", {}).get("state") or data.get("state")
+                # Buscamos 'open' en cualquier parte de la respuesta para mayor compatibilidad
+                state = data.get("instance", {}).get("state") or data.get("state") or data.get("connectionStatus") or data.get("status")
                 return {"status": "open" if state == "open" else "disconnected"}
+            
+            # Si da 404, probamos con el endpoint antiguo por si acaso
+            if r.status_code == 404:
+                old_url = f"{EVOLUTION_API_URL}/instance/connectionStatus/{INSTANCE_NAME}"
+                r2 = await client.get(old_url, headers=headers)
+                if r2.status_code == 200:
+                    data = r2.json()
+                    state = data.get("instance", {}).get("state") or data.get("state") or data.get("connectionStatus")
+                    return {"status": "open" if state == "open" else "disconnected"}
+                    
             return {"status": "disconnected"}
         except: return {"status": "disconnected"}
 
