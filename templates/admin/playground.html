@@ -1,0 +1,122 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}IA Playground | Zárate System IA{% endblock %}
+{% block breadcrumb %}IA Playground{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto h-[calc(100vh-250px)] flex flex-col">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Entorno de Pruebas</h1>
+            <p class="text-xs text-slate-500">Prueba respuestas y flujos sin afectar canales reales.</p>
+        </div>
+        <button onclick="clearChat()" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-rose-500 transition-all flex items-center gap-2">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Limpiar Sesión
+        </button>
+    </div>
+
+    <!-- Chat Container -->
+    <div class="flex-1 glass-card rounded-[2.5rem] overflow-hidden flex flex-col border-white/5">
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+            <!-- Mensaje de Bienvenida -->
+            <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-indigo-600/20">
+                    <i data-lucide="bot" class="w-5 h-5"></i>
+                </div>
+                <div class="bg-slate-900/50 rounded-3xl rounded-tl-none p-5 border border-white/5 max-w-[80%]">
+                    <p class="text-sm text-slate-300 leading-relaxed">¡Hola! Soy el asistente de Zárate IA. Este es un entorno seguro para que pruebes mi personalidad y conocimientos. ¿En qué puedo ayudarte hoy?</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-6 bg-slate-950/50 border-t border-white/5">
+            <form id="playgroundForm" class="relative">
+                <input type="text" id="userInput" autocomplete="off" placeholder="Escribe un mensaje de prueba..." 
+                    class="w-full bg-slate-900 border border-white/5 rounded-2xl py-4 pl-6 pr-14 text-sm text-white focus:border-indigo-500/50 outline-none transition-all">
+                <button type="submit" class="absolute right-2 top-2 w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .user-msg {
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    }
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    const playgroundForm = document.getElementById('playgroundForm');
+    const userInput = document.getElementById('userInput');
+    let threadId = 'playground_' + Math.random().toString(36).substring(7);
+
+    function appendMessage(role, text) {
+        const div = document.createElement('div');
+        div.className = `flex items-start gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+        
+        const icon = role === 'user' ? 'user' : 'bot';
+        const color = role === 'user' ? 'bg-slate-800' : 'bg-indigo-600';
+        const msgClass = role === 'user' ? 'user-msg text-white ml-auto rounded-tr-none' : 'bg-slate-900/50 text-slate-300 rounded-tl-none';
+
+        div.innerHTML = `
+            <div class="w-10 h-10 rounded-2xl ${color} flex items-center justify-center text-white shrink-0 shadow-lg">
+                <i data-lucide="${icon}" class="w-5 h-5"></i>
+            </div>
+            <div class="${msgClass} rounded-3xl p-5 border border-white/5 max-w-[80%]">
+                <p class="text-sm leading-relaxed">${text.replace(/\n/g, '<br>')}</p>
+            </div>
+        `;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        lucide.createIcons();
+    }
+
+    function clearChat() {
+        chatMessages.innerHTML = '';
+        threadId = 'playground_' + Math.random().toString(36).substring(7);
+        appendMessage('bot', 'Sesión reiniciada. ¿Qué quieres probar ahora?');
+    }
+
+    playgroundForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        userInput.value = '';
+        appendMessage('user', text);
+
+        // Loading state
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'flex items-center gap-2 text-slate-500 text-[10px] uppercase font-bold tracking-widest pl-14';
+        loadingDiv.id = 'loading';
+        loadingDiv.innerHTML = '<span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span> Procesando...';
+        chatMessages.appendChild(loadingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const response = await fetch('/admin/playground/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, thread_id: threadId })
+            });
+            const data = await response.json();
+            
+            document.getElementById('loading').remove();
+            if (data.status === 'ok') {
+                appendMessage('bot', data.response);
+            } else {
+                appendMessage('bot', 'Error: ' + data.message);
+            }
+        } catch (error) {
+            document.getElementById('loading').remove();
+            appendMessage('bot', 'Error de conexión con el servidor.');
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Turnos | Zárate System IA{% endblock %}
+
+{% block content %}
+<header class="flex justify-between items-center mb-12">
+    <div>
+        <h1 class="text-3xl font-bold text-white mb-2">Gestión de Turnos</h1>
+        <p class="text-slate-500">Administra las citas programadas por los clientes.</p>
+    </div>
+    <div class="flex items-center gap-4">
+        <div class="px-4 py-2 rounded-full glass flex items-center gap-2">
+            <i data-lucide="calendar" class="w-4 h-4 text-indigo-400"></i>
+            <span class="text-sm font-medium text-slate-300">{{ appointments|length }} Turnos Totales</span>
+        </div>
+    </div>
+</header>
+
+<div class="glass rounded-3xl overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-left">
+            <thead>
+                <tr class="border-b border-slate-800 bg-slate-900/50">
+                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Fecha y Hora</th>
+                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Cliente</th>
+                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Motivo</th>
+                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Estado</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+                {% for a in appointments %}
+                <tr class="hover:bg-slate-900/50 transition-colors group">
+                    <td class="px-6 py-4">
+                        <div class="flex flex-col">
+                            <span class="text-white font-medium">{{ a.date }}</span>
+                            <span class="text-slate-500 text-sm">{{ a.time }}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
+                                {{ a.client_name[:2]|upper }}
+                            </div>
+                            <div class="flex flex-col">
+                                <span class="text-white font-medium">{{ a.client_name }}</span>
+                                <span class="text-slate-500 text-xs">{{ a.thread_id }}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="text-slate-300">{{ a.reason }}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="px-3 py-1 rounded-full text-xs font-bold {% if a.status == 'confirmed' %}bg-emerald-500/10 text-emerald-500{% else %}bg-rose-500/10 text-rose-500{% endif %}">
+                            {{ a.status|upper }}
+                        </span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="px-6 py-12 text-center text-slate-500">
+                        <div class="flex flex-col items-center gap-3">
+                            <i data-lucide="calendar-off" class="w-12 h-12 opacity-20"></i>
+                            <p>No hay turnos agendados aún.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

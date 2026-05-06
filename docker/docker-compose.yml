@@ -1,0 +1,41 @@
+version: '3.3'
+
+services:
+  evolution-db:
+    image: postgres:15-alpine
+    container_name: evolution_db
+    restart: always
+    environment:
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=evolutionpass
+      - POSTGRES_DB=evolution_api
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution_api
+    restart: always
+    depends_on:
+      - evolution-db
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - AUTH_PROVIDER=apikey
+      - AUTHENTICATION_API_KEY=422ecce3-6b71-4603-9d91-4e4b52b2b64d
+      - STORE_MESSAGES=true
+      - STORE_MESSAGE_UP=true
+      - STORE_CONTACTS=true
+      - STORE_CHATS=true
+      - REDIS_ENABLED=false
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolutionpass@evolution-db:5432/evolution_api
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - evolution_instances:/evolution/instances
+
+volumes:
+  evolution_instances:
+  evolution_db_data:

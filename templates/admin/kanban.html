@@ -1,0 +1,101 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Tablero de Trámites | Zárate System IA{% endblock %}
+
+{% block content %}
+{% macro card(item) %}
+<div class="bg-slate-900 border border-slate-800 p-5 rounded-3xl space-y-3 hover:border-indigo-500/40 transition-all shadow-sm group">
+    <div class="flex justify-between items-start">
+        <span class="text-[10px] font-mono text-slate-600 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">#{{ item.tracking_number }}</span>
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {% if item.status == 'Pendiente' %}
+                <a href="/admin/kanban/move/{{ item.id }}?status=En Proceso" class="p-1 hover:text-indigo-400 transition-colors"><i data-lucide="arrow-right-circle" class="w-4 h-4"></i></a>
+            {% elif item.status == 'En Proceso' %}
+                <a href="/admin/kanban/move/{{ item.id }}?status=Listo para Firmar" class="p-1 hover:text-emerald-400 transition-colors"><i data-lucide="arrow-right-circle" class="w-4 h-4"></i></a>
+            {% elif item.status == 'Listo para Firmar' %}
+                <a href="/admin/kanban/move/{{ item.id }}?status=Finalizado" class="p-1 hover:text-slate-400 transition-colors"><i data-lucide="check-circle" class="w-4 h-4"></i></a>
+            {% endif %}
+        </div>
+    </div>
+    <div>
+        <h4 class="text-white font-bold text-sm">{{ item.client_name }}</h4>
+        <p class="text-xs text-slate-500 mt-0.5">{{ item.topic }}</p>
+    </div>
+    {% if item.notes %}
+    <div class="pt-3 border-t border-slate-800/50">
+        <p class="text-[10px] text-slate-600 italic line-clamp-2">"{{ item.notes }}"</p>
+    </div>
+    {% endif %}
+    <div class="flex justify-between items-center pt-2">
+        <div class="flex -space-x-2">
+            <div class="w-5 h-5 rounded-full bg-slate-800 border border-slate-950"></div>
+        </div>
+        <span class="text-[9px] text-slate-700 font-medium">{{ item.updated_at.split(' ')[0] if item.updated_at else '' }}</span>
+    </div>
+</div>
+{% endmacro %}
+
+<header class="flex justify-between items-center mb-8">
+    <div>
+        <h1 class="text-3xl font-bold text-white mb-2">Tablero de Trámites</h1>
+        <p class="text-slate-500">Gestioná el flujo de trabajo de la escribanía en tiempo real.</p>
+    </div>
+</header>
+
+<!-- Kanban Columns -->
+<div class="flex gap-6 overflow-x-auto pb-8 scrollbar-hide">
+    
+    <!-- PENDIENTE -->
+    <div class="w-80 flex-shrink-0 flex flex-col gap-4">
+        <div class="flex items-center justify-between px-2">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span class="w-2 h-2 bg-rose-500 rounded-full"></span> Pendientes
+            </span>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ grouped.Pendiente|length }}</span>
+        </div>
+        {% for item in grouped.Pendiente %}
+            {{ card(item) }}
+        {% endfor %}
+    </div>
+
+    <!-- EN PROCESO -->
+    <div class="w-80 flex-shrink-0 flex flex-col gap-4">
+        <div class="flex items-center justify-between px-2">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span class="w-2 h-2 bg-indigo-500 rounded-full"></span> En Proceso
+            </span>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ grouped.En_Proceso|length }}</span>
+        </div>
+        {% for item in grouped.En_Proceso %}
+            {{ card(item) }}
+        {% endfor %}
+    </div>
+
+    <!-- LISTO PARA FIRMAR -->
+    <div class="w-80 flex-shrink-0 flex flex-col gap-4">
+        <div class="flex items-center justify-between px-2">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span class="w-2 h-2 bg-emerald-500 rounded-full"></span> Listos p/ Firma
+            </span>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ grouped.Listo_para_Firmar|length }}</span>
+        </div>
+        {% for item in grouped.Listo_para_Firmar %}
+            {{ card(item) }}
+        {% endfor %}
+    </div>
+
+    <!-- FINALIZADO -->
+    <div class="w-80 flex-shrink-0 flex flex-col gap-4 opacity-60">
+        <div class="flex items-center justify-between px-2">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span class="w-2 h-2 bg-slate-500 rounded-full"></span> Finalizados
+            </span>
+            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">{{ grouped.Finalizado|length }}</span>
+        </div>
+        {% for item in grouped.Finalizado %}
+            {{ card(item) }}
+        {% endfor %}
+    </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+# Entorno Virtual
+.venv/
+__pycache__/
+*.pyc
+
+# Variables de Entorno (¡CRÍTICO!)
+.env
+
+# Bases de Datos (Solo subirlas si quieres clonar el cerebro, 
+# pero Git no es el mejor lugar para archivos de +50MB)
+checkpoints.sqlite
+analytics.sqlite
+notifications.sqlite
+# settings.sqlite  <- Comenta esto si quieres subir tus ajustes locales al repo
+
+# Datos y RAG
+chroma_db/
+data/
+scratch/
+
+# Logs y otros
+*.log
+.DS_Store
