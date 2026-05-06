@@ -273,7 +273,8 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
         data = await request.json()
         logging.info(f"[WEBHOOK] Datos recibidos: {data.get('event')}")
         
-        if data.get("event") != "messages.upsert": return JSONResponse({"status": "ignored"})
+        event_name = data.get("event", "").lower()
+        if event_name != "messages.upsert": return JSONResponse({"status": "ignored"})
         msg_data = data.get("data", {})
         if msg_data.get("key", {}).get("fromMe"): return JSONResponse({"status": "ignored"})
         
