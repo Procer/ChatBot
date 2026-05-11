@@ -2,17 +2,13 @@
 
 {% block title %}Expedientes | Zárate System IA{% endblock %}
 
-{% block content %}
-<header class="flex justify-between items-center mb-12">
-    <div>
-        <h1 class="text-3xl font-bold text-white mb-2">Gestión de Expedientes</h1>
-        <p class="text-slate-500">Listado completo y administración de trámites activos.</p>
-    </div>
-    <button onclick="document.getElementById('addProceedingModal').classList.remove('hidden')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
-        <i data-lucide="plus" class="w-5 h-5"></i> Nuevo Expediente
+{% block section_actions %}
+    <button onclick="document.getElementById('addProceedingModal').classList.remove('hidden')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Expediente
     </button>
-</header>
+{% endblock %}
 
+{% block content %}
 <div class="glass rounded-3xl overflow-hidden">
     <div class="overflow-x-auto">
         <table class="w-full text-left">

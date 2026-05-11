@@ -21,3 +21,7 @@ scratch/
 # Logs y otros
 *.log
 .DS_Store
+*.sqlite-shm
+*.sqlite-wal
+uploads/
+prompt_debug.txt

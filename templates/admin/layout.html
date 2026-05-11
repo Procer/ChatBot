@@ -1,35 +1,19 @@
-{% macro nav_item(url, icon, label, request) %}
-  <a href="{{ url }}" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group {% if request.url.path == url %}sidebar-item-active text-white font-semibold{% else %}text-slate-500 hover:text-slate-200 hover:bg-white/5{% endif %}">
-    <i data-lucide="{{ icon }}" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
-    <span class="text-sm">{{ label }}</span>
-  </a>
-{% endmacro %}
-
 {% macro tab_item(url, icon, label, current_path) %}
-  {% set is_active = (current_path == url) or (url != '/admin' and current_path.startswith(url)) or (url == '/admin/history' and current_path.startswith('/admin/chat/')) %}
+  {% set is_active = (current_path == url) or (url != '/admin' and current_path.startswith(url)) %}
   <a href="{{ url }}" class="flex items-center gap-2 px-1 py-4 border-b-2 transition-all duration-200 group {% if is_active %}border-indigo-500 text-indigo-400{% else %}border-transparent text-slate-500 hover:text-slate-300{% endif %}">
     <i data-lucide="{{ icon }}" class="w-4 h-4 transition-transform group-hover:scale-110"></i>
     <span class="text-xs font-bold uppercase tracking-wider whitespace-nowrap">{{ label }}</span>
   </a>
 {% endmacro %}
 
-
+{% macro menu_item(url, icon, label, is_active) %}
+  <a href="{{ url }}" class="flex items-center gap-3 px-4 py-4 rounded-xl transition-all duration-200 group {% if is_active %}sidebar-item-active text-white font-semibold{% else %}text-slate-500 hover:text-slate-200 hover:bg-white/5{% endif %}">
+    <i data-lucide="{{ icon }}" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
+    <span class="text-sm uppercase tracking-widest font-bold">{{ label }}</span>
+  </a>
+{% endmacro %}
 
 {% set path = request.url.path %}
-{% set operacion_paths = ['/admin', '/admin/history', '/admin/kanban', '/admin/appointments'] %}
-{% set inteligencia_paths = ['/admin/playground', '/admin/analytics', '/admin/gaps'] %}
-{% set sistema_paths = ['/admin/proceedings', '/admin/submissions', '/admin/channels', '/admin/config'] %}
-
-{# Determinación de sección activa para el sidebar #}
-{% if path in operacion_paths or path.startswith('/admin/chat/') %}
-  {% set active_section = 'operacion' %}
-{% elif path in inteligencia_paths %}
-  {% set active_section = 'inteligencia' %}
-{% elif path in sistema_paths %}
-  {% set active_section = 'sistema' %}
-{% else %}
-  {% set active_section = 'operacion' %}
-{% endif %}
 
 <!DOCTYPE html>
 <html lang="es" class="h-full bg-slate-950">
@@ -46,7 +30,6 @@
     .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
     .glass-card { background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); }
     .sidebar-item-active { background: linear-gradient(90deg, rgba(79, 70, 229, 0.15) 0%, rgba(79, 70, 229, 0) 100%); border-left: 3px solid #6366f1; color: #a5b4fc !important; }
-    .tab-active { color: #818cf8; border-bottom: 2px solid #6366f1; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -56,8 +39,6 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body class="h-full text-slate-300 antialiased selection:bg-indigo-500/30">
-
-  {% block top_banner %}{% endblock %}
 
   <!-- Mobile Nav Toggle -->
   <div class="lg:hidden fixed bottom-6 right-6 z-[200]">
@@ -79,26 +60,15 @@
         </div>
 
         <nav class="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-2">
-          <!-- Secciones Principales -->
           <div class="space-y-1">
-            <a href="/admin" class="flex items-center gap-3 px-4 py-4 rounded-xl transition-all duration-200 group {% if active_section == 'operacion' %}sidebar-item-active text-white font-semibold{% else %}text-slate-500 hover:text-slate-200 hover:bg-white/5{% endif %}">
-              <i data-lucide="activity" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
-              <span class="text-sm uppercase tracking-widest font-bold">Operación</span>
-            </a>
-            
-            <a href="/admin/playground" class="flex items-center gap-3 px-4 py-4 rounded-xl transition-all duration-200 group {% if active_section == 'inteligencia' %}sidebar-item-active text-white font-semibold{% else %}text-slate-500 hover:text-slate-200 hover:bg-white/5{% endif %}">
-              <i data-lucide="sparkles" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
-              <span class="text-sm uppercase tracking-widest font-bold">Inteligencia</span>
-            </a>
-
-            <a href="/admin/proceedings" class="flex items-center gap-3 px-4 py-4 rounded-xl transition-all duration-200 group {% if active_section == 'sistema' %}sidebar-item-active text-white font-semibold{% else %}text-slate-500 hover:text-slate-200 hover:bg-white/5{% endif %}">
-              <i data-lucide="settings" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
-              <span class="text-sm uppercase tracking-widest font-bold">Sistema</span>
-            </a>
+            {{ menu_item('/admin', 'activity', 'Atención', active_section == 'operacion') }}
+            {{ menu_item('/admin/submissions', 'folder-kanban', 'Trámites', active_section == 'tramites') }}
+            {{ menu_item('/admin/knowledge', 'brain', 'Cerebro', active_section == 'cerebro') }}
+            {{ menu_item('/admin/appointments', 'calendar', 'Turnos', active_section == 'turnos') }}
+            {{ menu_item('/admin/config', 'settings', 'Configuración', active_section == 'control') }}
           </div>
         </nav>
 
-        <!-- Profile -->
         <div class="mt-8 pt-6 border-t border-slate-800/50">
           <div class="flex items-center gap-3 px-2">
             <div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 border border-slate-700">AD</div>
@@ -111,10 +81,8 @@
       </div>
     </aside>
 
-    <!-- Overlay móvil -->
     <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[140] hidden lg:hidden"></div>
 
-    <!-- Main -->
     <main class="flex-1 flex flex-col min-w-0 bg-slate-950 relative overflow-hidden">
       <!-- Top Bar -->
       <header class="h-16 glass-card border-b border-white/5 flex items-center justify-between px-8 lg:px-12 shrink-0">
@@ -123,31 +91,38 @@
           <span class="text-xs">/</span>
           <span class="text-xs font-semibold text-slate-300">{% block breadcrumb %}Admin{% endblock %}</span>
         </div>
-        <div class="flex items-center gap-4">
-            <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
-            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:block">Motor IA Activo</span>
-        </div>
       </header>
 
-      <!-- Sub-navegación por Pestañas -->
+      <!-- Sub-navegación por Pestañas y Acciones -->
       <div class="px-8 lg:px-12 mt-6 shrink-0">
-        <div class="flex items-center gap-8 border-b border-white/5 overflow-x-auto scrollbar-hide">
-          {% if active_section == 'operacion' %}
-            {{ tab_item('/admin', 'layout-dashboard', 'Dashboard', path) }}
-            {{ tab_item('/admin/history', 'message-square', 'Historial', path) }}
-            {{ tab_item('/admin/kanban', 'columns', 'CRM Tablero', path) }}
-            {{ tab_item('/admin/appointments', 'calendar', 'Turnos', path) }}
-          {% elif active_section == 'inteligencia' %}
-            {{ tab_item('/admin/playground', 'terminal', 'IA Playground', path) }}
-            {{ tab_item('/admin/analytics', 'bar-chart-3', 'Analítica ROI', path) }}
-            {{ tab_item('/admin/gaps', 'brain-circuit', 'Gaps de Datos', path) }}
-          {% elif active_section == 'sistema' %}
-            {{ tab_item('/admin/proceedings', 'folder-search', 'Expedientes', path) }}
-            {{ tab_item('/admin/submissions', 'clipboard-list', 'Onboarding', path) }}
-            {{ tab_item('/admin/config?tab=conectividad', 'share-2', 'Canales', path) }}
-            {{ tab_item('/admin/config', 'settings', 'Configuración', path) }}
-
-          {% endif %}
+        <div class="flex items-center justify-between border-b border-white/5">
+          <div class="flex items-center gap-8 overflow-x-auto scrollbar-hide">
+            {% if active_section == 'operacion' %}
+              {{ tab_item('/admin', 'layout-dashboard', 'Resumen', path) }}
+              {{ tab_item('/admin/history', 'message-square', 'Chat Historial', path) }}
+            {% elif active_section == 'tramites' %}
+              {{ tab_item('/admin/submissions', 'clipboard-list', 'Recepción', path) }}
+              {{ tab_item('/admin/proceedings', 'folder-search', 'Expedientes', path) }}
+              {{ tab_item('/admin/kanban', 'columns', 'CRM Tablero', path) }}
+            {% elif active_section == 'cerebro' %}
+              {{ tab_item('/admin/company', 'building-2', 'Datos Corporativos', path) }}
+              {{ tab_item('/admin/knowledge', 'brain', 'Base de Conocimiento', path) }}
+            {% elif active_section == 'turnos' %}
+              {{ tab_item('/admin/appointments', 'calendar', 'Agenda de Turnos', path) }}
+              {{ tab_item('/admin/appointments/config', 'settings-2', 'Configuración Horaria', path) }}
+            {% elif active_section == 'control' %}
+              {{ tab_item('/admin/config', 'user-cog', 'Personalidad', path) }}
+              {{ tab_item('/admin/connectivity', 'share-2', 'Conectividad', path) }}
+              {{ tab_item('/admin/playground', 'terminal', 'IA Playground', path) }}
+              {{ tab_item('/admin/gaps', 'brain-circuit', 'Gaps Detectados', path) }}
+              {{ tab_item('/admin/audit', 'scroll-text', 'Auditoría', path) }}
+            {% endif %}
+          </div>
+          
+          <!-- Bloque dinámico para botones y stats a la altura de las pestañas -->
+          <div class="flex items-center gap-4 pb-2">
+            {% block section_actions %}{% endblock %}
+          </div>
         </div>
       </div>
 
@@ -160,18 +135,14 @@
     </main>
   </div>
 
-
   <script>
     lucide.createIcons();
-    
     function toggleSidebar() {
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebarOverlay');
       const icon = document.getElementById('menuIcon');
-      
       sidebar.classList.toggle('-translate-x-full');
       overlay.classList.toggle('hidden');
-      
       const isVisible = !sidebar.classList.contains('-translate-x-full');
       icon.setAttribute('data-lucide', isVisible ? 'x' : 'menu');
       lucide.createIcons();

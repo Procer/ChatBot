@@ -18,12 +18,15 @@ docker-compose -f docker/docker-compose.yml up -d
 call .venv\Scripts\activate
 
 :: Lanzar el panel de administración en el navegador (en 3 segundos para dar tiempo al servidor)
-start /b cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:8000/admin"
+echo [WEB] Lanzando panel de administracion en breve...
+start /b cmd /c "timeout /t 5 /nobreak >nul && start http://localhost:8000/admin"
 
-:: Lanzar el polling de Telegram en segundo plano (para que funcione localmente sin webhooks)
+:: Lanzar el polling de Telegram (el script decidira si debe correr segun el .env)
+echo [TELEGRAM] Verificando modo de conexion...
 start /b python src/telegram_polling.py
 
 :: Ejecutar el servidor FastAPI
+echo [SERVER] Iniciando FastAPI en puerto 8000...
 python -m uvicorn src.main:app --reload --reload-dir src --host 0.0.0.0 --port 8000
 
 pause

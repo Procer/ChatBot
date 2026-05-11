@@ -52,16 +52,40 @@ def extract_text(content: Union[str, list]) -> str:
 
 def get_setting(key: str):
     try:
-        db_path = "settings.sqlite"
-        conn = sqlite3.connect(db_path)
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
         val = cursor.fetchone()[0]
         conn.close()
         return val
     except Exception as e:
-        logging.error(f"Error en tool: {e}")
         return None
+
+def get_user_profile(user_id: str):
+    try:
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
+        cursor = conn.cursor()
+        cursor.execute("SELECT full_name FROM user_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = ?", (user_id, str(user_id)))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception as e:
+        logging.error(f"Error recuperando perfil: {e}")
+        return None
+
+def save_user_profile(user_id: str, full_name: str):
+    try:
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
+        conn.execute("INSERT INTO user_profiles (user_id, full_name) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET full_name = excluded.full_name", (user_id, full_name))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"Error guardando perfil: {e}")
+        return False
 
 from src.database.forms import process_form_completion
 
@@ -96,7 +120,7 @@ def registrar_vacio_conocimiento(query: str):
     try:
         # Usamos settings.sqlite para centralizar los gaps
         db_path = os.path.join(ROOT_DIR, "settings.sqlite")
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         # Usamos topic como nombre de columna para consistencia con el panel admin
         conn.execute("INSERT INTO knowledge_gaps (topic, frequency, status) VALUES (?, 1, 'pending') ON CONFLICT(topic) DO UPDATE SET frequency = frequency + 1, status = 'pending'", (query.strip(),))
         conn.commit(); conn.close()
@@ -132,7 +156,8 @@ def buscar_info_empresa(query: str):
 def solicitar_asistencia_humana(motivo: str):
     """Notifica a un humano."""
     try:
-        conn = sqlite3.connect("notifications.sqlite")
+        db_path = os.path.join(ROOT_DIR, "notifications.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO alerts (motivo, fecha) VALUES (?, ?)", (motivo, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
@@ -143,42 +168,77 @@ def solicitar_asistencia_humana(motivo: str):
         return "Error al notificar."
 
 @tool
-def iniciar_onboarding_tramite(topic: str, storage_dest: str = "database"):
+def iniciar_onboarding_tramite(topic: str, thread_id: str = "unknown"):
     """
     Activa la recolección de datos para un trámite específico. 
-    Busca automáticamente los campos requeridos en la base de conocimiento.
+    Verifica si el usuario ya tiene datos previos para este trámite.
     """
     try:
-        conn = sqlite3.connect("settings.sqlite")
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
-        # Buscamos el trámite por coincidencia de texto
-        cursor.execute("SELECT topic, form_fields FROM knowledge WHERE topic LIKE ?", (f"%{topic}%",))
-        row = cursor.fetchone()
-        conn.close()
         
-        if row:
-            real_topic = row[0]
-            fields_str = row[1]
-            # Limpiamos y convertimos a lista, incluyendo SIEMPRE el nombre del cliente
-            clean_fields = ["Nombre del Cliente"] + [f.strip(" .*") for f in fields_str.split(",")]
-            # Eliminar duplicados manteniendo orden
-            seen = set()
-            final_fields = [x for x in clean_fields if not (x in seen or seen.add(x))]
-            
-            return json.dumps({
-                "status": "activated",
-                "topic": real_topic,
-                "fields": final_fields,
-                "storage": storage_dest
-            })
-        return json.dumps({"status": "error", "message": f"No encontré el trámite '{topic}' en mi base de datos."})
+        # 1. Buscar el trámite en conocimiento
+        search_topic = topic.lower().strip()
+        cursor.execute("SELECT topic, form_fields, has_form, storage_dest FROM knowledge")
+        rows = cursor.fetchall()
+        
+        match = None
+        for r in rows:
+            kb_topic = r[0].lower()
+            if search_topic in kb_topic or kb_topic in search_topic:
+                match = r
+                break
+        
+        if not match:
+            conn.close()
+            return json.dumps({"status": "error", "message": f"No encontré el trámite '{topic}'."})
+
+        real_topic = match[0]
+        fields_str = match[1]
+        has_form = match[2]
+        storage_dest = match[3] or "database"
+
+        # 2. Verificar si ya tiene una sumisión previa
+        cursor.execute("SELECT data FROM form_submissions WHERE thread_id = ? AND topic = ? ORDER BY created_at DESC LIMIT 1", (thread_id, real_topic))
+        prev_sub = cursor.fetchone()
+        conn.close()
+
+        if not fields_str or fields_str.lower() == 'none' or has_form == 0:
+            return json.dumps({"status": "info_only", "message": f"El tema '{real_topic}' no requiere formulario."})
+
+        clean_fields = ["Nombre del Cliente"] + [f.strip(" .*") for f in fields_str.split(",") if f.strip()]
+        seen = set()
+        final_fields = [x for x in clean_fields if not (x in seen or seen.add(x))]
+        
+        response_data = {
+            "status": "activated",
+            "topic": real_topic,
+            "fields": final_fields,
+            "storage": storage_dest
+        }
+
+        if prev_sub:
+            response_data["has_previous_data"] = True
+            response_data["previous_data_summary"] = str(list(json.loads(prev_sub[0]).keys()))
+            response_data["message"] = f"ATENCIÓN: El usuario YA TIENE un trámite de '{real_topic}' registrado. Preguntale si quiere USAR LOS DATOS ANTERIORES para el nuevo turno o si prefiere cargarlos de nuevo."
+
+        return json.dumps(response_data)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
+
 @tool
 def registrar_dato_tramite(campo: str, valor: str):
-    """Registra un dato de forma silenciosa. NO lo anuncies al usuario."""
+    """Registra un dato específico de un trámite (DNI, Dirección, etc.). 
+    Úsala de forma PROACTIVA en cuanto detectes el dato en el mensaje del usuario, 
+    incluso si no lo habías pedido todavía."""
     return json.dumps({"status": "recorded", "campo": campo.strip(" .*"), "valor": valor})
+
+@tool
+def registrar_nombre_usuario(nombre_completo: str):
+    """Registra el nombre y apellido real del usuario. Úsala inmediatamente cuando el usuario se identifique."""
+    return json.dumps({"status": "profile_update", "full_name": nombre_completo})
 
 from src.agents.scheduling import get_available_slots, book_appointment, cancel_appointment, get_proceeding_status, get_external_setting
 
@@ -213,12 +273,34 @@ def cancelar_mi_turno():
 def consultar_disponibilidad(fecha: str):
     """
     Consulta los horarios libres para una fecha. 
+    IMPORTANTE: Esta herramienta ya devuelve los horarios agrupados por MAÑANA y TARDE con sugerencias.
+    NO los listes todos uno por uno en una lista de viñetas. Usa la estructura que te da la herramienta.
     fecha: Formato YYYY-MM-DD.
     """
     try:
         slots = get_available_slots(fecha)
         if not slots: return f"No hay turnos disponibles para el {fecha}."
-        return f"Horarios libres para el {fecha}: " + ", ".join(slots)
+        
+        # Agrupar por Mañana (antes de las 13:00) y Tarde (después)
+        manana = [s for s in slots if int(s.split(':')[0]) < 13]
+        tarde = [s for s in slots if int(s.split(':')[0]) >= 13]
+        
+        res = f"### 🗓️ DISPONIBILIDAD PARA EL {fecha}:\n"
+        if manana:
+            res += f"✅ **MAÑANA:** {', '.join(manana)} (Hay {len(manana)} turnos disponibles)\n"
+        else:
+            res += f"❌ **MAÑANA:** No quedan turnos disponibles hoy por la mañana.\n"
+            
+        if tarde:
+            res += f"✅ **TARDE:** {', '.join(tarde[:10])}{' y más horarios' if len(tarde) > 10 else ''} (Hay {len(tarde)} turnos disponibles)\n"
+        else:
+            res += f"❌ **TARDE:** No hay turnos disponibles para la tarde.\n"
+            
+        # Sugerencia proactiva (los 3 más cercanos)
+        sugerencias = slots[:3]
+        res += f"\n💡 **SUGERENCIA:** ¿Te vendría bien alguno de estos: {', '.join(sugerencias)}?"
+        
+        return res
     except Exception as e:
         return f"Error al consultar disponibilidad: {str(e)}"
 
@@ -234,12 +316,13 @@ def agendar_turno(fecha: str, hora: str, motivo: str):
         return f"¡Listo! Turno agendado para el {fecha} a las {hora} por {motivo}."
     return "No pude agendar el turno. Es posible que ese horario ya se haya ocupado."
 
-tools = [obtener_precio_servicio, buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno]
+tools = [obtener_precio_servicio, buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario]
 tool_node = ToolNode(tools)
 
 # --- INICIALIZACIÓN DEL LLM ---
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2).bind_tools(tools)
+    llm_with_tools = llm
 else:
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash", 
@@ -261,27 +344,67 @@ def call_model(state: AgentState):
     fields_to_collect = state.get("fields_to_collect", [])
     t_id = state.get("thread_id", "unknown_user")
     
-    # BUSQUEDA DE NOMBRE: Si ya lo tenemos, lo usamos.
+    # BUSQUEDA DE NOMBRE: Primero en estado local, luego en base de datos.
+    db_name = get_user_profile(t_id)
+    if db_name and "Nombre del Cliente" not in collected_data:
+        collected_data["Nombre del Cliente"] = db_name
+    
     user_name = collected_data.get("Nombre del Cliente")
     
     # 1. GENERACIÓN DEL PROMPT
-    # Leemos el MASTER_PROMPT directamente desde la base de datos en TIEMPO REAL.
-    # Así cualquier cambio en configuración o reglas aplica instantáneamente sin reiniciar consolas.
     system_prompt = get_setting("system_prompt")
-    
     if not system_prompt:
         bot_name = get_setting("bot_name") or "Zárate IA"
         company_name = get_setting("company_name") or "Rondan Escribanía"
-        system_prompt = f"""Sos {bot_name}, el asistente de {company_name}. 
-Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA.
+        system_prompt = f"Sos {bot_name}, el asistente de {company_name}. Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA."
 
-### 🚫 REGLAS DE ORO (INCUMPLIMIENTO = ERROR CRÍTICO):
-- PROHIBIDO decir "He registrado...", "He activado...", "Dato guardado", "Modo activo".
-- PROHIBIDO usar lenguaje de sistema. Respondé como un secretario/a real por WhatsApp o Telegram.
-- Si el usuario te da un dato, decí: "Dale", "Buenísimo", "Anotado", o simplemente hacé la siguiente pregunta.
-- Si no sabés el nombre del cliente, PREGUNTALO antes de cualquier otra cosa: "¿Con quién tengo el gusto de hablar?".
+    # Inyectar thread_id para uso de herramientas
+    system_prompt += f"\n- Tu ID de chat actual es: {t_id}. Siempre pasá este ID al usar la herramienta 'iniciar_onboarding_tramite'.\n"
 
-### 📋 MODO TRÁMITE:"""
+    # Inyectar Datos de la Empresa (Ficha)
+    try:
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn_e = sqlite3.connect(db_path, timeout=30)
+        c_e = conn_e.cursor()
+        c_e.execute("SELECT key, value FROM config WHERE key IN ('company_name', 'company_address', 'company_phone', 'company_email', 'company_website')")
+        c_data = dict(c_e.fetchall())
+        c_e.execute("SELECT value FROM external_services WHERE key = 'working_hours'")
+        w_hours = c_e.fetchone()
+        conn_e.close()
+        
+        company_info = f"""
+### 🏢 DATOS OFICIALES DE LA EMPRESA:
+- Nombre: {c_data.get('company_name', 'Rondan Escribanía')}
+- Dirección: {c_data.get('company_address', 'No especificada')}
+- Teléfono: {c_data.get('company_phone', 'No especificado')}
+- Email: {c_data.get('company_email', 'No especificado')}
+- Web: {c_data.get('company_website', 'No especificada')}
+- Horarios de Atención: {w_hours[0] if w_hours else 'No especificados'}
+"""
+        system_prompt = company_info + "\n\n" + system_prompt
+    except: pass
+
+    # Inyectar Fecha y Hora Actual
+    now = datetime.now()
+    date_context = f"""
+### 🕒 CONTEXTO TEMPORAL:
+- Fecha y hora actual: {now.strftime("%A, %d de %B de %Y %H:%M")}
+- Día de la semana: {now.strftime("%A")}
+- IMPORTANTE: Si el usuario pide un turno para "hoy" o "mañana", usá esta fecha como referencia.
+"""
+    system_prompt = date_context + "\n\n" + system_prompt
+
+    # Inyectar Regla de Identidad obligatoria
+    identity_rule = f"""
+### 🎭 REGLA DE IDENTIDAD:
+- Usuario actual: {user_name or 'DESCONOCIDO'}.
+- SI EL USUARIO ES 'DESCONOCIDO': Respondé a su duda técnica primero. Después, de forma muy natural y tranqui, pedile el nombre.
+  Ejemplo: "¡Dale! Los requisitos son X e Y. Por cierto, ¿cómo es tu nombre? Así ya te agendo acá en la escribanía."
+- SI YA CONOCÉS AL USUARIO ({user_name}): Saludalo por su nombre de entrada. Ej: "¡Hola {user_name}! ¿Cómo va todo?".
+- PROHIBICIÓN: No uses frases como "con quién tengo el gusto", "registrar consulta", "tengo tu nombre registrado" ni nada que suene a call center. Hablá como un escribano/secretario amable."
+"""
+    
+    system_prompt = identity_rule + "\n\n" + system_prompt
     
     if onboarding_active:
         # Aseguramos que 'Nombre del Cliente' esté en la lista si no lo está
@@ -290,18 +413,48 @@ Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA.
 
         missing = [f for f in fields_to_collect if f not in collected_data]
         if missing:
-            system_prompt += f"\nEstás gestionando el trámite: {state.get('form_topic')}\n"
-            system_prompt += f"Datos que te faltan: {', '.join(missing)}\n"
-            system_prompt += f"Instrucción: Pedí el próximo dato ('{missing[0]}') de forma natural."
+            current_field = missing[0]
+            system_prompt += f"\n### 📝 GESTIÓN DE TRÁMITE: {state.get('form_topic')}\n"
+            system_prompt += f"**CAMPOS REQUERIDOS:** {', '.join(fields_to_collect)}\n"
+            system_prompt += f"**FALTAN ESTOS DATOS:** {', '.join(missing)}\n"
+            system_prompt += f"**SIGUIENTE DATO A PEDIR:** '{current_field}'.\n"
+            
+            system_prompt += f"""
+### 🧠 REGLAS CRÍTICAS DE EXTRACCIÓN (MAPEADO INTELIGENTE):
+1. **EXTRACCIÓN INDIVIDUALIZADA (OBLIGATORIO):** Si detectás varios datos del mismo tipo (ej: dos DNIs o dos nombres), NO los guardes juntos en un solo campo. Guardalos en sus campos correspondientes (DNI del Padre, DNI de la Madre, etc.).
+2. **PROHIBICIÓN DE NOMBRES DE ARCHIVO:** NUNCA guardes el nombre técnico del archivo (ej: "tg_...pdf" o "image.jpg") como valor de un campo. El hecho de que se recibió un archivo ya queda registrado por el sistema. Los campos solo deben contener datos de texto legibles (nombres, documentos, estados, etc.).
+3. **PROHIBICIÓN DE AGRUPAR:** Nunca uses comas o la palabra "y" para guardar dos valores en un solo campo si existen campos separados para cada uno. 
+3. **EXTRACCIÓN PROACTIVA:** Si el usuario envía información que corresponde a CUALQUIERA de los campos requeridos (incluso si no es el que pediste), usá 'registrar_dato_tramite' inmediatamente.
+4. **DETECCIÓN MÚLTIPLE:** Si en un solo mensaje el usuario da varios datos, llamá a 'registrar_dato_tramite' varias veces.
+5. **INFERENCIA INTELIGENTE:** Mapeá el lenguaje natural a los campos técnicos.
+   - "mi documento es..." -> DNI.
+   - "vivo en..." -> Dirección.
+   - "me llamo..." -> Nombre.
+6. **VALORES COMPUESTOS:** Si el campo es inherentemente múltiple (ej: "DNI de los padres") y NO hay campos individuales, guardalos indicando a quién pertenece cada uno (ej: "Padre: 123, Madre: 456").
+7. **NO TE TRABES:** Si el usuario no tiene un dato, decile: "No hay problema, seguimos con lo demás". Pasá al siguiente campo faltante de forma natural.
+8. **ARCHIVOS:** Si falta un documento, aclará que puede enviarlo por este chat.
+"""
             if user_name: system_prompt += f" Estás hablando con {user_name}."
         else:
-            system_prompt += "\n¡Trámite terminado! Avisale al cliente que ya pasaste todo al equipo."
+            system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
+            system_prompt += "Ya tenés todos los datos necesarios. Avisale al cliente de forma muy amable que ya registraste todo y que el equipo se pondrá en contacto o, si corresponde, ofrecé agendar un turno ahora mismo."
     else:
-        system_prompt += "\nAtendé la consulta del usuario. Si es un trámite, buscalo con 'buscar_info_empresa' y activá el trámite con 'iniciar_onboarding_tramite' (pasá SOLO el nombre del trámite)."
+        system_prompt += """
+### ℹ️ REGLAS DE INFORMACIÓN Y TRÁMITES:
+1. **INFORMACIÓN PRIMERO:** Si el usuario pregunta por un trámite (ej: "requisitos para X"), NO inicies la recolección de datos inmediatamente. Primero, brindá TODA la información y requisitos que tengas en tu conocimiento de forma clara y amable.
+2. **INICIO DE TRÁMITE:** Solo después de dar la información, preguntá si quiere comenzar con el trámite ahora. Si dice que sí, usá 'iniciar_onboarding_tramite'.
+3. **RECONOCIMIENTO DE DATOS:** Si el usuario te da un dato suelto (como su nombre) sin estar en un trámite, usá 'registrar_nombre_usuario'.
+
+### 📅 REGLAS DE AGENDAMIENTO:
+1. **RESERVA ORIENTADA:** Cuando el usuario pida un turno, NO listes todos los horarios. Usá 'consultar_disponibilidad' y, basándote en la respuesta, preguntá primero si prefiere MAÑANA o TARDE, o sugerí 2 o 3 opciones específicas.
+2. **PROACTIVIDAD:** Si el usuario dice "mañana a la mañana", buscá los turnos de mañana, elegí los 3 mejores y ofrecelos directamente. Ej: "¡Dale! Para mañana a la mañana tengo a las 09:30, 10:00 o 11:30. ¿Te sirve alguno?".
+3. **TURNOS PARA HOY:** Si pide para hoy, recordá que el sistema ya filtra los horarios que ya pasaron. Solo ofrecé lo que esté disponible a partir de ahora.
+"""
 
     # Inyección de Conocimiento
     try:
-        conn = sqlite3.connect("settings.sqlite")
+        db_path = os.path.join(ROOT_DIR, "settings.sqlite")
+        conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
         cursor.execute("SELECT topic, content, form_fields FROM knowledge")
         kb = cursor.fetchall()
@@ -313,7 +466,7 @@ Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA.
 
     # 2. LLAMADA AL MODELO
     messages = [SystemMessage(content=system_prompt)] + state["messages"]
-    response = llm.invoke(messages)
+    response = llm_with_tools.invoke(messages)
     
     return {
         "messages": [response], 
@@ -344,6 +497,12 @@ def state_manager(state: AgentState):
                     new_state["fields_to_collect"] = data["fields"]
                     new_state["collected_data"] = {}
                     new_state["storage_dest"] = data["storage"]
+                elif data.get("status") == "profile_update":
+                    name = data.get("full_name")
+                    print(f" - Actualizando perfil de usuario: {name} para thread {t_id}")
+                    save_user_profile(t_id, name)
+                    collected_data["Nombre del Cliente"] = name
+                    new_state["collected_data"] = collected_data
                 elif data.get("status") == "recorded":
                     campo = data.get("campo").strip(" .*")
                     valor = data.get("valor")
@@ -368,23 +527,31 @@ def state_manager(state: AgentState):
     is_active = new_state.get("onboarding_active", state.get("onboarding_active", False))
     if is_active:
         fields = new_state.get("fields_to_collect", state.get("fields_to_collect", []))
-        data = collected_data
         
-        missing = [f for f in fields if f not in data]
+        # Normalización para comparación insensible a mayúsculas/espacios
+        data_keys_norm = {k.lower().strip(): k for k in collected_data.keys()}
+        
+        missing = []
+        for f in fields:
+            f_norm = f.lower().strip()
+            # Si no está en las llaves normalizadas o el valor es vacío
+            if f_norm not in data_keys_norm or not str(collected_data[data_keys_norm[f_norm]]).strip():
+                missing.append(f)
+
         if fields and not missing:
             print(f" - ¡TODOS LOS CAMPOS COMPLETOS! Disparando guardado...")
-            
-            # Si t_id sigue siendo None, es un problema de flujo. 
-            # Como último recurso, no debería ser unknown si main.py lo pasa.
+            from src.database.forms import process_form_completion
             final_thread_id = t_id or "unknown_user"
             
             process_form_completion(
                 final_thread_id,
                 new_state.get("form_topic", state.get("form_topic")),
-                data,
+                collected_data,
                 new_state.get("storage_dest", state.get("storage_dest", "database"))
             )
             new_state["onboarding_active"] = False
+            new_state["fields_to_collect"] = []
+            new_state["form_topic"] = None
             new_state["collected_data"] = {} 
             collected_data = {} 
             
@@ -412,6 +579,7 @@ workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", "man
 workflow.add_edge("tools", "manager")
 workflow.add_conditional_edges("manager", manager_should_continue, {"agent": "agent", END: END})
 
-conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+db_path_checkpoints = os.path.join(ROOT_DIR, "checkpoints.sqlite")
+conn = sqlite3.connect(db_path_checkpoints, check_same_thread=False, timeout=30)
 memory = SqliteSaver(conn)
 app = workflow.compile(checkpointer=memory)

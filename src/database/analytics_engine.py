@@ -4,7 +4,8 @@ import json
 import os
 from datetime import datetime
 
-ANALYTICS_DB = "analytics.sqlite"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ANALYTICS_DB = os.path.join(BASE_DIR, "analytics.sqlite")
 
 # Precios aproximados por 1M de tokens (Entrada / Salida) en USD
 PRICING = {
@@ -71,7 +72,7 @@ def update_session_intent(thread_id, intent):
     """Actualiza la intención detectada de la conversación."""
     try:
         conn = sqlite3.connect(ANALYTICS_DB)
-        conn.execute("UPDATE session_analytics SET intent = ? WHERE thread_id = ?", (intent, intent))
+        conn.execute("UPDATE session_analytics SET intent = ? WHERE thread_id = ?", (intent, thread_id))
         conn.commit(); conn.close()
     except Exception as e:
         logging.warning(f"Error analíticas: {e}")
@@ -103,15 +104,26 @@ def get_dashboard_metrics():
         model_distribution = {row['model']: row['count'] for row in cursor.fetchall()}
         if not model_distribution: model_distribution = {"Sin Datos": 0}
 
-        # 5. Datos para el Gráfico (Últimos 7 días)
-        # Simulamos etiquetas si no hay datos, o agrupamos por fecha
+        # 5. Distribución por Canal
+        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE thread_id LIKE 'wa_%'")
+        wa_count = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE thread_id LIKE 'tg_%'")
+        tg_count = cursor.fetchone()[0] or 0
+        wc_count = total_sessions - (wa_count + tg_count)
+        channel_distribution = {"WhatsApp": wa_count, "Telegram": tg_count, "Webchat": max(0, wc_count)}
+
+        # 6. Top Temas (Intenciones)
+        cursor.execute("SELECT intent, COUNT(*) as count FROM session_analytics WHERE intent IS NOT NULL GROUP BY intent ORDER BY count DESC LIMIT 5")
+        top_topics = [dict(row) for row in cursor.fetchall()]
+
+        # 7. Datos para el Gráfico (Últimos 7 días)
         cursor.execute("""
             SELECT strftime('%m-%d', timestamp) as day, SUM(prompt_tokens + completion_tokens) as tokens 
             FROM token_usage 
             GROUP BY day 
             ORDER BY day DESC LIMIT 7
         """)
-        rows = cursor.fetchall()[::-1] # Invertir para orden cronológico
+        rows = cursor.fetchall()[::-1]
         chart_labels = [r['day'] for r in rows] or ["Hoy"]
         chart_data = [r['tokens'] for r in rows] or [0]
         
@@ -122,6 +134,8 @@ def get_dashboard_metrics():
             "estimated_cost": estimated_cost,
             "estimated_savings": estimated_savings,
             "model_distribution": model_distribution,
+            "channel_distribution": channel_distribution,
+            "top_topics": top_topics,
             "chart_labels": chart_labels,
             "chart_data": chart_data
         }

@@ -2,72 +2,432 @@
 
 {% block title %}Turnos | Zárate System IA{% endblock %}
 
-{% block content %}
-<header class="flex justify-between items-center mb-12">
-    <div>
-        <h1 class="text-3xl font-bold text-white mb-2">Gestión de Turnos</h1>
-        <p class="text-slate-500">Administra las citas programadas por los clientes.</p>
-    </div>
+{% block section_actions %}
     <div class="flex items-center gap-4">
-        <div class="px-4 py-2 rounded-full glass flex items-center gap-2">
-            <i data-lucide="calendar" class="w-4 h-4 text-indigo-400"></i>
-            <span class="text-sm font-medium text-slate-300">{{ appointments|length }} Turnos Totales</span>
+        <!-- Barra de Búsqueda -->
+        <div class="relative group">
+            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors"></i>
+            <input type="text" id="appointmentSearch" placeholder="Buscar cliente o motivo..." 
+                   class="bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 text-[10px] font-bold text-white outline-none focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 transition-all w-64"
+                   oninput="handleSearch(this.value)">
+        </div>
+
+        <!-- Selector de Vista -->
+        <div class="flex bg-slate-900/50 p-1 rounded-xl border border-white/5">
+            <button onclick="setView('calendar')" id="btn-view-calendar" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+                <i data-lucide="calendar" class="w-3 h-3"></i> Calendario
+            </button>
+            <button onclick="setView('list')" id="btn-view-list" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 text-slate-400 hover:text-white">
+                <i data-lucide="list" class="w-3 h-3"></i> Lista
+            </button>
+        </div>
+
+        <div class="px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center gap-2">
+            <i data-lucide="calendar" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span id="appointmentCount" class="text-[10px] font-black uppercase tracking-widest text-slate-300">{{ appointments|length }} Turnos</span>
         </div>
     </div>
-</header>
+{% endblock %}
 
-<div class="glass rounded-3xl overflow-hidden">
-    <div class="overflow-x-auto">
-        <table class="w-full text-left">
-            <thead>
-                <tr class="border-b border-slate-800 bg-slate-900/50">
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Fecha y Hora</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Cliente</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Motivo</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Estado</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
-                {% for a in appointments %}
-                <tr class="hover:bg-slate-900/50 transition-colors group">
-                    <td class="px-6 py-4">
-                        <div class="flex flex-col">
-                            <span class="text-white font-medium">{{ a.date }}</span>
-                            <span class="text-slate-500 text-sm">{{ a.time }}</span>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
-                                {{ a.client_name[:2]|upper }}
-                            </div>
-                            <div class="flex flex-col">
-                                <span class="text-white font-medium">{{ a.client_name }}</span>
-                                <span class="text-slate-500 text-xs">{{ a.thread_id }}</span>
+{% block content %}
+<div class="space-y-8">
+    <!-- VISTA: CALENDARIO (Master-Detail) -->
+    <div id="view-calendar" class="animate-in fade-in zoom-in-95 duration-500">
+        <div class="flex gap-6 h-[calc(100vh-280px)] min-h-[600px]">
+            <!-- Lado Izquierdo: El Calendario Mensual -->
+            <div class="flex-1 glass rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl flex flex-col">
+                <div class="p-6 border-b border-white/5 bg-slate-950/30 flex items-center justify-between">
+                    <div class="flex flex-col">
+                        <h2 id="calendar-month-year" class="text-2xl font-black text-white tracking-tighter capitalize">Mes Año</h2>
+                        <div class="flex items-center gap-4 mt-1">
+                            <p class="text-slate-500 text-[9px] font-black uppercase tracking-[0.2em]">Vista General Mensual</p>
+                            <div class="flex items-center gap-2">
+                                <span class="flex items-center gap-1.5 text-[8px] font-bold text-emerald-400 uppercase"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Confirmado</span>
+                                <span class="flex items-center gap-1.5 text-[8px] font-bold text-rose-400 uppercase"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Pendiente</span>
                             </div>
                         </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="text-slate-300">{{ a.reason }}</span>
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="px-3 py-1 rounded-full text-xs font-bold {% if a.status == 'confirmed' %}bg-emerald-500/10 text-emerald-500{% else %}bg-rose-500/10 text-rose-500{% endif %}">
-                            {{ a.status|upper }}
-                        </span>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" class="px-6 py-12 text-center text-slate-500">
-                        <div class="flex flex-col items-center gap-3">
-                            <i data-lucide="calendar-off" class="w-12 h-12 opacity-20"></i>
-                            <p>No hay turnos agendados aún.</p>
+                    </div>
+                    <div class="flex gap-2 items-center">
+                        <button onclick="goToToday()" class="px-4 h-9 rounded-xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">Hoy</button>
+                        <div class="flex bg-slate-900 rounded-xl border border-white/5 p-1">
+                            <button onclick="changeMonth(-1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-all"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                            <button onclick="changeMonth(1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-all"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
                         </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-7 bg-slate-950/50 border-b border-white/5">
+                    {% for day in ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'] %}
+                    <div class="py-3 text-center text-[8px] font-black uppercase tracking-[0.2em] text-slate-500">{{ day }}</div>
+                    {% endfor %}
+                </div>
+
+                <div id="calendar-grid" class="flex-1 grid grid-cols-7 grid-rows-6 auto-rows-fr overflow-hidden">
+                    <!-- Los días se generan via JS -->
+                </div>
+            </div>
+
+            <!-- Lado Derecho: Agenda del Día Seleccionado -->
+            <div class="w-96 glass rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+                <div class="p-6 border-b border-white/5 bg-slate-950/30">
+                    <h3 id="agenda-date" class="text-xl font-black text-white tracking-tight">Selecciona un día</h3>
+                    <p id="agenda-count" class="text-slate-500 text-[9px] font-black uppercase tracking-[0.2em] mt-1">Agenda para el día</p>
+                </div>
+                <div id="agenda-list" class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                    <div class="flex flex-col items-center justify-center h-full opacity-20 text-center space-y-4">
+                        <i data-lucide="calendar-clock" class="w-12 h-12"></i>
+                        <p class="text-[10px] font-black uppercase tracking-widest">Toca un día para ver<br>sus turnos en detalle</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISTA: LISTA -->
+    <div id="view-list" class="hidden glass rounded-[2.5rem] overflow-hidden animate-in fade-in duration-500">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="border-b border-white/5 bg-slate-950/50">
+                        <th class="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Fecha y Hora</th>
+                        <th class="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Cliente</th>
+                        <th class="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Motivo</th>
+                        <th class="px-8 py-6 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Estado</th>
+                    </tr>
+                </thead>
+                <tbody id="list-body" class="divide-y divide-white/5">
+                    <!-- Contenido generado por JS -->
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
+
+<!-- Modal de Detalles del Turno -->
+<div id="appointmentModal" class="fixed inset-0 z-[300] hidden">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onclick="closeModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md animate-in zoom-in-95 duration-300">
+        <div class="glass rounded-[2.5rem] overflow-hidden border border-white/10 shadow-2xl">
+            <div class="p-8 space-y-6">
+                <div class="flex justify-between items-start">
+                    <div class="flex items-center gap-4">
+                        <div id="modal-initials" class="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-xl font-black text-indigo-400">
+                            JS
+                        </div>
+                        <div class="flex flex-col">
+                            <h3 id="modal-client" class="text-xl font-black text-white tracking-tight">Nombre Cliente</h3>
+                            <span id="modal-thread" class="text-[10px] text-indigo-400 font-black uppercase tracking-widest mt-1">ID: 12345678</span>
+                        </div>
+                    </div>
+                    <button onclick="closeModal()" class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-500 hover:text-white transition-all">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">Fecha</span>
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            <span id="modal-date" class="text-sm font-bold text-white">10/05/2026</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-1">Hora</span>
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            <span id="modal-time" class="text-sm font-bold text-white">10:30 HS</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900/50 p-6 rounded-2xl border border-white/5">
+                    <span class="text-[9px] font-black uppercase tracking-widest text-slate-500 block mb-2">Motivo del Turno</span>
+                    <p id="modal-reason" class="text-slate-300 text-sm leading-relaxed font-medium">Descripción detallada del motivo proporcionado por el cliente.</p>
+                </div>
+
+                <div class="flex items-center justify-between p-2">
+                    <div id="modal-status-pill" class="px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                        CONFIRMADO
+                    </div>
+                    <button onclick="closeModal()" class="px-8 py-3 rounded-2xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 hover:scale-105 active:scale-95 transition-all">
+                        Entendido
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const allAppointments = {{ appointments|tojson|safe }};
+    let filteredAppointments = [...allAppointments];
+    let currentView = 'calendar';
+    let currentMonth = new Date().getMonth();
+    let currentYear = new Date().getFullYear();
+    let selectedDate = new Date().toISOString().split('T')[0];
+
+    // Inicializar vista al cargar
+    document.addEventListener('DOMContentLoaded', () => {
+        if (currentView === 'calendar') renderCalendar();
+        else renderList();
+    });
+
+    function handleSearch(query) {
+        const q = query.toLowerCase().trim();
+        filteredAppointments = allAppointments.filter(a => 
+            a.client_name.toLowerCase().includes(q) || 
+            a.reason.toLowerCase().includes(q) || 
+            a.thread_id.toString().includes(q) ||
+            a.date.includes(q)
+        );
+        
+        document.getElementById('appointmentCount').innerText = `${filteredAppointments.length} Turnos`;
+        
+        if (currentView === 'list') renderList();
+        else renderCalendar();
+    }
+
+    function setView(view) {
+        currentView = view;
+        const list = document.getElementById('view-list');
+        const calendar = document.getElementById('view-calendar');
+        const btnList = document.getElementById('btn-view-list');
+        const btnCalendar = document.getElementById('btn-view-calendar');
+
+        if (view === 'list') {
+            list.classList.remove('hidden');
+            calendar.classList.add('hidden');
+            btnList.classList.add('bg-indigo-600', 'text-white', 'shadow-lg');
+            btnList.classList.remove('text-slate-400');
+            btnCalendar.classList.remove('bg-indigo-600', 'text-white', 'shadow-lg');
+            btnCalendar.classList.add('text-slate-400');
+            renderList();
+        } else {
+            list.classList.add('hidden');
+            calendar.classList.remove('hidden');
+            btnCalendar.classList.add('bg-indigo-600', 'text-white', 'shadow-lg');
+            btnCalendar.classList.remove('text-slate-400');
+            btnList.classList.remove('bg-indigo-600', 'text-white', 'shadow-lg');
+            btnList.classList.add('text-slate-400');
+            renderCalendar();
+        }
+    }
+
+    function renderList() {
+        const body = document.getElementById('list-body');
+        if (filteredAppointments.length === 0) {
+            body.innerHTML = `
+                <tr>
+                    <td colspan="4" class="px-8 py-24 text-center">
+                        <div class="flex flex-col items-center gap-4 opacity-20">
+                            <i data-lucide="search-x" class="w-16 h-16"></i>
+                            <p class="text-sm font-black uppercase tracking-[0.2em]">No se encontraron resultados</p>
+                        </div>
+                    </td>
+                </tr>`;
+            lucide.createIcons();
+            return;
+        }
+
+        body.innerHTML = filteredAppointments.map(a => {
+            // Formatear fecha de YYYY-MM-DD a DD/MM/YYYY
+            const [y, m, d] = a.date.split('-');
+            const formattedDate = `${d}/${m}/${y}`;
+            
+            return `
+            <tr onclick="showAppointmentDetail(${a.id})" class="hover:bg-white/[0.02] transition-colors group cursor-pointer">
+                <td class="px-8 py-6">
+                    <div class="flex flex-col">
+                        <span class="text-white font-bold">${formattedDate}</span>
+                        <span class="text-slate-500 text-xs font-medium">${a.time} HS</span>
+                    </div>
+                </td>
+                <td class="px-8 py-6">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-xs font-black text-indigo-400">
+                            ${a.client_name.substring(0,2).toUpperCase()}
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-white font-bold">${a.client_name}</span>
+                            <span class="text-slate-600 text-[10px] uppercase tracking-widest font-black">${a.thread_id}</span>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-8 py-6">
+                    <span class="text-slate-400 text-sm font-medium">${a.reason}</span>
+                </td>
+                <td class="px-8 py-6 text-right">
+                    <span class="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${a.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}">
+                        ${a.status}
+                    </span>
+                </td>
+            </tr>`;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    function changeMonth(delta) {
+        currentMonth += delta;
+        if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+        if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+        renderCalendar();
+    }
+
+    function goToToday() {
+        const now = new Date();
+        currentMonth = now.getMonth();
+        currentYear = now.getFullYear();
+        renderCalendar();
+    }
+
+    function showAppointmentDetail(appointmentId) {
+        // Asegurar comparación correcta (el ID puede venir como string o int)
+        const a = allAppointments.find(x => x.id == appointmentId);
+        if (!a) return;
+
+        const [y, m, d] = a.date.split('-');
+        const formattedDate = `${d}/${m}/${y}`;
+
+        document.getElementById('modal-initials').innerText = a.client_name.substring(0,2).toUpperCase();
+        document.getElementById('modal-client').innerText = a.client_name;
+        document.getElementById('modal-thread').innerText = `ID: ${a.thread_id}`;
+        document.getElementById('modal-date').innerText = formattedDate;
+        document.getElementById('modal-time').innerText = `${a.time} HS`;
+        document.getElementById('modal-reason').innerText = a.reason;
+        
+        const pill = document.getElementById('modal-status-pill');
+        pill.innerText = a.status.toUpperCase();
+        if (a.status === 'confirmed') {
+            pill.className = 'px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20';
+        } else {
+            pill.className = 'px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-500 border border-rose-500/20';
+        }
+
+        document.getElementById('appointmentModal').classList.remove('hidden');
+        lucide.createIcons();
+    }
+
+    function closeModal() {
+        document.getElementById('appointmentModal').classList.add('hidden');
+    }
+
+    function renderCalendar() {
+        const grid = document.getElementById('calendar-grid');
+        const title = document.getElementById('calendar-month-year');
+        grid.innerHTML = '';
+
+        const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+
+        const monthName = new Date(currentYear, currentMonth, 1).toLocaleString('es-ES', { month: 'long' });
+        title.innerText = `${monthName} ${currentYear}`;
+
+        const createDayCell = (day, type, dateStr = null) => {
+            const isToday = dateStr && new Date().toISOString().split('T')[0] === dateStr;
+            const isSelected = dateStr === selectedDate;
+            const dayAppointments = dateStr ? filteredAppointments.filter(a => a.date === dateStr) : [];
+            
+            // Mostrar solo indicadores visuales en el calendario mensual
+            let indicatorsHtml = dayAppointments.slice(0, 4).map(a => `
+                <div class="w-full h-1 rounded-full ${a.status === 'confirmed' ? 'bg-emerald-500/60' : 'bg-rose-500/60'}"></div>
+            `).join('');
+
+            if (dayAppointments.length > 4) {
+                indicatorsHtml += `<div class="text-[7px] font-bold text-slate-600 text-center">+${dayAppointments.length - 4}</div>`;
+            }
+
+            return `
+                <div onclick="${dateStr ? `selectDay('${dateStr}')` : ''}" 
+                     class="relative p-3 border-r border-b border-white/5 flex flex-col items-center justify-center transition-all cursor-pointer group
+                     ${type === 'current' ? 'bg-slate-900/10' : 'bg-slate-950/40 opacity-20 select-none'} 
+                     ${isSelected ? 'bg-indigo-500/20' : ''} 
+                     hover:bg-white/[0.05]">
+                    
+                    <span class="text-sm font-black tracking-tighter ${isToday ? 'text-indigo-400' : (type === 'current' ? (isSelected ? 'text-white' : 'text-slate-500') : 'text-slate-800')} 
+                        ${isSelected ? 'scale-125 transition-transform' : ''}">${day}</span>
+                    
+                    <div class="absolute bottom-3 left-3 right-3 flex flex-col gap-0.5 mt-2">
+                        ${indicatorsHtml}
+                    </div>
+                    
+                    ${isSelected ? '<div class="absolute inset-0 border-2 border-indigo-500/50 pointer-events-none"></div>' : ''}
+                </div>
+            `;
+        };
+
+        // Días del mes anterior
+        for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+            grid.innerHTML += createDayCell(daysInPrevMonth - i, 'prev');
+        }
+
+        // Días del mes actual
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+            grid.innerHTML += createDayCell(day, 'current', dateStr);
+        }
+
+        // Días del mes siguiente
+        const totalCells = 42; // Siempre 6 filas de 7 días para consistencia
+        const nextMonthDays = totalCells - (firstDayOfMonth + daysInMonth);
+        for (let day = 1; day <= nextMonthDays; day++) {
+            grid.innerHTML += createDayCell(day, 'next');
+        }
+        
+        lucide.createIcons();
+        if (selectedDate) updateAgenda();
+    }
+
+    function selectDay(dateStr) {
+        selectedDate = dateStr;
+        renderCalendar();
+    }
+
+    function updateAgenda() {
+        const list = document.getElementById('agenda-list');
+        const title = document.getElementById('agenda-date');
+        const count = document.getElementById('agenda-count');
+        
+        const [y, m, d] = selectedDate.split('-');
+        const dateObj = new Date(y, m - 1, d);
+        title.innerText = dateObj.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+        
+        const dayAppointments = filteredAppointments.filter(a => a.date === selectedDate);
+        count.innerText = `${dayAppointments.length} Turnos para hoy`;
+        
+        if (dayAppointments.length === 0) {
+            list.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full opacity-20 text-center space-y-4">
+                    <i data-lucide="calendar-x" class="w-12 h-12"></i>
+                    <p class="text-[10px] font-black uppercase tracking-widest">No hay turnos para<br>este día</p>
+                </div>`;
+            lucide.createIcons();
+            return;
+        }
+
+        list.innerHTML = dayAppointments.sort((a, b) => a.time.localeCompare(b.time)).map(a => `
+            <div onclick="showAppointmentDetail('${a.id}')" class="group/agenda bg-slate-900/50 border border-white/5 p-4 rounded-2xl hover:bg-indigo-600/10 hover:border-indigo-500/30 transition-all cursor-pointer relative overflow-hidden">
+                <div class="absolute left-0 top-0 bottom-0 w-1 ${a.status === 'confirmed' ? 'bg-emerald-500' : 'bg-rose-500'}"></div>
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i>
+                        <span class="text-sm font-black text-white">${a.time} HS</span>
+                    </div>
+                    <span class="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${a.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}">${a.status}</span>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-sm font-bold text-white group-hover/agenda:text-indigo-300 transition-colors">${a.client_name}</span>
+                    <span class="text-[10px] text-slate-500 mt-1 line-clamp-2">${a.reason}</span>
+                </div>
+                <div class="mt-3 flex items-center justify-between">
+                    <span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">ID: ${a.thread_id}</span>
+                    <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-700 group-hover/agenda:text-indigo-400 transition-all transform group-hover/agenda:translate-x-1"></i>
+                </div>
+            </div>
+        `).join('');
+        
+        lucide.createIcons();
+    }
+</script>
 {% endblock %}

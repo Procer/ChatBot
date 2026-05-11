@@ -21,8 +21,17 @@ async def telegram_polling():
     Script de polling para Telegram. 
     Permite recibir mensajes sin necesidad de webhooks o URLs públicas.
     """
+    # Cargar configuraciones de entorno adicionales
+    mode = os.getenv("TELEGRAM_MODE", "polling").lower()
+    env = os.getenv("ENVIRONMENT", "local").lower()
+
+    if mode != "polling":
+        print(f"\n[AVISO] El modo de Telegram está configurado como '{mode}'.")
+        print("El script de polling no se ejecutará para no interferir con los webhooks.")
+        return
+
     print("\n" + "="*50)
-    print("🤖 INICIANDO POLLING DE TELEGRAM (MODO LOCAL)")
+    print(f"[BOT] INICIANDO POLLING DE TELEGRAM (MODO: {mode.upper()} | ENV: {env.upper()})")
     print("="*50)
     
     # 1. Obtener configuración de la base de datos
@@ -38,7 +47,7 @@ async def telegram_polling():
         enabled = enabled_row[0] if enabled_row else '0'
         conn.close()
     except Exception as e:
-        print(f"❌ Error al leer la base de datos: {e}")
+        print(f"[ERROR] Error al leer la base de datos: {e}")
         return
 
     if not token:
@@ -50,13 +59,15 @@ async def telegram_polling():
         # Seguiremos intentando por si el usuario lo activa mientras el script corre
     
     # 2. Limpiar webhook previo (obligatorio para usar polling)
+    # Solo lo hacemos si estamos en local o si el modo es polling explícito
     async with httpx.AsyncClient() as client:
         try:
-            print(f"🧹 Limpiando webhooks previos para permitir polling...")
+            print(f"[*] Limpiando webhooks previos para permitir polling...")
             await client.get(f"https://api.telegram.org/bot{token}/deleteWebhook")
-        except: pass
+        except Exception as e:
+            print(f"[!] No se pudo limpiar el webhook (podría estar ya limpio): {e}")
 
-    print(f"✅ Escuchando mensajes en Telegram (Token: {token[:10]}...)")
+    print(f"[OK] Escuchando mensajes en Telegram (Token: {token[:10]}...)")
     
     offset = 0
     async with httpx.AsyncClient() as client:
@@ -79,16 +90,34 @@ async def telegram_polling():
                         for update in data.get("result", []):
                             offset = update["update_id"] + 1
                             message = update.get("message")
-                            if message and "text" in message:
-                                chat_id = str(message["chat"]["id"])
-                                user_text = message.get("text", "")
-                                print(f"📩 Telegram de {chat_id}: {user_text}")
-                                
+                            if not message: continue
+                            
+                            user_id = str(message["chat"]["id"])
+                            user_text = message.get("text", message.get("caption", ""))
+                            attachment = None
+                            
+                            # Detectar Media
+                            if "photo" in message:
+                                # Tomamos la versión de mayor resolución
+                                file_id = message["photo"][-1]["file_id"]
+                                from src.main import download_telegram_media
+                                attachment = await download_telegram_media(file_id, token)
+                            elif "document" in message:
+                                file_id = message["document"]["file_id"]
+                                from src.main import download_telegram_media
+                                attachment = await download_telegram_media(file_id, token)
+                            elif "video" in message:
+                                file_id = message["video"]["file_id"]
+                                from src.main import download_telegram_media
+                                attachment = await download_telegram_media(file_id, token)
+                            
+                            if user_text or attachment:
+                                print(f"[MSG] Telegram de {user_id}: {user_text} {'[ADJUNTO]' if attachment else ''}")
                                 # Ejecutar el procesamiento (esto llama a LangGraph)
-                                await process_bot_response(chat_id, user_text, "telegram")
+                                await process_bot_response(user_id, user_text, "telegram", attachment)
                     
                 except Exception as e:
-                    print(f"❌ Error en conexión con Telegram: {e}")
+                    print(f"[ERROR] Error en conexión con Telegram: {e}")
                     await asyncio.sleep(5)
             else:
                 # Si está desactivado, esperamos un poco antes de volver a chequear

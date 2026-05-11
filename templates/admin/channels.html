@@ -73,19 +73,30 @@
                         </label>
                     </div>
 
-                    <div class="bg-slate-950/50 p-6 rounded-3xl border border-white/5 space-y-4">
-                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            <i data-lucide="settings-2" class="w-4 h-4"></i> Parámetros del Servidor
-                        </h4>
-                        <div class="grid grid-cols-1 gap-4">
-                            <div class="flex justify-between items-center py-2 border-b border-white/5">
-                                <span class="text-xs text-slate-500">URL del Servidor:</span>
-                                <span class="text-xs font-mono text-slate-300">{{ external_env.EVOLUTION_API_URL or 'No configurada' }}</span>
+                    <div id="wa-status-container" class="bg-slate-950/50 p-6 rounded-3xl border border-white/5 space-y-6">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="activity" class="w-4 h-4"></i> Estado de Conexión
+                            </h4>
+                            <div id="wa-badge" class="px-3 py-1 bg-slate-800 text-slate-400 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-slate-500 rounded-full"></span> Consultando...
                             </div>
-                            <div class="flex justify-between items-center py-2">
-                                <span class="text-xs text-slate-500">Instancia Activa:</span>
-                                <span class="text-xs font-mono text-emerald-400">{{ external_env.INSTANCE_NAME or 'No configurada' }}</span>
-                            </div>
+                        </div>
+
+                        <div id="wa-qr-box" class="hidden flex flex-col items-center justify-center p-6 bg-white rounded-2xl border-4 border-emerald-500/20">
+                            <img id="wa-qr-img" src="" alt="WhatsApp QR" class="w-48 h-48 mb-4">
+                            <p class="text-[10px] text-slate-900 font-bold uppercase text-center">Escanea para conectar</p>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <button type="button" onclick="restartWA()" class="p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group flex flex-col items-center gap-2">
+                                <i data-lucide="refresh-cw" class="w-5 h-5 text-indigo-400 group-hover:rotate-180 transition-all duration-500"></i>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase">Reiniciar</span>
+                            </button>
+                            <button type="button" onclick="logoutWA()" class="p-4 bg-white/5 hover:bg-rose-500/10 border border-white/5 rounded-2xl transition-all group flex flex-col items-center gap-2">
+                                <i data-lucide="log-out" class="w-5 h-5 text-rose-500"></i>
+                                <span class="text-[10px] font-bold text-slate-400 uppercase">Cerrar Sesión</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -93,26 +104,83 @@
                 <!-- Guía de Ayuda -->
                 <div class="lg:w-80 bg-emerald-500/5 p-8 border-l border-emerald-500/10 space-y-6">
                     <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                        <i data-lucide="help-circle" class="w-4 h-4 text-emerald-500"></i> Guía de Configuración
+                        <i data-lucide="help-circle" class="w-4 h-4 text-emerald-500"></i> Soporte de Conexión
                     </h3>
+                    <div id="wa-info" class="text-[11px] text-slate-400 leading-relaxed">
+                        Si el bot no responde, intenta reiniciar la instancia. Asegúrate de que tu teléfono tenga internet estable.
+                    </div>
                     <ul class="space-y-4">
                         <li class="flex gap-3">
                             <span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                            <p class="text-[11px] text-slate-400">Accede a tu panel de Evolution API y crea una instancia.</p>
+                            <p class="text-[11px] text-slate-400">Estado <b>OPEN</b>: El bot está listo.</p>
                         </li>
                         <li class="flex gap-3">
                             <span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                            <p class="text-[11px] text-slate-400">En <b>Webhooks</b>, activa el evento <code class="text-emerald-400">MESSAGES_UPSERT</code>.</p>
-                        </li>
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
-                            <div class="space-y-2">
-                                <p class="text-[11px] text-slate-400">Pega esta URL de destino:</p>
-                                <code class="block p-2 bg-slate-950 rounded text-[9px] text-emerald-400 font-mono break-all select-all border border-emerald-500/20">https://tu-dominio.com/webhook</code>
-                            </div>
+                            <p class="text-[11px] text-slate-400">Si aparece el QR, escanealo desde WhatsApp > Dispositivos Vinculados.</p>
                         </li>
                     </ul>
                 </div>
+            </div>
+        </div>
+
+        <script>
+            async function updateWAStatus() {
+                try {
+                    const response = await fetch('/admin/whatsapp/status');
+                    const data = await response.json();
+                    const badge = document.getElementById('wa-badge');
+                    const qrBox = document.getElementById('wa-qr-box');
+                    
+                    if (data.state === 'open') {
+                        badge.className = "px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
+                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Conectado (Open)';
+                        qrBox.classList.add('hidden');
+                    } else if (data.state === 'connecting' || data.state === 'pairing') {
+                        badge.className = "px-3 py-1 bg-amber-500/10 text-amber-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
+                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span> Vinculando...';
+                        loadQR();
+                    } else {
+                        badge.className = "px-3 py-1 bg-rose-500/10 text-rose-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
+                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-rose-500 rounded-full"></span> Desconectado';
+                        loadQR();
+                    }
+                } catch (e) {
+                    console.error("Error consultando estado WA:", e);
+                }
+            }
+
+            async function loadQR() {
+                const response = await fetch('/admin/whatsapp/qr');
+                const data = await response.json();
+                const qrBox = document.getElementById('wa-qr-box');
+                const qrImg = document.getElementById('wa-qr-img');
+                
+                if (data.status === 'success' && data.data.base64) {
+                    qrImg.src = data.data.base64;
+                    qrBox.classList.remove('hidden');
+                } else if (data.status === 'success' && data.data.code) {
+                    // Si Evolution API da code pero no base64, podría ser pairing code
+                    // Por ahora asumimos base64
+                }
+            }
+
+            async function restartWA() {
+                if(!confirm("¿Deseas reiniciar la instancia de WhatsApp?")) return;
+                await fetch('/admin/whatsapp/restart', {method: 'POST'});
+                alert("Petición de reinicio enviada.");
+                setTimeout(updateWAStatus, 3000);
+            }
+
+            async function logoutWA() {
+                if(!confirm("¿Seguro que deseas cerrar la sesión? Tendrás que escanear el QR de nuevo.")) return;
+                await fetch('/admin/whatsapp/logout', {method: 'POST'});
+                location.reload();
+            }
+
+            // Iniciar monitoreo
+            setInterval(updateWAStatus, 10000);
+            updateWAStatus();
+        </script>
             </div>
         </div>
 

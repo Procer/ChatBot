@@ -5,8 +5,9 @@ import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-DB_PATH = "settings.sqlite"
-SERVICE_ACCOUNT_FILE = "service_account.json"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = os.path.join(BASE_DIR, "settings.sqlite")
+SERVICE_ACCOUNT_FILE = os.path.join(BASE_DIR, "service_account.json")
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def get_calendar_service():
@@ -36,10 +37,20 @@ def get_available_slots(date_str):
     Calcula los huecos libres para una fecha específica (YYYY-MM-DD).
     """
     provider = get_external_setting("scheduling_provider")
-    working_hours = get_external_setting("working_hours") or "09:00-18:00"
+    working_hours = get_external_setting("scheduling_hours") or "09:00-13:00, 16:00-20:00"
     duration = int(get_external_setting("appointment_duration") or 30)
     calendar_id = get_external_setting("google_calendar_id") or "primary"
+
+    # 0. Verificar si el día está habilitado
+    enabled_days = (get_external_setting("scheduling_days") or "mon,tue,wed,thu,fri").split(",")
+    requested_date = datetime.strptime(date_str, "%Y-%m-%d")
+    day_name = requested_date.strftime("%a").lower() # mon, tue, etc.
     
+    # Mapeo por si acaso locale
+    day_map = {"mon": "mon", "tue": "tue", "wed": "wed", "thu": "thu", "fri": "fri", "sat": "sat", "sun": "sun"}
+    if day_name not in enabled_days:
+        return []
+
     # 1. Generar todos los slots posibles
     all_slots = []
     try:
@@ -71,7 +82,6 @@ def get_available_slots(date_str):
             
             for event in events:
                 start = event['start'].get('dateTime', event['start'].get('date'))
-                # Extraer solo la hora HH:MM
                 if 'T' in start:
                     occupied_time = start.split('T')[1][:5]
                     occupied.append(occupied_time)
@@ -83,8 +93,21 @@ def get_available_slots(date_str):
         occupied = [row[0] for row in cursor.fetchall()]
         conn.close()
 
-    # 3. Filtrar
-    available = [s for s in all_slots if s not in occupied]
+    # 3. Filtrar por capacidad y por tiempo actual (si es hoy)
+    capacity = int(get_external_setting("scheduling_capacity") or 1)
+    now = datetime.now()
+    is_today = date_str == now.strftime("%Y-%m-%d")
+    current_time_str = now.strftime("%H:%M")
+    
+    available = []
+    for s in all_slots:
+        # Si es hoy, el slot debe ser posterior a la hora actual
+        if is_today and s <= current_time_str:
+            continue
+            
+        if occupied.count(s) < capacity:
+            available.append(s)
+            
     return available
 
 def book_appointment(thread_id, date, time, reason, client_name="Cliente"):

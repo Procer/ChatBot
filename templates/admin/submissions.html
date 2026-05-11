@@ -1,51 +1,331 @@
 {% extends "admin/layout.html" %}
 
-{% block title %}Onboarding | Zárate System IA{% endblock %}
+{% block title %}Bandeja de Trámites | Zárate System IA{% endblock %}
+
+{% block breadcrumb %}Trámites / Bandeja de Entrada{% endblock %}
+
+{% block extra_head %}
+<style>
+    .sub-row:hover { background: rgba(255,255,255,0.03); }
+    .sub-row.active { background: rgba(99, 102, 241, 0.08); border-left: 4px solid #6366f1; }
+    .property-card { background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.03); border-radius: 1.25rem; transition: all 0.2s; }
+    .property-card:hover { border-color: rgba(99, 102, 241, 0.25); background: rgba(15, 23, 42, 0.6); }
+    .file-icon-card { width: 4.5rem; height: 4.5rem; border-radius: 1rem; display: flex; flex-direction: column; items-center: center; justify-content: center; gap: 0.5rem; transition: all 0.2s; }
+    .file-icon-card:hover { transform: scale(1.05); }
+</style>
+{% endblock %}
 
 {% block content %}
-<header class="flex justify-between items-center mb-12">
-    <div>
-        <h1 class="text-3xl font-bold text-white mb-2">Formularios de Onboarding</h1>
-        <p class="text-slate-500">Datos recolectados de clientes potenciales mediante el bot.</p>
+<div class="flex flex-col gap-8">
+    
+    <!-- Encabezado con Estadísticas Rápidas -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div>
+            <h1 class="text-3xl font-black text-white tracking-tight">Bandeja de Trámites IA</h1>
+            <p class="text-slate-400 text-sm mt-1">Gestión centralizada de solicitudes e información recolectada por la IA.</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="px-6 py-4 glass-card rounded-3xl flex flex-col min-w-[150px]">
+                <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total Recibidos</span>
+                <span class="text-2xl font-black text-white">{{ submissions|length }}</span>
+            </div>
+            <div class="px-6 py-4 glass-card rounded-3xl border-l-4 border-indigo-500 flex flex-col min-w-[150px]">
+                <span class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Nuevos Hoy</span>
+                <span class="text-2xl font-black text-white">
+                    {% set count = 0 %}
+                    {% for s in submissions if '2026-05-11' in s.created_at or '2026-05-10' in s.created_at %}{% set count = count + 1 %}{% endfor %}
+                    {{ count }}
+                </span>
+            </div>
+        </div>
     </div>
-    <div class="px-4 py-2 rounded-full glass flex items-center gap-2">
-        <i data-lucide="database" class="w-4 h-4 text-purple-400"></i>
-        <span class="text-sm font-medium text-slate-300">{{ submissions|length }} Registros</span>
-    </div>
-</header>
 
-<div class="glass rounded-3xl overflow-hidden">
-    <div class="overflow-x-auto">
-        <table class="w-full text-left">
-            <thead>
-                <tr class="border-b border-slate-800 bg-slate-900/50">
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Fecha</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Formulario</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Cliente (Thread)</th>
-                    <th class="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">Datos Recolectados</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
+    <!-- Layout Principal -->
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+        
+        <!-- Sidebar: Lista de Trámites -->
+        <div class="xl:col-span-4 glass-card rounded-[2.5rem] overflow-hidden flex flex-col max-h-[700px]">
+            <div class="p-6 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                <span class="text-xs font-black text-white uppercase tracking-widest">Entrada Reciente</span>
+                <i data-lucide="filter" class="w-4 h-4 text-slate-500 cursor-pointer"></i>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar flex-1">
+                {% if not submissions %}
+                <div class="p-12 text-center flex flex-col items-center">
+                    <i data-lucide="inbox" class="w-10 h-10 text-slate-800 mb-4"></i>
+                    <p class="text-slate-500 text-xs">No hay trámites aún.</p>
+                </div>
+                {% endif %}
                 {% for s in submissions %}
-                <tr class="hover:bg-slate-900/50 transition-colors">
-                    <td class="px-6 py-4 text-slate-400 text-sm">{{ s.created_at }}</td>
-                    <td class="px-6 py-4">
-                        <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-[10px] font-bold uppercase tracking-wider">{{ s.form_name }}</span>
-                    </td>
-                    <td class="px-6 py-4 text-white font-medium">{{ s.thread_id }}</td>
-                    <td class="px-6 py-4">
-                        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs font-mono text-indigo-300">
-                            {{ s.data }}
+                <div id="sub-{{ s.id }}" 
+                     onclick="showSubmission({{ s.id }})"
+                     class="sub-row p-4 border-b border-white/5 cursor-pointer transition-all flex flex-col gap-1 group">
+                    <div class="flex justify-between items-start">
+                        <span class="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">ID #{{ s.id }}</span>
+                        <span class="text-[8px] text-slate-600 font-mono">{{ s.formatted_date.split(' ')[0] }}</span>
+                    </div>
+                    <h4 class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors truncate">{{ s.user_name }}</h4>
+                    <div class="flex items-center justify-between mt-1">
+                        <p class="text-[9px] text-indigo-400/80 uppercase font-black tracking-widest truncate max-w-[120px]">{{ s.topic }}</p>
+                        <div class="flex items-center gap-1">
+                            {% if '@' in s.thread_id %}
+                                <i data-lucide="message-circle" class="w-2.5 h-2.5 text-emerald-500/50"></i>
+                            {% else %}
+                                <i data-lucide="send" class="w-2.5 h-2.5 text-sky-500/50"></i>
+                            {% endif %}
                         </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" class="px-6 py-12 text-center text-slate-500">No se han recibido formularios aún.</td>
-                </tr>
+                    </div>
+                </div>
                 {% endfor %}
-            </tbody>
-        </table>
+            </div>
+        </div>
+
+        <!-- Panel Detalle: Información del Trámite -->
+        <div class="xl:col-span-8 space-y-6">
+            <div id="emptyDetail" class="glass-card rounded-[3rem] p-24 flex flex-col items-center justify-center text-center">
+                <div class="w-20 h-20 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-6 animate-bounce">
+                    <i data-lucide="mouse-pointer-click" class="w-8 h-8"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">Visualizador de Datos</h3>
+                <p class="text-slate-500 text-sm max-w-xs">Selecciona un trámite del listado para inspeccionar toda la información recolectada.</p>
+            </div>
+
+            <div id="submissionView" class="hidden animate-in fade-in slide-in-from-right-4 duration-500 space-y-6">
+                <!-- Header del Detalle -->
+                <div class="glass-card rounded-[2rem] p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
+                            <i data-lucide="folder-open" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h2 id="view_name" class="text-xl font-black text-white leading-tight">Cargando...</h2>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span id="view_topic" class="text-[9px] text-indigo-400 font-black uppercase tracking-widest"></span>
+                                <span class="text-slate-800">•</span>
+                                <span id="view_date" class="text-[9px] text-slate-500 font-bold"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <a id="view_chat" href="#" class="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white transition-all" title="Ver Conversación">
+                            <i data-lucide="message-square" class="w-4 h-4"></i>
+                        </a>
+                        <button onclick="convertExpediente()" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-all text-[10px] font-black uppercase tracking-wider">
+                            Iniciar Expediente
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Grilla de Propiedades (Modern Tech Layout) -->
+                <div id="dataGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Se llena vía JS -->
+                </div>
+
+                <!-- Sección de Archivos -->
+                <div id="filesSection" class="hidden space-y-3">
+                    <h3 class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4 flex items-center gap-2">
+                        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i> Documentación Adjunta
+                    </h3>
+                    <div id="filesGrid" class="flex flex-wrap gap-4 px-4">
+                        <!-- Se llena vía JS -->
+                    </div>
+                </div>
+
+                <!-- Footer de Acción -->
+                <div class="flex justify-end p-4">
+                    <a id="view_delete" href="#" class="flex items-center gap-2 text-rose-500/50 hover:text-rose-500 transition-colors text-[10px] font-bold uppercase tracking-widest" onclick="return confirm('¿Eliminar registro?')">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Eliminar Registro Permanentemente
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<!-- Modal Visualizador -->
+<div id="fileModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-[500] hidden flex flex-col p-8">
+    <div class="flex justify-between items-center mb-8">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white border border-white/10">
+                <i data-lucide="file-text" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h3 id="modalFileName" class="text-white text-lg font-bold">Archivo</h3>
+                <p class="text-[10px] text-slate-500 uppercase font-black tracking-widest">Vista Previa de Seguridad</p>
+            </div>
+        </div>
+        <button onclick="closeFileModal()" class="w-14 h-14 rounded-full bg-rose-500/10 text-rose-500 hover:bg-rose-500 transition-all flex items-center justify-center">
+            <i data-lucide="x" class="w-8 h-8"></i>
+        </button>
+    </div>
+    <div class="flex-1 bg-white rounded-[3rem] overflow-hidden shadow-2xl">
+        <iframe id="filePreview" src="" class="w-full h-full border-none"></iframe>
+    </div>
+</div>
+
+<script id="submissions-data" type="application/json">
+    {{ submissions|tojson|safe }}
+</script>
+
+<script>
+    const submissions = JSON.parse(document.getElementById('submissions-data').textContent);
+    let activeSub = null;
+
+    function showSubmission(id) {
+        const sub = submissions.find(s => s.id == id);
+        if (!sub) return;
+        
+        activeSub = sub;
+        
+        // UI Highlight
+        document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('active'));
+        document.getElementById(`sub-${sub.id}`).classList.add('active');
+        
+        // Switch Views
+        document.getElementById('emptyDetail').classList.add('hidden');
+        document.getElementById('submissionView').classList.remove('hidden');
+        
+        // Header
+        document.getElementById('view_name').innerText = sub.user_name;
+        document.getElementById('view_topic').innerText = sub.topic;
+        document.getElementById('view_date').innerText = sub.formatted_date;
+        document.getElementById('view_chat').href = `/admin/chat/${sub.thread_id}`;
+        document.getElementById('view_delete').href = `/admin/submissions/delete/${sub.id}`;
+        
+        // Data Grid con Agrupación Inteligente
+        const grid = document.getElementById('dataGrid');
+        grid.innerHTML = '';
+        
+        const data = sub.parsed_data;
+        const groups = {};
+        const individualFields = [];
+        
+        // Identificar grupos (Padre, Madre, Menor, etc.)
+        const entities = ["Padre", "Madre", "Menor", "Solicitante", "Conyuge"];
+        
+        Object.entries(data).forEach(([key, value]) => {
+            if (key === "Nombre del Cliente") return;
+            
+            // Protección contra archivos técnicos
+            if (typeof value === 'string' && (value.startsWith('tg_') || /\.(pdf|jpg|jpeg|png|doc|docx)$/i.test(value))) return;
+
+            let matchedEntity = entities.find(e => key.toLowerCase().includes(e.toLowerCase()));
+            
+            if (matchedEntity) {
+                if (!groups[matchedEntity]) groups[matchedEntity] = [];
+                groups[matchedEntity].push({key, value});
+            } else {
+                individualFields.push({key, value});
+            }
+        });
+
+        // 1. Renderizar Grupos Unificados
+        Object.entries(groups).forEach(([entity, fields]) => {
+            const groupCard = document.createElement('div');
+            groupCard.className = 'property-card p-5 flex flex-col gap-3 border-l-4 border-indigo-500/50';
+            
+            let content = `<div class="flex items-center gap-2 mb-1">
+                                <div class="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                <span class="text-[10px] font-black text-white uppercase tracking-widest">${entity}</span>
+                           </div>`;
+            
+            fields.forEach(f => {
+                const label = f.key.replace(new RegExp(entity, 'gi'), '').replace(/del|de la|de/gi, '').trim();
+                content += `
+                    <div class="flex flex-col">
+                        <span class="text-[7px] text-slate-500 uppercase font-bold">${label || 'Datos'}</span>
+                        <span class="text-sm text-slate-200 font-bold">${f.value}</span>
+                    </div>
+                `;
+            });
+            groupCard.innerHTML = content;
+            grid.appendChild(groupCard);
+        });
+
+        // 2. Renderizar Campos Individuales (con destaque para Estado Civil)
+        individualFields.forEach(f => {
+            const card = document.createElement('div');
+            const isMarital = f.key.toLowerCase().includes('estado civil');
+            
+            card.className = `property-card p-4 flex flex-col gap-1.5 ${isMarital ? 'bg-indigo-600/20 border-indigo-500/30 ring-1 ring-indigo-500/20' : ''}`;
+            
+            let cleanValue = f.value;
+            if (isMarital) {
+                cleanValue = `<span class="text-indigo-300 font-black uppercase tracking-tighter text-lg">${f.value}</span>`;
+            } else if (typeof f.value === 'string' && (f.value.includes(',') || f.value.toLowerCase().includes(' y '))) {
+                const items = f.value.split(/, | y /i);
+                cleanValue = `<div class="flex flex-wrap gap-1.5 mt-1">` + 
+                            items.map(i => `<span class="px-2 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 text-[10px] font-bold border border-indigo-500/20">${i.trim()}</span>`).join('') + 
+                            `</div>`;
+            } else {
+                cleanValue = `<span class="text-sm text-slate-200 font-bold break-words leading-tight">${f.value}</span>`;
+            }
+
+            card.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span class="text-[8px] font-black ${isMarital ? 'text-indigo-400' : 'text-slate-500'} uppercase tracking-widest">${f.key}</span>
+                    <i data-lucide="${isMarital ? 'heart' : 'shield-check'}" class="w-2.5 h-2.5 ${isMarital ? 'text-indigo-400' : 'text-slate-800'}"></i>
+                </div>
+                ${cleanValue}
+            `;
+            grid.appendChild(card);
+        });
+        
+        // Files
+        const fileSec = document.getElementById('filesSection');
+        const fileGrid = document.getElementById('filesGrid');
+        fileGrid.innerHTML = '';
+        
+        if (sub.attachments && sub.attachments.length > 0) {
+            fileSec.classList.remove('hidden');
+            sub.attachments.forEach(file => {
+                const fCard = document.createElement('button');
+                fCard.onclick = () => openFileModal(file.file_path, file.file_name);
+                fCard.className = "flex flex-col items-center gap-2 p-3 property-card hover:bg-white/5 text-center group min-w-[100px]";
+                
+                // Determinar icono según tipo de archivo
+                let icon = 'file-text';
+                let colorClass = 'text-slate-400';
+                const type = (file.file_type || '').toLowerCase();
+                
+                if (type.includes('image')) { icon = 'image'; colorClass = 'text-emerald-400'; }
+                else if (type.includes('pdf')) { icon = 'file-digit'; colorClass = 'text-rose-400'; }
+                else if (type.includes('video')) { icon = 'video'; colorClass = 'text-sky-400'; }
+                
+                let displayContext = file.context || 'Adjunto';
+                if (displayContext.startsWith('Posible: ')) displayContext = displayContext.replace('Posible: ', '');
+                if (displayContext.includes(' (Adjunto)')) displayContext = displayContext.replace(' (Adjunto)', '');
+                
+                fCard.innerHTML = `
+                    <div class="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center ${colorClass} group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                        <i data-lucide="${icon}" class="w-6 h-6"></i>
+                    </div>
+                    <span class="text-[9px] text-slate-400 uppercase tracking-wider font-black group-hover:text-white transition-colors truncate max-w-[90px]">${displayContext}</span>
+                `;
+                fileGrid.appendChild(fCard);
+            });
+        } else {
+            fileSec.classList.add('hidden');
+        }
+        
+        lucide.createIcons();
+    }
+
+    function convertExpediente() {
+        if (!activeSub) return;
+        alert('Redirigiendo a sistema de expedientes...');
+    }
+
+    function openFileModal(path, name) {
+        const modal = document.getElementById('fileModal');
+        const iframe = document.getElementById('filePreview');
+        document.getElementById('modalFileName').innerText = name;
+        iframe.src = path;
+        modal.classList.remove('hidden');
+    }
+
+    function closeFileModal() {
+        document.getElementById('fileModal').classList.add('hidden');
+    }
+</script>
 {% endblock %}

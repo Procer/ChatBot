@@ -7,28 +7,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_PATH = "settings.sqlite"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = os.path.join(BASE_DIR, "settings.sqlite")
 
 def save_submission_local(thread_id, topic, data):
     """Guarda los datos recolectados en la base de datos local."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         cursor = conn.cursor()
         
         # Convertimos el diccionario de datos a JSON para guardarlo en una columna TEXT
         data_json = json.dumps(data)
         
+        # Usamos 'topic' para coincidir con el esquema de init_db
         cursor.execute("""
-            INSERT INTO form_submissions (thread_id, form_topic, data, status)
-            VALUES (?, ?, ?, ?)
-        """, (thread_id, topic, data_json, 'completed'))
+            INSERT INTO form_submissions (thread_id, topic, data)
+            VALUES (?, ?, ?)
+        """, (thread_id, topic, data_json))
         
+        new_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        return True
+        return new_id
     except Exception as e:
-        logging.info(f"Error al guardar sumisión local: {e}")
-        return False
+        logging.error(f"Error al guardar sumisión local: {e}")
+        return None
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -87,31 +90,42 @@ def process_form_completion(thread_id, topic, data, storage_dest='database'):
     logging.info(f" - Data: {data}")
     logging.info(f" - Destino: {storage_dest}")
     
-    success = True
     if storage_dest in ['database', 'both']:
-        logging.info(f" - Intentando guardar en DB local...")
-        success = save_submission_local(thread_id, topic, data)
-        logging.info(f" - Resultado guardado local: {success}")
+        # 1. Guardar en DB local y obtener ID
+        submission_id = save_submission_local(thread_id, topic, data)
+        success = submission_id is not None
+        logging.info(f" - Resultado guardado local: {success} (ID: {submission_id})")
         
-        # 2. Crear entrada en el CRM (proceedings) para el tablero Kanban
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            # Generamos un tracking_number más robusto (TR + ultimos 4 id + MinutoSegundo)
-            from datetime import datetime
-            now_str = datetime.now().strftime("%M%S")
-            suffix = str(thread_id)[-4:] if thread_id and len(str(thread_id)) >= 4 else "0000"
-            tracking = f"TR-{suffix}-{now_str}"
-            
-            client = data.get("Nombre", data.get("nombre", data.get("Cliente", "Cliente Nuevo")))
-            
-            conn.execute("""
-                INSERT INTO proceedings (tracking_number, client_name, topic, status, notes)
-                VALUES (?, ?, ?, ?, ?)
-            """, (tracking, client, topic, 'Pendiente', f"Datos recolectados vía Bot: {json.dumps(data)}"))
-            conn.commit(); conn.close()
-            logging.info(f" - Expediente CRM creado: {tracking}")
-        except Exception as e:
-            logging.info(f"Error al crear expediente CRM: {e}")
+        if success:
+            # 1.1 VINCULAR ADJUNTOS: Buscamos adjuntos pendientes de este usuario y los asociamos a esta sumisión
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                conn.execute("UPDATE attachments SET form_id = ? WHERE thread_id = ? AND form_id IS NULL", (submission_id, thread_id))
+                conn.commit()
+                conn.close()
+                logging.info(f" - Adjuntos vinculados a la sumisión {submission_id}")
+            except Exception as e:
+                logging.error(f"Error vinculando adjuntos: {e}")
+
+            # 2. Crear entrada en el CRM (proceedings) para el tablero Kanban
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                # Generamos un tracking_number más robusto (TR + ultimos 4 id + MinutoSegundo)
+                from datetime import datetime
+                now_str = datetime.now().strftime("%M%S")
+                suffix = str(thread_id)[-4:] if thread_id and len(str(thread_id)) >= 4 else "0000"
+                tracking = f"TR-{suffix}-{now_str}"
+                
+                client = data.get("Nombre del Cliente", data.get("Nombre", data.get("nombre", data.get("Cliente", "Cliente Nuevo"))))
+                
+                conn.execute("""
+                    INSERT INTO proceedings (tracking_number, client_name, topic, status, notes)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (tracking, client, topic, 'Pendiente', f"Datos recolectados vía Bot: {json.dumps(data)}"))
+                conn.commit(); conn.close()
+                logging.info(f" - Expediente CRM creado: {tracking}")
+            except Exception as e:
+                logging.info(f"Error al crear expediente CRM: {e}")
         
     if storage_dest in ['sheets', 'both']:
         success = save_to_google_sheets(topic, data) and success
