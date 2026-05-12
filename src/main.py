@@ -43,7 +43,11 @@ except Exception as e:
     chatbot_app = None
     wa_manager = None
 
-# 3. CONFIGURACIÓN EVOLUTION API
+# 3. CONFIGURACIÓN GREEN-API
+GREEN_API_ID = os.getenv("GREEN_API_ID", "").strip('"')
+GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN", "").strip('"')
+
+# CONFIGURACIÓN EVOLUTION API (LEGACY - COMENTADO)
 EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "").strip('"').rstrip('/')
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "").strip('"')
 INSTANCE_NAME = os.getenv("EVOLUTION_INSTANCE_NAME", "").strip('"')
@@ -140,13 +144,22 @@ async def send_whatsapp_message(number: str, text: str):
     db.close()
     if row and row[0] == '0': return
 
-    url = f"{EVOLUTION_API_URL}/message/sendText/{INSTANCE_NAME}"
-    headers = {"apikey": EVOLUTION_API_KEY, "Content-Type": "application/json"}
-    payload = {"number": number, "options": {"delay": 1200, "presence": "composing"}, "textMessage": {"text": text}}
+    # Forzar lectura de .env por si acaso
+    g_id = os.getenv("GREEN_API_ID", "").strip('"')
+    g_token = os.getenv("GREEN_API_TOKEN", "").strip('"')
+
+    clean_number = number.split("@")[0]
+    chat_id = f"{clean_number}@c.us"
+
+    url = f"https://api.green-api.com/waInstance{g_id}/sendMessage/{g_token}"
+    payload = {"chatId": chat_id, "message": text}
+
     async with httpx.AsyncClient() as client:
-        try: await client.post(url, json=payload, headers=headers)
+        try: 
+            r = await client.post(url, json=payload, timeout=20.0)
+            logging.info(f"[GREEN-API] Message sent to {chat_id}: {r.status_code}")
         except Exception as e:
-            logging.error(f"Error silenciado previamente: {e}")
+            logging.error(f"[GREEN-API] Error enviando mensaje: {e}")
 
 async def send_telegram_message(chat_id: str, text: str):
     print(f"[DEBUG] send_telegram_message: chat_id={chat_id}")
@@ -187,98 +200,51 @@ async def setup_telegram_webhook(token: str, base_url: str):
             return False
 
 async def setup_whatsapp_webhook(base_url: str):
-    # En V2 la estructura debe estar envuelta en un objeto "webhook"
-    url = f"{EVOLUTION_API_URL}/webhook/set/{INSTANCE_NAME}"
-    headers = {"apikey": EVOLUTION_API_KEY}
+    url = f"https://api.green-api.com/waInstance{GREEN_API_ID}/setSettings/{GREEN_API_TOKEN}"
     payload = {
-        "webhook": {
-            "url": f"{base_url}/webhook",
-            "enabled": True,
-            "webhook_by_events": False,
-            "events": [
-                "MESSAGES_UPSERT"
-            ]
-        }
+        "webhookUrl": f"{base_url}/webhook/greenapi",
+        "outgoingMessageWebhook": "yes",
+        "stateInstanceWebhook": "yes",
+        "incomingMessageWebhook": "yes"
     }
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.post(url, json=payload, headers=headers)
-            logging.info(f"[SETUP] Webhook set: {r.status_code} - {r.text}")
-            return r.status_code == 200 or r.status_code == 201
+            r = await client.post(url, json=payload)
+            logging.info(f"[GREEN-API] Webhook setup: {r.status_code} - {r.text}")
+            return r.status_code == 200
         except Exception as e:
-            logging.error(f"[SETUP] Error webhook: {e}")
+            logging.error(f"[GREEN-API] Error setting webhook: {e}")
             return False
 
 # --- PROXY EVOLUTION API ---
 async def get_whatsapp_status():
-    if not EVOLUTION_API_URL or not INSTANCE_NAME: return {"status": "disconnected", "error": "Faltan variables de entorno"}
-    # En V2 el endpoint suele ser connectionState
-    url = f"{EVOLUTION_API_URL}/instance/connectionState/{INSTANCE_NAME}"
-    headers = {"apikey": EVOLUTION_API_KEY}
+    if not GREEN_API_ID or not GREEN_API_TOKEN: return {"status": "disconnected", "error": "Faltan credenciales Green-API"}
+    url = f"https://api.green-api.com/waInstance{GREEN_API_ID}/getStateInstance/{GREEN_API_TOKEN}"
     async with httpx.AsyncClient() as client:
         try:
-            r = await client.get(url, headers=headers)
+            r = await client.get(url)
             if r.status_code == 200:
-                data = r.json()
-                # Buscamos 'open' en cualquier parte de la respuesta para mayor compatibilidad
-                state = data.get("instance", {}).get("state") or data.get("state") or data.get("connectionStatus") or data.get("status")
-                return {"status": "open" if state == "open" else "disconnected"}
-            
-            # Si da 404, probamos con el endpoint antiguo por si acaso
-            if r.status_code == 404:
-                old_url = f"{EVOLUTION_API_URL}/instance/connectionStatus/{INSTANCE_NAME}"
-                r2 = await client.get(old_url, headers=headers)
-                if r2.status_code == 200:
-                    data = r2.json()
-                    state = data.get("instance", {}).get("state") or data.get("state") or data.get("connectionStatus")
-                    return {"status": "open" if state == "open" else "disconnected"}
+                state = r.json().get("stateInstance")
+                return {"status": "open" if state == "authorized" else "disconnected"}
             return {"status": "disconnected"}
         except: return {"status": "disconnected"}
 
 async def get_whatsapp_qr():
-    if not EVOLUTION_API_URL or not INSTANCE_NAME: return {"status": "error", "message": "Faltan variables de entorno"}
-    
-    headers = {"apikey": EVOLUTION_API_KEY, "Content-Type": "application/json"}
+    if not GREEN_API_ID or not GREEN_API_TOKEN: return {"status": "error", "message": "Faltan credenciales Green-API"}
+    url = f"https://api.green-api.com/waInstance{GREEN_API_ID}/qr/{GREEN_API_TOKEN}"
     async with httpx.AsyncClient() as client:
         try:
-            # 1. Intentar conectar (pedir QR)
-            url = f"{EVOLUTION_API_URL}/instance/connect/{INSTANCE_NAME}"
-            r = await client.get(url, headers=headers)
-            if r.status_code == 200: return r.json()
-            
-            # 2. Si no existe (404), intentar crearla
-            if r.status_code == 404:
-                create_url = f"{EVOLUTION_API_URL}/instance/create"
-                # En V2, el token de la instancia puede ser el mismo apikey global para simplificar
-                payload = {
-                    "instanceName": INSTANCE_NAME,
-                    "token": EVOLUTION_API_KEY,
-                    "qrcode": True,
-                    "integration": "WHATSAPP-BAILEYS"
-                }
-                cr = await client.post(create_url, json=payload, headers=headers)
-                if cr.status_code != 201 and cr.status_code != 200:
-                    return {"status": "error", "message": f"Error creando instancia: {cr.status_code} - {cr.text}"}
-                
-                # Configurar Webhook automáticamente si tenemos la URL base
-                conn = get_db_settings(); cursor = conn.cursor()
-                cursor.execute("SELECT value FROM config WHERE key = 'webhook_base_url'")
-                base_url = cursor.fetchone()[0]
-                conn.close()
-                if base_url:
-                    await setup_whatsapp_webhook(base_url.rstrip('/'))
-
-                # Reintentar obtener QR
-                r = await client.get(url, headers=headers)
-                return r.json()
-            
-            return {"status": "error", "message": f"Error API: {r.status_code}"}
+            r = await client.get(url)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("type") == "qrCode":
+                    return {"status": "qr", "base64": data.get("message")}
+                return {"status": "already_connected"}
+            return {"status": "error", "message": f"Error Green-API: {r.status_code}"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
 async def whatsapp_logout():
-    url = f"{EVOLUTION_API_URL}/instance/logout/{INSTANCE_NAME}"
-    headers = {"apikey": EVOLUTION_API_KEY}
     async with httpx.AsyncClient() as client:
         try:
             r = await client.delete(url, headers=headers)
@@ -291,21 +257,32 @@ app.mount("/static", StaticFiles(directory=os.path.join(ROOT_DIR, "static")), na
 app.mount("/uploads", StaticFiles(directory=os.path.join(ROOT_DIR, "uploads")), name="uploads")
 templates = Jinja2Templates(directory=os.path.join(ROOT_DIR, "templates"))
 
-@app.post("/webhook")
-async def evolution_webhook(request: Request, background_tasks: BackgroundTasks):
+@app.post("/webhook/greenapi")
+async def green_api_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         data = await request.json()
-        logging.info(f"[WEBHOOK] Datos recibidos: {data.get('event')}")
+        type_webhook = data.get("typeWebhook")
         
-        event_name = data.get("event", "").lower()
-        if event_name != "messages.upsert": return JSONResponse({"status": "ignored"})
-        msg_data = data.get("data", {})
-        if msg_data.get("key", {}).get("fromMe"): return JSONResponse({"status": "ignored"})
+        if type_webhook != "incomingMessageReceived":
+            return JSONResponse({"status": "ignored"})
+            
+        message_data = data.get("messageData", {})
+        type_msg = message_data.get("typeMessage")
         
-        user_id = msg_data.get("key", {}).get("remoteJid", "")
-        user_text = msg_data.get("message", {}).get("conversation") or msg_data.get("message", {}).get("extendedTextMessage", {}).get("text")
+        user_text = ""
+        if type_msg == "textMessage":
+            user_text = message_data.get("textMessageData", {}).get("textMessage", "")
+        elif type_msg == "extendedTextMessage":
+            user_text = message_data.get("extendedTextMessageData", {}).get("text", "")
+        else:
+            return JSONResponse({"status": "media_not_supported_yet"})
+            
+        user_id = data.get("senderData", {}).get("chatId", "")
         
-        logging.info(f"[WEBHOOK] Mensaje de {user_id}: {user_text}")
+        if not user_text or not user_id:
+            return JSONResponse({"status": "incomplete_data"})
+
+        logging.info(f"[GREEN-API] Mensaje de {user_id}: {user_text}")
         
         # --- FILTRO MODO PRUEBAS ---
         conn = get_db_settings(); cursor = conn.cursor()
@@ -318,42 +295,22 @@ async def evolution_webhook(request: Request, background_tasks: BackgroundTasks)
             whitelist = [n.strip() for n in whitelist_raw.split(",") if n.strip()]
             clean_id = user_id.split("@")[0]
             
-            logging.info(f"[TEST MODE] Activo. Whitelist: {whitelist}. Remitente: {clean_id}")
-            
             if clean_id not in whitelist and user_id not in whitelist:
-                logging.warning(f"[TEST MODE] Ignorando mensaje de {user_id} (No en whitelist)")
+                logging.warning(f"[TEST MODE] Ignorando mensaje de {user_id}")
                 conn.close()
                 return JSONResponse({"status": "test_mode_ignored"})
-        
         conn.close()
-        if not user_text: return JSONResponse({"status": "no_text"})
-        
-        # --- DETECCIÓN DE MEDIA (Evolution API) ---
-        message = data.get("data", {}).get("message", {})
-        attachment = None
-        
-        # Detectar tipos de mensaje con adjuntos
-        media_types = ["imageMessage", "documentMessage", "videoMessage", "audioMessage", "stickerMessage"]
-        found_media = next((t for t in media_types if t in message), None)
-        
-        if found_media:
-            logging.info(f"[WEBHOOK] Media detectado: {found_media}")
-            # Si Evolution API envía el base64 directamente (común en configuraciones locales)
-            media_data = message[found_media]
-            if "base64" in media_data:
-                ext = mimetypes.guess_extension(media_data["mimetype"]) or ".bin"
-                filename = f"wa_{data['data']['key']['id']}{ext}"
-                filepath = os.path.join(ROOT_DIR, "uploads", filename)
-                with open(filepath, "wb") as f:
-                    f.write(base64.b64decode(media_data["base64"]))
-                attachment = {"path": f"/uploads/{filename}", "name": filename, "type": media_data["mimetype"]}
-        
-        logging.info(f"[WEBHOOK] Procesando respuesta para {user_id}...")
-        background_tasks.add_task(process_bot_response, user_id, user_text, "whatsapp", attachment)
+
+        background_tasks.add_task(process_bot_response, user_id, user_text, "whatsapp")
         return JSONResponse({"status": "ok"})
     except Exception as e:
-        logging.error(f"[WEBHOOK] Error: {e}")
+        logging.error(f"[GREEN-API WEBHOOK] Error: {e}")
         return JSONResponse({"status": "error"})
+
+@app.post("/webhook")
+async def evolution_webhook(request: Request, background_tasks: BackgroundTasks):
+    # Mantener para retrocompatibilidad por si acaso, pero ya no se usará
+    return JSONResponse({"status": "legacy_webhook_ignored"})
 
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -504,8 +461,10 @@ async def process_bot_response(user_id: str, user_text: str, platform: str, atta
                 conn_g.commit(); conn_g.close()
             except: pass
                 
-        if platform == "whatsapp": await send_whatsapp_message(user_id, bot_response)
-        else: await send_telegram_message(user_id, bot_response)
+        if platform == "whatsapp": 
+            await send_whatsapp_message(user_id, bot_response)
+        else: 
+            await send_telegram_message(user_id, bot_response)
         
         usage = getattr(last_msg, "usage_metadata", None)
         if usage:
