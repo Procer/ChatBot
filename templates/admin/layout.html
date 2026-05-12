@@ -27,30 +27,67 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     :root {
-      --glass-bg: rgba(15, 23, 42, 0.7);
-      --glass-border: rgba(255, 255, 255, 0.05);
+      --glass-bg: rgba(15, 23, 42, 0.6);
+      --glass-border: rgba(255, 255, 255, 0.08);
       --accent-primary: #06b6d4;
-      --accent-secondary: #2563eb;
+      --accent-secondary: #0891b2;
+      --nebula-1: rgba(6, 182, 212, 0.15);
+      --nebula-2: rgba(37, 99, 235, 0.12);
+      --nebula-3: rgba(139, 92, 246, 0.1);
     }
     body { 
       font-family: 'Inter', sans-serif; scroll-behavior: smooth;
       background: #020617;
-      background-image: radial-gradient(at 0% 0%, rgba(6, 182, 212, 0.1) 0px, transparent 50%),
-                        radial-gradient(at 100% 100%, rgba(37, 99, 235, 0.1) 0px, transparent 50%);
       min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
     }
-    .glass { background: var(--glass-bg); backdrop-filter: blur(16px); border: 1px solid var(--glass-border); }
-    .glass-card { background: rgba(15, 23, 42, 0.4); border: 1px solid var(--glass-border); }
-    .sidebar-item-active { background: linear-gradient(90deg, rgba(6, 182, 212, 0.1) 0%, rgba(6, 182, 212, 0) 100%); border-left: 3px solid #06b6d4; color: #22d3ee !important; }
-    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    /* Nebula Background System */
+    .nebula {
+      position: fixed;
+      width: 80vmax;
+      height: 80vmax;
+      border-radius: 100%;
+      filter: blur(120px);
+      z-index: -1;
+      pointer-events: none;
+      animation: nebulaFloat 40s infinite alternate ease-in-out;
+    }
+    .nebula-1 { background: var(--nebula-1); top: -20%; left: -20%; }
+    .nebula-2 { background: var(--nebula-2); bottom: -20%; right: -20%; animation-delay: -10s; }
+    .nebula-3 { background: var(--nebula-3); top: 30%; right: 10%; animation-delay: -20s; }
+
+    @keyframes nebulaFloat {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(10%, 10%) scale(1.1); }
+    }
+
+    .glass { background: var(--glass-bg); backdrop-filter: blur(24px); border: 1px solid var(--glass-border); }
+    .glass-card { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); }
+    .sidebar-item-active { 
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.15) 0%, rgba(6, 182, 212, 0) 100%); 
+      border-left: 4px solid var(--accent-primary); 
+      color: #fff !important;
+      box-shadow: -10px 0 20px -10px var(--accent-primary);
+    }
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-    input:focus, select:focus, textarea:focus { border-color: rgba(6, 182, 212, 0.5) !important; outline: none; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+    .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.2); }
+    
+    input:focus, select:focus, textarea:focus { border-color: var(--accent-primary) !important; outline: none; box-shadow: 0 0 20px rgba(6, 182, 212, 0.1); }
+    
+    /* Bento Utilities */
+    .bento-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1.5rem; }
+    .bento-item { border-radius: 2rem; overflow: hidden; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    .bento-item:hover { border-color: rgba(6, 182, 212, 0.3); transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(0,0,0,0.5); }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
 <body class="h-full text-slate-300 antialiased selection:bg-cyan-500/30">
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
 
   <!-- Mobile Nav Toggle -->
   <div class="lg:hidden fixed bottom-6 right-6 z-[200]">
@@ -59,34 +96,41 @@
     </button>
   </div>
 
-  <div class="flex h-full overflow-hidden">
-    <!-- Sidebar -->
-    <aside id="sidebar" class="fixed inset-y-0 left-0 z-[150] w-72 glass border-r border-slate-800 flex flex-col transition-all duration-300 -translate-x-full lg:translate-x-0 lg:static shrink-0">
+  <div class="flex h-full overflow-hidden p-4 lg:p-6 gap-6">
+    <!-- Sidebar Flotante -->
+    <aside id="sidebar" class="fixed inset-y-6 left-6 z-[150] w-72 glass rounded-[2.5rem] flex flex-col transition-all duration-500 -translate-x-[calc(100%+24px)] lg:translate-x-0 lg:static shrink-0 shadow-2xl">
       <div class="p-8 flex flex-col h-full">
-        <div class="flex items-center gap-3 mb-12">
-          <img src="/static/LogoZSGiA.png" alt="Logo" class="w-10 h-10 rounded-xl shadow-lg shadow-cyan-500/20 object-cover">
+        <div class="flex items-center gap-4 mb-12">
+          <div class="relative">
+            <div class="absolute inset-0 bg-cyan-500 blur-lg opacity-20 animate-pulse"></div>
+            <img src="/static/LogoZSGiA.png" alt="Logo" class="relative w-11 h-11 rounded-2xl shadow-2xl object-cover border border-white/10">
+          </div>
           <div class="flex flex-col">
-            <span class="text-lg font-bold text-white leading-none">Zárate System</span>
-            <span class="text-[10px] text-cyan-500 font-bold tracking-widest uppercase mt-1">Division IA</span>
+            <span class="text-lg font-black text-white leading-none tracking-tight">ZÁRATE</span>
+            <span class="text-[9px] text-cyan-400 font-black tracking-[0.2em] uppercase mt-1">Division IA</span>
           </div>
         </div>
 
-        <nav class="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-2">
-          <div class="space-y-1">
+        <nav class="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2">
+          <div class="space-y-2">
+            <p class="text-[9px] font-black text-slate-600 uppercase tracking-[0.3em] ml-4 mb-4">Módulos</p>
             {{ menu_item('/admin', 'activity', 'Atención', active_section == 'operacion') }}
             {{ menu_item('/admin/submissions', 'folder-kanban', 'Trámites', active_section == 'tramites') }}
             {{ menu_item('/admin/knowledge', 'brain', 'Cerebro', active_section == 'cerebro') }}
             {{ menu_item('/admin/appointments', 'calendar', 'Turnos', active_section == 'turnos') }}
-            {{ menu_item('/admin/config', 'settings', 'Configuración', active_section == 'control') }}
+            {{ menu_item('/admin/config', 'settings', 'Consola', active_section == 'control') }}
           </div>
         </nav>
 
-        <div class="mt-8 pt-6 border-t border-slate-800/50">
-          <div class="flex items-center gap-3 px-2">
-            <div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-400 border border-slate-700">AD</div>
+        <div class="mt-8 pt-6 border-t border-white/5">
+          <div class="flex items-center gap-4 px-2">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-xs font-black text-cyan-500 border border-white/5 shadow-inner">AD</div>
             <div class="flex flex-col">
-              <span class="text-xs font-bold text-white">Administrador</span>
-              <span class="text-[9px] text-emerald-500 font-medium">Sistema Online</span>
+              <span class="text-[11px] font-black text-white uppercase tracking-wider">Root Admin</span>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                <span class="text-[9px] text-emerald-500/80 font-black uppercase tracking-widest">En Línea</span>
+              </div>
             </div>
           </div>
         </div>
@@ -95,7 +139,7 @@
 
     <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[140] hidden lg:hidden"></div>
 
-    <main class="flex-1 flex flex-col min-w-0 bg-black relative overflow-hidden">
+    <main class="flex-1 flex flex-col min-w-0 glass rounded-[2.5rem] relative overflow-hidden shadow-2xl">
       <!-- Top Bar -->
       <header class="h-16 glass-card border-b border-white/5 flex items-center justify-between px-8 lg:px-12 shrink-0">
         <div class="flex items-center gap-2 text-slate-500">
@@ -153,9 +197,9 @@
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('sidebarOverlay');
       const icon = document.getElementById('menuIcon');
-      sidebar.classList.toggle('-translate-x-full');
+      sidebar.classList.toggle('-translate-x-[calc(100%+24px)]');
       overlay.classList.toggle('hidden');
-      const isVisible = !sidebar.classList.contains('-translate-x-full');
+      const isVisible = !sidebar.classList.contains('-translate-x-[calc(100%+24px)]');
       icon.setAttribute('data-lucide', isVisible ? 'x' : 'menu');
       lucide.createIcons();
     }

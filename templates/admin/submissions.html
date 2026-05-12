@@ -1,78 +1,70 @@
-{% extends "admin/layout.html" %}
-
-{% block title %}Bandeja de Trámites | Zárate System IA{% endblock %}
-
-{% block breadcrumb %}Trámites / Bandeja de Entrada{% endblock %}
-
-{% block extra_head %}
-<style>
-    .sub-row:hover { background: rgba(255,255,255,0.03); }
-    .sub-row.active { background: rgba(6, 182, 212, 0.08); border-left: 4px solid #06b6d4; }
-    .property-card { background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.03); border-radius: 1.25rem; transition: all 0.2s; }
-    .property-card:hover { border-color: rgba(6, 182, 212, 0.25); background: rgba(15, 23, 42, 0.6); }
-    .file-icon-card { width: 4.5rem; height: 4.5rem; border-radius: 1rem; display: flex; flex-direction: column; items-center: center; justify-content: center; gap: 0.5rem; transition: all 0.2s; }
-    .file-icon-card:hover { transform: scale(1.05); }
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="flex flex-col gap-8">
+<div class="flex flex-col gap-10 animate-in fade-in duration-700">
     
-    <!-- Encabezado con Estadísticas Rápidas -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+    <!-- Header with Live Stats -->
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
         <div>
-            <h1 class="text-3xl font-black text-white tracking-tight">Bandeja de Trámites IA</h1>
-            <p class="text-slate-400 text-sm mt-1">Gestión centralizada de solicitudes e información recolectada por la IA.</p>
-        </div>
-        <div class="flex items-center gap-4">
-            <div class="px-6 py-4 glass-card rounded-3xl flex flex-col min-w-[150px]">
-                <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total Recibidos</span>
-                <span class="text-2xl font-black text-white">{{ submissions|length }}</span>
+            <h1 class="text-4xl font-black text-white tracking-tighter uppercase italic">Intelligence Inbox</h1>
+            <div class="flex items-center gap-3 mt-2">
+                <span class="px-2 py-0.5 bg-cyan-500/10 text-cyan-500 text-[9px] font-black uppercase tracking-[0.2em] rounded-md border border-cyan-500/20">Data Captured</span>
+                <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Gestión de trámites automatizados</p>
             </div>
-            <div class="px-6 py-4 glass-card rounded-3xl border-l-4 border-cyan-500 flex flex-col min-w-[150px]">
-                <span class="text-[9px] font-black text-cyan-500 uppercase tracking-widest">Nuevos Hoy</span>
-                <span class="text-2xl font-black text-white">
+        </div>
+        <div class="flex items-center gap-6">
+            <div class="bento-item glass-card px-8 py-5 flex flex-col min-w-[180px] relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)]"></div>
+                <span class="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Captured Total</span>
+                <span class="text-3xl font-black text-white mt-1">{{ submissions|length }}</span>
+            </div>
+            <div class="bento-item glass-card px-8 py-5 flex flex-col min-w-[180px] relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]"></div>
+                <span class="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">New Arrivals</span>
+                <span class="text-3xl font-black text-white mt-1">
                     {% set count = 0 %}
-                    {% for s in submissions if '2026-05-11' in s.created_at or '2026-05-10' in s.created_at %}{% set count = count + 1 %}{% endfor %}
+                    {% for s in submissions if '2026-05' in s.created_at %}{% set count = count + 1 %}{% endfor %}
                     {{ count }}
                 </span>
             </div>
         </div>
     </div>
 
-    <!-- Layout Principal -->
-    <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+    <!-- Main Grid Layout -->
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start h-[calc(100vh-320px)]">
         
-        <!-- Sidebar: Lista de Trámites -->
-        <div class="xl:col-span-4 glass-card rounded-[2.5rem] overflow-hidden flex flex-col max-h-[700px]">
-            <div class="p-6 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                <span class="text-xs font-black text-white uppercase tracking-widest">Entrada Reciente</span>
-                <i data-lucide="filter" class="w-4 h-4 text-slate-500 cursor-pointer"></i>
+        <!-- Sidebar: Submission Feed -->
+        <div class="xl:col-span-4 glass-card rounded-[2.5rem] overflow-hidden flex flex-col h-full border-white/5">
+            <div class="p-8 border-b border-white/5 bg-slate-900/20 flex items-center justify-between">
+                <h3 class="text-[10px] font-black text-white uppercase tracking-[0.3em]">Captured Feed</h3>
+                <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-500 hover:text-cyan-500 transition-all cursor-pointer">
+                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                </div>
             </div>
             <div class="overflow-y-auto custom-scrollbar flex-1">
                 {% if not submissions %}
-                <div class="p-12 text-center flex flex-col items-center">
-                    <i data-lucide="inbox" class="w-10 h-10 text-slate-800 mb-4"></i>
-                    <p class="text-slate-500 text-xs">No hay trámites aún.</p>
+                <div class="p-20 text-center flex flex-col items-center opacity-30">
+                    <i data-lucide="inbox" class="w-12 h-12 mb-4"></i>
+                    <p class="text-[10px] font-black uppercase tracking-widest">No data captured yet</p>
                 </div>
                 {% endif %}
                 {% for s in submissions %}
                 <div id="sub-{{ s.id }}" 
                      onclick="showSubmission({{ s.id }})"
-                     class="sub-row p-4 border-b border-white/5 cursor-pointer transition-all flex flex-col gap-1 group">
-                    <div class="flex justify-between items-start">
-                        <span class="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">ID #{{ s.id }}</span>
-                        <span class="text-[8px] text-slate-600 font-mono">{{ s.formatted_date.split(' ')[0] }}</span>
+                     class="sub-row p-6 border-b border-white/5 cursor-pointer transition-all flex flex-col gap-2 group hover:bg-white/[0.02]">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em]">Entry #{{ s.id }}</span>
+                        <span class="text-[8px] text-slate-700 font-black uppercase">{{ s.formatted_date.split(' ')[0] }}</span>
                     </div>
-                    <h4 class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors truncate">{{ s.user_name }}</h4>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center text-slate-500 group-hover:text-cyan-500 group-hover:border-cyan-500/30 transition-all">
+                            {{ s.user_name[:2]|upper }}
+                        </div>
+                        <h4 class="text-sm font-bold text-slate-300 group-hover:text-white transition-colors truncate">{{ s.user_name }}</h4>
+                    </div>
                     <div class="flex items-center justify-between mt-1">
-                        <p class="text-[9px] text-cyan-500/80 uppercase font-black tracking-widest truncate max-w-[120px]">{{ s.topic }}</p>
-                        <div class="flex items-center gap-1">
-                            {% if '@' in s.thread_id %}
-                                <i data-lucide="message-circle" class="w-2.5 h-2.5 text-emerald-500/50"></i>
-                            {% else %}
-                                <i data-lucide="send" class="w-2.5 h-2.5 text-sky-500/50"></i>
-                            {% endif %}
+                        <span class="px-2 py-0.5 bg-cyan-500/5 text-cyan-500/80 text-[8px] font-black uppercase tracking-[0.2em] rounded border border-cyan-500/10">{{ s.topic }}</span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 {{ 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' if '@' in s.thread_id else 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]' }} rounded-full"></span>
+                            <span class="text-[8px] text-slate-600 font-black uppercase tracking-widest">{{ 'WhatsApp' if '@' in s.thread_id else 'Telegram' }}</span>
                         </div>
                     </div>
                 </div>
@@ -80,92 +72,95 @@
             </div>
         </div>
 
-        <!-- Panel Detalle: Información del Trámite -->
-        <div class="xl:col-span-8 space-y-6">
-            <div id="emptyDetail" class="glass-card rounded-[3rem] p-24 flex flex-col items-center justify-center text-center">
-                <div class="w-20 h-20 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-500 mb-6 animate-bounce">
-                    <i data-lucide="mouse-pointer-click" class="w-8 h-8"></i>
+        <!-- Detail Panel -->
+        <div class="xl:col-span-8 flex flex-col h-full space-y-6">
+            <div id="emptyDetail" class="glass-card rounded-[3rem] flex-1 flex flex-col items-center justify-center text-center p-20 border-dashed border-white/10">
+                <div class="w-24 h-24 rounded-[2.5rem] bg-slate-900 border border-white/5 flex items-center justify-center text-cyan-500/30 mb-8">
+                    <i data-lucide="scan-eye" class="w-10 h-10 animate-pulse"></i>
                 </div>
-                <h3 class="text-xl font-bold text-white mb-2">Visualizador de Datos</h3>
-                <p class="text-slate-500 text-sm max-w-xs">Selecciona un trámite del listado para inspeccionar toda la información recolectada.</p>
+                <h3 class="text-lg font-black text-white uppercase tracking-widest mb-3 italic">Data Inspector</h3>
+                <p class="text-slate-600 text-[10px] font-bold uppercase tracking-[0.2em] max-w-xs leading-loose">Select a feed entry to decode captured metadata and binary assets.</p>
             </div>
 
-            <div id="submissionView" class="hidden animate-in fade-in slide-in-from-right-4 duration-500 space-y-6">
-                <!-- Header del Detalle -->
-                <div class="glass-card rounded-[2rem] p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-2xl bg-cyan-600 flex items-center justify-center text-white shadow-lg shadow-cyan-600/20">
-                            <i data-lucide="folder-open" class="w-6 h-6"></i>
+            <div id="submissionView" class="hidden animate-in fade-in zoom-in-95 duration-500 flex flex-col h-full">
+                <!-- Header -->
+                <div class="glass-card rounded-[2.5rem] p-8 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border-white/5 shadow-2xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+                        <i data-lucide="fingerprint" class="w-32 h-32 text-cyan-500"></i>
+                    </div>
+                    <div class="flex items-center gap-6">
+                        <div class="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-2xl shadow-cyan-500/20 border border-white/10">
+                            <i data-lucide="folder-key" class="w-8 h-8"></i>
                         </div>
                         <div>
-                            <h2 id="view_name" class="text-xl font-black text-white leading-tight">Cargando...</h2>
-                            <div class="flex items-center gap-2 mt-0.5">
-                                <span id="view_topic" class="text-[9px] text-cyan-500 font-black uppercase tracking-widest"></span>
-                                <span class="text-slate-800">•</span>
-                                <span id="view_date" class="text-[9px] text-slate-500 font-bold"></span>
+                            <h2 id="view_name" class="text-2xl font-black text-white tracking-tight uppercase">---</h2>
+                            <div class="flex items-center gap-3 mt-2">
+                                <span id="view_topic" class="text-[9px] font-black text-cyan-400 uppercase tracking-[0.2em]">---</span>
+                                <span class="w-1 h-1 bg-slate-800 rounded-full"></span>
+                                <span id="view_date" class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">---</span>
                             </div>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <a id="view_chat" href="#" class="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white transition-all" title="Ver Conversación">
-                            <i data-lucide="message-square" class="w-4 h-4"></i>
+                    <div class="flex items-center gap-3 relative z-10">
+                        <a id="view_chat" href="#" class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/5 flex items-center justify-center text-slate-400 hover:text-cyan-500 hover:border-cyan-500/30 transition-all">
+                            <i data-lucide="message-square-quote" class="w-5 h-5"></i>
                         </a>
-                        <button onclick="convertExpediente()" class="px-5 py-2.5 rounded-xl bg-cyan-600 text-white hover:bg-cyan-500 transition-all text-[10px] font-black uppercase tracking-wider">
-                            Iniciar Expediente
+                        <button onclick="convertExpediente()" class="px-8 py-4 rounded-2xl bg-white text-[#020617] hover:scale-[1.02] active:scale-95 transition-all text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-white/10">
+                            Export System
                         </button>
                     </div>
                 </div>
 
-                <!-- Grilla de Propiedades (Modern Tech Layout) -->
-                <div id="dataGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Se llena vía JS -->
-                </div>
-
-                <!-- Sección de Archivos -->
-                <div id="filesSection" class="hidden space-y-3">
-                    <h3 class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4 flex items-center gap-2">
-                        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i> Documentación Adjunta
-                    </h3>
-                    <div id="filesGrid" class="flex flex-wrap gap-4 px-4">
-                        <!-- Se llena vía JS -->
+                <!-- Inspector Grid -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-8">
+                    <div id="dataGrid" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <!-- JS Content -->
                     </div>
-                </div>
 
-                <!-- Footer de Acción -->
-                <div class="flex justify-end p-4">
-                    <a id="view_delete" href="#" class="flex items-center gap-2 text-rose-500/50 hover:text-rose-500 transition-colors text-[10px] font-bold uppercase tracking-widest" onclick="return confirm('¿Eliminar registro?')">
-                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Eliminar Registro Permanentemente
-                    </a>
+                    <!-- Media Vault Section -->
+                    <div id="filesSection" class="hidden space-y-6">
+                        <h3 class="text-[10px] font-black text-white uppercase tracking-[0.3em] flex items-center gap-3 ml-2">
+                            <i data-lucide="hard-drive" class="w-4 h-4 text-emerald-500"></i> Evidence & Binary Assets
+                        </h3>
+                        <div id="filesGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <!-- JS Content -->
+                        </div>
+                    </div>
+
+                    <!-- Termination -->
+                    <div class="pt-10 border-t border-white/5 flex justify-center">
+                        <a id="view_delete" href="#" class="group flex items-center gap-3 text-slate-700 hover:text-rose-500 transition-all text-[9px] font-black uppercase tracking-[0.3em]" onclick="return confirm('Purge record?')">
+                            <i data-lucide="trash-2" class="w-4 h-4 group-hover:scale-110 transition-transform"></i> Purge Entry from Ledger
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal Visualizador -->
-<div id="fileModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-[500] hidden flex flex-col p-8">
-    <div class="flex justify-between items-center mb-8">
-        <div class="flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white border border-white/10">
-                <i data-lucide="file-text" class="w-6 h-6"></i>
+<!-- Asset Viewer Modal -->
+<div id="fileModal" class="fixed inset-0 bg-slate-950/98 backdrop-blur-3xl z-[1000] hidden flex flex-col p-10 animate-in fade-in duration-300">
+    <div class="flex justify-between items-center mb-10">
+        <div class="flex items-center gap-6">
+            <div class="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center text-cyan-500 border border-white/10">
+                <i data-lucide="file-search" class="w-7 h-7"></i>
             </div>
             <div>
-                <h3 id="modalFileName" class="text-white text-lg font-bold">Archivo</h3>
-                <p class="text-[10px] text-slate-500 uppercase font-black tracking-widest">Vista Previa de Seguridad</p>
+                <h3 id="modalFileName" class="text-white text-xl font-black uppercase tracking-tight italic">Asset Decode</h3>
+                <p class="text-[9px] text-slate-500 uppercase font-black tracking-[0.3em] mt-1">Encrypted Preview Session</p>
             </div>
         </div>
-        <button onclick="closeFileModal()" class="w-14 h-14 rounded-full bg-rose-500/10 text-rose-500 hover:bg-rose-500 transition-all flex items-center justify-center">
+        <button onclick="closeFileModal()" class="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center shadow-2xl shadow-rose-500/20">
             <i data-lucide="x" class="w-8 h-8"></i>
         </button>
     </div>
-    <div class="flex-1 bg-white rounded-[3rem] overflow-hidden shadow-2xl">
-        <iframe id="filePreview" src="" class="w-full h-full border-none"></iframe>
+    <div class="flex-1 bg-slate-900 rounded-[3.5rem] overflow-hidden border border-white/5 shadow-inner">
+        <iframe id="filePreview" src="" class="w-full h-full border-none opacity-90 hover:opacity-100 transition-opacity"></iframe>
     </div>
 </div>
 
-<script id="submissions-data" type="application/json">
-    {{ submissions|tojson|safe }}
-</script>
+<script id="submissions-data" type="application/json">{{ submissions|tojson|safe }}</script>
 
 <script>
     const submissions = JSON.parse(document.getElementById('submissions-data').textContent);
@@ -174,104 +169,42 @@
     function showSubmission(id) {
         const sub = submissions.find(s => s.id == id);
         if (!sub) return;
-        
         activeSub = sub;
         
-        // UI Highlight
-        document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('active'));
-        document.getElementById(`sub-${sub.id}`).classList.add('active');
+        document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('bg-cyan-500/10', 'border-l-4', 'border-cyan-500'));
+        const row = document.getElementById(`sub-${sub.id}`);
+        row.classList.add('bg-cyan-500/10', 'border-l-4', 'border-cyan-500');
         
-        // Switch Views
         document.getElementById('emptyDetail').classList.add('hidden');
         document.getElementById('submissionView').classList.remove('hidden');
         
-        // Header
         document.getElementById('view_name').innerText = sub.user_name;
         document.getElementById('view_topic').innerText = sub.topic;
         document.getElementById('view_date').innerText = sub.formatted_date;
         document.getElementById('view_chat').href = `/admin/chat/${sub.thread_id}`;
         document.getElementById('view_delete').href = `/admin/submissions/delete/${sub.id}`;
         
-        // Data Grid con Agrupación Inteligente
         const grid = document.getElementById('dataGrid');
         grid.innerHTML = '';
         
         const data = sub.parsed_data;
-        const groups = {};
-        const individualFields = [];
-        
-        // Identificar grupos (Padre, Madre, Menor, etc.)
-        const entities = ["Padre", "Madre", "Menor", "Solicitante", "Conyuge"];
-        
         Object.entries(data).forEach(([key, value]) => {
             if (key === "Nombre del Cliente") return;
-            
-            // Protección contra archivos técnicos
             if (typeof value === 'string' && (value.startsWith('tg_') || /\.(pdf|jpg|jpeg|png|doc|docx)$/i.test(value))) return;
 
-            let matchedEntity = entities.find(e => key.toLowerCase().includes(e.toLowerCase()));
-            
-            if (matchedEntity) {
-                if (!groups[matchedEntity]) groups[matchedEntity] = [];
-                groups[matchedEntity].push({key, value});
-            } else {
-                individualFields.push({key, value});
-            }
-        });
-
-        // 1. Renderizar Grupos Unificados
-        Object.entries(groups).forEach(([entity, fields]) => {
-            const groupCard = document.createElement('div');
-            groupCard.className = 'property-card p-5 flex flex-col gap-3 border-l-4 border-cyan-500/50';
-            
-            let content = `<div class="flex items-center gap-2 mb-1">
-                                <div class="w-2 h-2 rounded-full bg-cyan-500"></div>
-                                <span class="text-[10px] font-black text-white uppercase tracking-widest">${entity}</span>
-                           </div>`;
-            
-            fields.forEach(f => {
-                const label = f.key.replace(new RegExp(entity, 'gi'), '').replace(/del|de la|de/gi, '').trim();
-                content += `
-                    <div class="flex flex-col">
-                        <span class="text-[7px] text-slate-500 uppercase font-bold">${label || 'Datos'}</span>
-                        <span class="text-sm text-slate-200 font-bold">${f.value}</span>
-                    </div>
-                `;
-            });
-            groupCard.innerHTML = content;
-            grid.appendChild(groupCard);
-        });
-
-        // 2. Renderizar Campos Individuales (con destaque para Estado Civil)
-        individualFields.forEach(f => {
             const card = document.createElement('div');
-            const isMarital = f.key.toLowerCase().includes('estado civil');
+            card.className = 'bento-item glass-card p-6 flex flex-col gap-3 group border-white/5 hover:border-cyan-500/30 transition-all';
             
-            card.className = `property-card p-4 flex flex-col gap-1.5 ${isMarital ? 'bg-cyan-600/20 border-cyan-500/30 ring-1 ring-cyan-500/20' : ''}`;
-            
-            let cleanValue = f.value;
-            if (isMarital) {
-                cleanValue = `<span class="text-cyan-500 font-black uppercase tracking-tighter text-lg">${f.value}</span>`;
-            } else if (typeof f.value === 'string' && (f.value.includes(',') || f.value.toLowerCase().includes(' y '))) {
-                const items = f.value.split(/, | y /i);
-                cleanValue = `<div class="flex flex-wrap gap-1.5 mt-1">` + 
-                            items.map(i => `<span class="px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-500 text-[10px] font-bold border border-cyan-500/20">${i.trim()}</span>`).join('') + 
-                            `</div>`;
-            } else {
-                cleanValue = `<span class="text-sm text-slate-200 font-bold break-words leading-tight">${f.value}</span>`;
-            }
-
             card.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <span class="text-[8px] font-black ${isMarital ? 'text-cyan-500' : 'text-slate-500'} uppercase tracking-widest">${f.key}</span>
-                    <i data-lucide="${isMarital ? 'heart' : 'shield-check'}" class="w-2.5 h-2.5 ${isMarital ? 'text-cyan-500' : 'text-slate-800'}"></i>
+                <div class="flex justify-between items-center">
+                    <span class="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] group-hover:text-cyan-500 transition-colors">${key}</span>
+                    <i data-lucide="cpu" class="w-3 h-3 text-slate-800"></i>
                 </div>
-                ${cleanValue}
+                <p class="text-[13px] font-bold text-slate-200 leading-tight">${value}</p>
             `;
             grid.appendChild(card);
         });
         
-        // Files
         const fileSec = document.getElementById('filesSection');
         const fileGrid = document.getElementById('filesGrid');
         fileGrid.innerHTML = '';
@@ -281,51 +214,35 @@
             sub.attachments.forEach(file => {
                 const fCard = document.createElement('button');
                 fCard.onclick = () => openFileModal(file.file_path, file.file_name);
-                fCard.className = "flex flex-col items-center gap-2 p-3 property-card hover:bg-white/5 text-center group min-w-[100px]";
+                fCard.className = "bento-item glass-card p-4 flex flex-col items-center gap-3 hover:bg-white/5 transition-all group border-white/5";
                 
-                // Determinar icono según tipo de archivo
                 let icon = 'file-text';
-                let colorClass = 'text-slate-400';
+                let colorClass = 'text-cyan-500';
                 const type = (file.file_type || '').toLowerCase();
-                
-                if (type.includes('image')) { icon = 'image'; colorClass = 'text-emerald-400'; }
-                else if (type.includes('pdf')) { icon = 'file-digit'; colorClass = 'text-rose-400'; }
-                else if (type.includes('video')) { icon = 'video'; colorClass = 'text-sky-400'; }
-                
-                let displayContext = file.context || 'Adjunto';
-                if (displayContext.startsWith('Posible: ')) displayContext = displayContext.replace('Posible: ', '');
-                if (displayContext.includes(' (Adjunto)')) displayContext = displayContext.replace(' (Adjunto)', '');
+                if (type.includes('image')) { icon = 'image'; colorClass = 'text-emerald-500'; }
+                else if (type.includes('pdf')) { icon = 'file-digit'; colorClass = 'text-rose-500'; }
                 
                 fCard.innerHTML = `
-                    <div class="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center ${colorClass} group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-inner">
+                    <div class="w-12 h-12 rounded-2xl bg-slate-950 border border-white/5 flex items-center justify-center ${colorClass} group-hover:scale-110 transition-transform">
                         <i data-lucide="${icon}" class="w-6 h-6"></i>
                     </div>
-                    <span class="text-[9px] text-slate-400 uppercase tracking-wider font-black group-hover:text-white transition-colors truncate max-w-[90px]">${displayContext}</span>
+                    <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate w-full px-2">${file.context || 'Asset'}</span>
                 `;
                 fileGrid.appendChild(fCard);
             });
         } else {
             fileSec.classList.add('hidden');
         }
-        
         lucide.createIcons();
     }
 
-    function convertExpediente() {
-        if (!activeSub) return;
-        alert('Redirigiendo a sistema de expedientes...');
-    }
-
     function openFileModal(path, name) {
-        const modal = document.getElementById('fileModal');
-        const iframe = document.getElementById('filePreview');
         document.getElementById('modalFileName').innerText = name;
-        iframe.src = path;
-        modal.classList.remove('hidden');
+        document.getElementById('filePreview').src = path;
+        document.getElementById('fileModal').classList.remove('hidden');
     }
 
-    function closeFileModal() {
-        document.getElementById('fileModal').classList.add('hidden');
-    }
+    function closeFileModal() { document.getElementById('fileModal').classList.add('hidden'); }
+    function convertExpediente() { alert('Exporting to Mainframe...'); }
 </script>
 {% endblock %}
