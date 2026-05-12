@@ -279,10 +279,13 @@ async def green_api_webhook(request: Request, background_tasks: BackgroundTasks)
             
         user_id = data.get("senderData", {}).get("chatId", "")
         
+        logging.info(f"[DEBUG-WA] Webhook Recibido | Tipo: {type_webhook} | De: {user_id} | Msg: {type_msg}")
+
         if not user_text or not user_id:
+            logging.warning(f"[DEBUG-WA] Datos incompletos. ID: {user_id}, Texto: {user_text}")
             return JSONResponse({"status": "incomplete_data"})
 
-        logging.info(f"[GREEN-API] Mensaje de {user_id}: {user_text}")
+        logging.info(f"[GREEN-API] Mensaje procesable de {user_id}: {user_text}")
         
         background_tasks.add_task(process_bot_response, user_id, user_text, "whatsapp")
         return JSONResponse({"status": "ok"})
@@ -338,9 +341,11 @@ async def process_bot_response(user_id: str, user_text: str, platform: str, atta
                         break
             
             if not is_whitelisted:
-                logging.warning(f"[TEST MODE] Ignorando mensaje de {user_id} ({platform}). No está en whitelist.")
+                logging.warning(f"[TEST MODE] BLOQUEADO: {user_id} ({platform}). No coincide con ninguno de: {whitelist}")
                 conn_t.close()
                 return
+            else:
+                logging.info(f"[TEST MODE] PERMITIDO: {user_id} coincide con la whitelist.")
         conn_t.close()
     except Exception as e:
         logging.error(f"[TEST MODE] Error verificando whitelist: {e}")
