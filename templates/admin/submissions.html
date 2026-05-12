@@ -7,9 +7,9 @@
 {% block extra_head %}
 <style>
     .sub-row:hover { background: rgba(255,255,255,0.03); }
-    .sub-row.active { background: rgba(99, 102, 241, 0.08); border-left: 4px solid #6366f1; }
+    .sub-row.active { background: rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b; }
     .property-card { background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.03); border-radius: 1.25rem; transition: all 0.2s; }
-    .property-card:hover { border-color: rgba(99, 102, 241, 0.25); background: rgba(15, 23, 42, 0.6); }
+    .property-card:hover { border-color: rgba(245, 158, 11, 0.25); background: rgba(15, 23, 42, 0.6); }
     .file-icon-card { width: 4.5rem; height: 4.5rem; border-radius: 1rem; display: flex; flex-direction: column; items-center: center; justify-content: center; gap: 0.5rem; transition: all 0.2s; }
     .file-icon-card:hover { transform: scale(1.05); }
 </style>
@@ -29,8 +29,8 @@
                 <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total Recibidos</span>
                 <span class="text-2xl font-black text-white">{{ submissions|length }}</span>
             </div>
-            <div class="px-6 py-4 glass-card rounded-3xl border-l-4 border-indigo-500 flex flex-col min-w-[150px]">
-                <span class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Nuevos Hoy</span>
+            <div class="px-6 py-4 glass-card rounded-3xl border-l-4 border-amber-500 flex flex-col min-w-[150px]">
+                <span class="text-[9px] font-black text-amber-500 uppercase tracking-widest">Nuevos Hoy</span>
                 <span class="text-2xl font-black text-white">
                     {% set count = 0 %}
                     {% for s in submissions if '2026-05-11' in s.created_at or '2026-05-10' in s.created_at %}{% set count = count + 1 %}{% endfor %}
@@ -66,7 +66,7 @@
                     </div>
                     <h4 class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors truncate">{{ s.user_name }}</h4>
                     <div class="flex items-center justify-between mt-1">
-                        <p class="text-[9px] text-indigo-400/80 uppercase font-black tracking-widest truncate max-w-[120px]">{{ s.topic }}</p>
+                        <p class="text-[9px] text-amber-500/80 uppercase font-black tracking-widest truncate max-w-[120px]">{{ s.topic }}</p>
                         <div class="flex items-center gap-1">
                             {% if '@' in s.thread_id %}
                                 <i data-lucide="message-circle" class="w-2.5 h-2.5 text-emerald-500/50"></i>
@@ -83,7 +83,7 @@
         <!-- Panel Detalle: Información del Trámite -->
         <div class="xl:col-span-8 space-y-6">
             <div id="emptyDetail" class="glass-card rounded-[3rem] p-24 flex flex-col items-center justify-center text-center">
-                <div class="w-20 h-20 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-6 animate-bounce">
+                <div class="w-20 h-20 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 mb-6 animate-bounce">
                     <i data-lucide="mouse-pointer-click" class="w-8 h-8"></i>
                 </div>
                 <h3 class="text-xl font-bold text-white mb-2">Visualizador de Datos</h3>
@@ -94,13 +94,13 @@
                 <!-- Header del Detalle -->
                 <div class="glass-card rounded-[2rem] p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20">
+                        <div class="w-12 h-12 rounded-2xl bg-amber-600 flex items-center justify-center text-white shadow-lg shadow-amber-600/20">
                             <i data-lucide="folder-open" class="w-6 h-6"></i>
                         </div>
                         <div>
                             <h2 id="view_name" class="text-xl font-black text-white leading-tight">Cargando...</h2>
                             <div class="flex items-center gap-2 mt-0.5">
-                                <span id="view_topic" class="text-[9px] text-indigo-400 font-black uppercase tracking-widest"></span>
+                                <span id="view_topic" class="text-[9px] text-amber-500 font-black uppercase tracking-widest"></span>
                                 <span class="text-slate-800">•</span>
                                 <span id="view_date" class="text-[9px] text-slate-500 font-bold"></span>
                             </div>
@@ -110,7 +110,7 @@
                         <a id="view_chat" href="#" class="p-2.5 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white transition-all" title="Ver Conversación">
                             <i data-lucide="message-square" class="w-4 h-4"></i>
                         </a>
-                        <button onclick="convertExpediente()" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-all text-[10px] font-black uppercase tracking-wider">
+                        <button onclick="convertExpediente()" class="px-5 py-2.5 rounded-xl bg-amber-600 text-white hover:bg-amber-500 transition-all text-[10px] font-black uppercase tracking-wider">
                             Iniciar Expediente
                         </button>
                     </div>
@@ -222,10 +222,10 @@
         // 1. Renderizar Grupos Unificados
         Object.entries(groups).forEach(([entity, fields]) => {
             const groupCard = document.createElement('div');
-            groupCard.className = 'property-card p-5 flex flex-col gap-3 border-l-4 border-indigo-500/50';
+            groupCard.className = 'property-card p-5 flex flex-col gap-3 border-l-4 border-amber-500/50';
             
             let content = `<div class="flex items-center gap-2 mb-1">
-                                <div class="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                <div class="w-2 h-2 rounded-full bg-amber-500"></div>
                                 <span class="text-[10px] font-black text-white uppercase tracking-widest">${entity}</span>
                            </div>`;
             
@@ -247,15 +247,15 @@
             const card = document.createElement('div');
             const isMarital = f.key.toLowerCase().includes('estado civil');
             
-            card.className = `property-card p-4 flex flex-col gap-1.5 ${isMarital ? 'bg-indigo-600/20 border-indigo-500/30 ring-1 ring-indigo-500/20' : ''}`;
+            card.className = `property-card p-4 flex flex-col gap-1.5 ${isMarital ? 'bg-amber-600/20 border-amber-500/30 ring-1 ring-amber-500/20' : ''}`;
             
             let cleanValue = f.value;
             if (isMarital) {
-                cleanValue = `<span class="text-indigo-300 font-black uppercase tracking-tighter text-lg">${f.value}</span>`;
+                cleanValue = `<span class="text-amber-500 font-black uppercase tracking-tighter text-lg">${f.value}</span>`;
             } else if (typeof f.value === 'string' && (f.value.includes(',') || f.value.toLowerCase().includes(' y '))) {
                 const items = f.value.split(/, | y /i);
                 cleanValue = `<div class="flex flex-wrap gap-1.5 mt-1">` + 
-                            items.map(i => `<span class="px-2 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 text-[10px] font-bold border border-indigo-500/20">${i.trim()}</span>`).join('') + 
+                            items.map(i => `<span class="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-500 text-[10px] font-bold border border-amber-500/20">${i.trim()}</span>`).join('') + 
                             `</div>`;
             } else {
                 cleanValue = `<span class="text-sm text-slate-200 font-bold break-words leading-tight">${f.value}</span>`;
@@ -263,8 +263,8 @@
 
             card.innerHTML = `
                 <div class="flex items-center justify-between">
-                    <span class="text-[8px] font-black ${isMarital ? 'text-indigo-400' : 'text-slate-500'} uppercase tracking-widest">${f.key}</span>
-                    <i data-lucide="${isMarital ? 'heart' : 'shield-check'}" class="w-2.5 h-2.5 ${isMarital ? 'text-indigo-400' : 'text-slate-800'}"></i>
+                    <span class="text-[8px] font-black ${isMarital ? 'text-amber-500' : 'text-slate-500'} uppercase tracking-widest">${f.key}</span>
+                    <i data-lucide="${isMarital ? 'heart' : 'shield-check'}" class="w-2.5 h-2.5 ${isMarital ? 'text-amber-500' : 'text-slate-800'}"></i>
                 </div>
                 ${cleanValue}
             `;
@@ -297,7 +297,7 @@
                 if (displayContext.includes(' (Adjunto)')) displayContext = displayContext.replace(' (Adjunto)', '');
                 
                 fCard.innerHTML = `
-                    <div class="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center ${colorClass} group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                    <div class="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center ${colorClass} group-hover:bg-amber-600 group-hover:text-white transition-all shadow-inner">
                         <i data-lucide="${icon}" class="w-6 h-6"></i>
                     </div>
                     <span class="text-[9px] text-slate-400 uppercase tracking-wider font-black group-hover:text-white transition-colors truncate max-w-[90px]">${displayContext}</span>

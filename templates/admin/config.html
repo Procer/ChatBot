@@ -45,7 +45,7 @@
             <span class="text-[9px] font-black text-amber-500 uppercase tracking-widest">Pendiente</span>
         </div>
     </div>
-    <button type="submit" form="masterConfigForm" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-xl shadow-indigo-600/20 group">
+    <button type="submit" form="masterConfigForm" class="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-xl shadow-amber-600/20 group">
         <i data-lucide="save" class="w-3.5 h-3.5 group-hover:scale-110 transition-transform"></i>
         <span>Guardar Cambios</span>
     </button>
@@ -59,13 +59,13 @@
         <aside class="lg:col-span-1 {% if active_tab in ['cerebro', 'empresa', 'turnos_config'] %}hidden{% endif %}">
             <div class="glass-card rounded-[2.5rem] p-4 sticky top-8 space-y-2 border-white/5">
                 <button onclick="switchTab('asistente')" id="btn-asistente" class="config-tab-btn active w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 group relative overflow-hidden">
-                    <div class="absolute inset-0 bg-indigo-600/0 group-[.active]:bg-indigo-600 transition-all duration-300"></div>
-                    <div class="relative z-10 w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-[.active]:bg-white/20 group-[.active]:text-white transition-all">
+                    <div class="absolute inset-0 bg-amber-600/0 group-[.active]:bg-amber-600 transition-all duration-300"></div>
+                    <div class="relative z-10 w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 group-[.active]:bg-white/20 group-[.active]:text-white transition-all">
                         <i data-lucide="bot" class="w-5 h-5"></i>
                     </div>
                     <div class="relative z-10 text-left">
                         <span class="block text-sm font-bold text-slate-400 group-[.active]:text-white transition-colors">Identidad</span>
-                        <span class="block text-[10px] text-slate-600 group-[.active]:text-indigo-200 uppercase tracking-widest font-black transition-colors">Personalidad IA</span>
+                        <span class="block text-[10px] text-slate-600 group-[.active]:text-amber-200 uppercase tracking-widest font-black transition-colors">Personalidad IA</span>
                     </div>
                 </button>
 
@@ -126,7 +126,7 @@
                         </div>
 
                         <div class="flex items-center gap-6 relative z-10">
-                            <div class="w-16 h-16 rounded-3xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40">
+                            <div class="w-16 h-16 rounded-3xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-2xl shadow-amber-500/40">
                                 <i data-lucide="bot" class="w-8 h-8"></i>
                             </div>
                             <div>
@@ -138,12 +138,12 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
                             <div class="space-y-3">
                                 <label class="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Nombre Público</label>
-                                <input type="text" name="bot_name" value="{{ config.bot_name }}" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-white font-semibold focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none" placeholder="Ej: Zárate IA">
+                                <input type="text" name="bot_name" value="{{ config.bot_name }}" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-white font-semibold focus:ring-4 focus:ring-amber-500/10 transition-all outline-none" placeholder="Ej: Zárate IA">
                             </div>
                             <div class="space-y-3">
                                 <label class="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Personalidad & Tono</label>
                                 <div class="relative">
-                                    <select name="bot_tone" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-white font-semibold outline-none appearance-none cursor-pointer focus:ring-4 focus:ring-indigo-500/10 transition-all">
+                                    <select name="bot_tone" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-white font-semibold outline-none appearance-none cursor-pointer focus:ring-4 focus:ring-amber-500/10 transition-all">
                                         <option value="argentino" {% if config.bot_tone == 'argentino' %}selected{% endif %}>Argentino (Voseo, Cálido)</option>
                                         <option value="neutro" {% if config.bot_tone == 'neutro' %}selected{% endif %}>Neutro (Profesional, Estándar)</option>
                                         <option value="formal" {% if config.bot_tone == 'formal' %}selected{% endif %}>Formal (Corporativo)</option>
@@ -157,12 +157,12 @@
                             <div class="flex justify-between items-center px-1">
                                 <label class="text-xs font-black uppercase tracking-widest text-slate-400">Instrucciones de Comportamiento (Prompt)</label>
                                 <div class="flex items-center gap-4">
-                                    <button type="button" onclick="showHelp('ia')" class="text-[10px] text-indigo-400 font-black uppercase tracking-widest hover:text-indigo-300 transition-colors flex items-center gap-2">
+                                    <button type="button" onclick="showHelp('ia')" class="text-[10px] text-amber-500 font-black uppercase tracking-widest hover:text-amber-400 transition-colors flex items-center gap-2">
                                         <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> IA Tips
                                     </button>
                                 </div>
                             </div>
-                            <textarea name="system_prompt" rows="14" class="w-full bg-slate-950/50 border border-white/10 rounded-[2.5rem] p-8 text-sm text-slate-300 leading-relaxed font-mono focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all custom-scrollbar">{{ config.system_prompt }}</textarea>
+                            <textarea name="system_prompt" rows="14" class="w-full bg-slate-950/50 border border-white/10 rounded-[2.5rem] p-8 text-sm text-slate-300 leading-relaxed font-mono focus:ring-4 focus:ring-amber-500/10 outline-none transition-all custom-scrollbar">{{ config.system_prompt }}</textarea>
                             <p class="text-[10px] text-slate-600 font-medium px-4">Utiliza variables dinámicas para personalizar las respuestas según el contexto del usuario.</p>
                         </div>
 
@@ -206,7 +206,7 @@
                     <div class="glass-card rounded-[3rem] p-10 space-y-8 border-white/5 relative overflow-hidden">
                         <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
                             <div class="flex items-center gap-6">
-                                <div class="w-16 h-16 rounded-3xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-white shadow-2xl shadow-purple-500/40">
+                                <div class="w-16 h-16 rounded-3xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white shadow-2xl shadow-amber-500/40">
                                     <i data-lucide="brain" class="w-8 h-8"></i>
                                 </div>
                                 <div>
@@ -216,10 +216,10 @@
                             </div>
                             <div class="flex items-center gap-4">
                                 <div class="relative group">
-                                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-purple-400 transition-colors"></i>
-                                    <input type="text" id="knowledgeSearch" placeholder="Buscar concepto..." class="bg-slate-950/50 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-xs text-white outline-none focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500/30 transition-all w-64">
+                                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-amber-500 transition-colors"></i>
+                                    <input type="text" id="knowledgeSearch" placeholder="Buscar concepto..." class="bg-slate-950/50 border border-white/10 rounded-2xl py-3.5 pl-11 pr-4 text-xs text-white outline-none focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500/30 transition-all w-64">
                                 </div>
-                                <button type="button" onclick="openModal('knowledgeModal')" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-4 rounded-2xl font-bold text-sm flex items-center gap-3 transition-all shadow-xl shadow-purple-600/30 group">
+                                <button type="button" onclick="openModal('knowledgeModal')" class="bg-amber-600 hover:bg-amber-500 text-white px-6 py-4 rounded-2xl font-bold text-sm flex items-center gap-3 transition-all shadow-xl shadow-amber-600/30 group">
                                     <i data-lucide="plus" class="w-5 h-5 group-hover:rotate-90 transition-transform duration-300"></i>
                                     <span>Nuevo Concepto</span>
                                 </button>
@@ -229,9 +229,9 @@
                         <!-- Listado de Conocimiento -->
                         <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar relative z-10" id="knowledgeList">
                             {% for item in knowledge_items %}
-                            <div class="knowledge-item flex items-center justify-between p-5 bg-slate-950/30 border border-white/5 rounded-[2rem] hover:border-purple-500/40 transition-all group/item" data-topic="{{ item.topic | lower }}" data-category="{{ item.category | lower }}">
+                            <div class="knowledge-item flex items-center justify-between p-5 bg-slate-950/30 border border-white/5 rounded-[2rem] hover:border-amber-500/40 transition-all group/item" data-topic="{{ item.topic | lower }}" data-category="{{ item.category | lower }}">
                                 <div class="flex items-center gap-5 overflow-hidden">
-                                    <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/5 flex items-center justify-center text-purple-400 group-hover/item:bg-purple-600 group-hover/item:text-white transition-all shrink-0">
+                                    <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/5 flex items-center justify-center text-amber-500 group-hover/item:bg-amber-600 group-hover/item:text-white transition-all shrink-0">
                                         <i data-lucide="file-text" class="w-5 h-5"></i>
                                     </div>
                                     <div class="truncate">
@@ -241,7 +241,7 @@
                                             <span class="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 text-[8px] font-black uppercase tracking-widest border border-amber-500/20">Formulario</span>
                                             {% endif %}
                                         </div>
-                                        <span class="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] group-hover/item:text-purple-300 transition-colors">{{ item.category }}</span>
+                                        <span class="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] group-hover/item:text-amber-500 transition-colors">{{ item.category }}</span>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2 opacity-0 group-hover/item:opacity-100 transition-all duration-300 translate-x-2 group-hover/item:translate-x-0">
@@ -334,7 +334,7 @@
                                         <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 ml-1">
                                             <i data-lucide="globe" class="w-3.5 h-3.5 text-emerald-500"></i> Sitio Web Oficial
                                         </label>
-                                        <input type="text" name="company_website" value="{{ config.company_website }}" placeholder="https://www.minegocio.com" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-indigo-400 font-mono outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all">
+                                        <input type="text" name="company_website" value="{{ config.company_website }}" placeholder="https://www.minegocio.com" class="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-5 text-amber-500 font-mono outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all">
                                     </div>
                                 </div>
 
@@ -548,7 +548,7 @@
                                 <div id="whatsappActions" class="space-y-4">
                                     <button type="button" onclick="openQRModal()" id="btnConnect" class="hidden w-full py-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-3xl font-black text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-xl shadow-emerald-600/20">Vincular Dispositivo</button>
                                     <div id="syncActions" class="grid grid-cols-5 gap-3">
-                                        <button type="button" onclick="syncWebhooks()" id="btnSync" class="col-span-4 py-5 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-3xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-3">
+                                        <button type="button" onclick="syncWebhooks()" id="btnSync" class="col-span-4 py-5 bg-amber-600/10 text-amber-500 border border-amber-500/20 rounded-3xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 hover:text-white transition-all flex items-center justify-center gap-3">
                                             <i data-lucide="zap" class="w-4 h-4"></i> Sincronizar Webhooks
                                         </button>
                                         <button type="button" onclick="logoutWhatsApp()" id="btnLogout" class="col-span-1 flex items-center justify-center bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-3xl hover:bg-rose-500 hover:text-white transition-all"><i data-lucide="log-out" class="w-5 h-5"></i></button>
@@ -620,14 +620,14 @@
                             <div class="space-y-8">
                                 <div class="space-y-2">
                                     <h5 class="text-white font-bold flex items-center gap-3">
-                                        <i data-lucide="globe" class="w-4 h-4 text-indigo-400"></i> Endpoint de Recepción
+                                        <i data-lucide="globe" class="w-4 h-4 text-amber-500"></i> Endpoint de Recepción
                                     </h5>
                                     <p class="text-xs text-slate-500 leading-relaxed">URL pública donde los canales enviarán los mensajes entrantes. Debe ser HTTPS y accesible desde internet.</p>
                                 </div>
                                 <div class="space-y-3">
                                     <label class="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Webhook Base URL</label>
                                     <div class="relative">
-                                        <input type="text" name="webhook_base_url" value="{{ config.webhook_base_url }}" placeholder="https://tu-dominio.com" class="w-full bg-slate-950 border border-white/10 rounded-2xl p-5 text-sm text-indigo-300 font-mono focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none">
+                                        <input type="text" name="webhook_base_url" value="{{ config.webhook_base_url }}" placeholder="https://tu-dominio.com" class="w-full bg-slate-950 border border-white/10 rounded-2xl p-5 text-sm text-amber-500 font-mono focus:ring-4 focus:ring-amber-500/10 transition-all outline-none">
                                         <i data-lucide="link" class="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-700"></i>
                                     </div>
                                 </div>
@@ -664,7 +664,7 @@
                                                 {% endif %}
                                             </div>
                                         </div>
-                                        <p class="text-[9px] text-slate-600 font-medium italic">Para cambiarla, edita el archivo <code class="text-indigo-400">.env</code> en el servidor.</p>
+                                        <p class="text-[9px] text-slate-600 font-medium italic">Para cambiarla, edita el archivo <code class="text-amber-500">.env</code> en el servidor.</p>
                                     </div>
 
                                     <div class="bg-slate-950/50 p-6 rounded-[2rem] border border-white/5 space-y-4 opacity-50">
@@ -757,7 +757,7 @@
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" name="has_form" id="k_has_form" value="1" class="sr-only peer" onchange="toggleFormFields(this.checked)">
-                        <div class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                        <div class="w-11 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                     </label>
                 </div>
                 <div id="formFieldsContainer" class="hidden space-y-2 animate-in fade-in slide-in-from-top-2">
@@ -776,7 +776,7 @@
                     </label>
                 </div>
             </div>
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white p-4 rounded-2xl font-bold transition-all text-sm">Guardar Información</button>
+            <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-white p-4 rounded-2xl font-bold transition-all text-sm">Guardar Información</button>
         </form>
     </div>
 </div>
@@ -919,7 +919,7 @@
         
         placeholder.classList.remove('hidden');
         qrImg.classList.add('hidden');
-        placeholder.innerHTML = '<i data-lucide="loader-2" class="w-10 h-10 animate-spin text-indigo-500 mb-4"></i><span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Generando Código...</span>';
+        placeholder.innerHTML = '<i data-lucide="loader-2" class="w-10 h-10 animate-spin text-amber-500 mb-4"></i><span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Generando Código...</span>';
         lucide.createIcons();
 
         try {

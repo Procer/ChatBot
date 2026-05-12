@@ -284,23 +284,6 @@ async def green_api_webhook(request: Request, background_tasks: BackgroundTasks)
 
         logging.info(f"[GREEN-API] Mensaje de {user_id}: {user_text}")
         
-        # --- FILTRO MODO PRUEBAS ---
-        conn = get_db_settings(); cursor = conn.cursor()
-        cursor.execute("SELECT value FROM config WHERE key = 'test_mode_enabled'")
-        test_mode = cursor.fetchone()[0] == '1'
-        
-        if test_mode:
-            cursor.execute("SELECT value FROM config WHERE key = 'test_numbers'")
-            whitelist_raw = cursor.fetchone()[0]
-            whitelist = [n.strip() for n in whitelist_raw.split(",") if n.strip()]
-            clean_id = user_id.split("@")[0]
-            
-            if clean_id not in whitelist and user_id not in whitelist:
-                logging.warning(f"[TEST MODE] Ignorando mensaje de {user_id}")
-                conn.close()
-                return JSONResponse({"status": "test_mode_ignored"})
-        conn.close()
-
         background_tasks.add_task(process_bot_response, user_id, user_text, "whatsapp")
         return JSONResponse({"status": "ok"})
     except Exception as e:
@@ -327,6 +310,41 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
 async def process_bot_response(user_id: str, user_text: str, platform: str, attachment_data: dict = None):
     print(f"\n[LOCAL-PROCESS] Iniciando respuesta para {user_id} en {platform}...")
+    
+    # --- FILTRO MODO PRUEBAS ---
+    try:
+        conn_t = sqlite3.connect(os.path.join(ROOT_DIR, "settings.sqlite"))
+        cursor_t = conn_t.cursor()
+        cursor_t.execute("SELECT value FROM config WHERE key = 'test_mode_enabled'")
+        row_test = cursor_t.fetchone()
+        test_mode = row_test[0] == '1' if row_test else False
+        
+        if test_mode:
+            cursor_t.execute("SELECT value FROM config WHERE key = 'test_numbers'")
+            row_numbers = cursor_t.fetchone()
+            whitelist_raw = row_numbers[0] if row_numbers else ""
+            whitelist = [n.strip() for n in whitelist_raw.split(",") if n.strip()]
+            
+            # Limpiar ID (quitar @c.us, etc)
+            clean_id = "".join(filter(str.isdigit, str(user_id).split("@")[0]))
+            
+            is_whitelisted = False
+            for n in whitelist:
+                n_clean = "".join(filter(str.isdigit, n))
+                if not n_clean: continue
+                if clean_id.endswith(n_clean) or n_clean.endswith(clean_id):
+                    if len(n_clean) >= 8 or n_clean == clean_id:
+                        is_whitelisted = True
+                        break
+            
+            if not is_whitelisted:
+                logging.warning(f"[TEST MODE] Ignorando mensaje de {user_id} ({platform}). No está en whitelist.")
+                conn_t.close()
+                return
+        conn_t.close()
+    except Exception as e:
+        logging.error(f"[TEST MODE] Error verificando whitelist: {e}")
+
     if not chatbot_app:
         print("[DEBUG] chatbot_app is NONE. IA will not respond.")
         return

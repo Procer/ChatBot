@@ -1,6 +1,6 @@
 {% macro tab_item(url, icon, label, current_path) %}
   {% set is_active = (current_path == url) or (url != '/admin' and current_path.startswith(url)) %}
-  <a href="{{ url }}" class="flex items-center gap-2 px-1 py-4 border-b-2 transition-all duration-200 group {% if is_active %}border-indigo-500 text-indigo-400{% else %}border-transparent text-slate-500 hover:text-slate-300{% endif %}">
+  <a href="{{ url }}" class="flex items-center gap-2 px-1 py-4 border-b-2 transition-all duration-200 group {% if is_active %}border-amber-500 text-amber-500{% else %}border-transparent text-slate-500 hover:text-slate-300{% endif %}">
     <i data-lucide="{{ icon }}" class="w-4 h-4 transition-transform group-hover:scale-110"></i>
     <span class="text-xs font-bold uppercase tracking-wider whitespace-nowrap">{{ label }}</span>
   </a>
@@ -16,7 +16,7 @@
 {% set path = request.url.path %}
 
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-950">
+<html lang="es" class="h-full bg-black">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27,22 +27,22 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
-    .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
-    .glass-card { background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); }
-    .sidebar-item-active { background: linear-gradient(90deg, rgba(79, 70, 229, 0.15) 0%, rgba(79, 70, 229, 0) 100%); border-left: 3px solid #6366f1; color: #a5b4fc !important; }
+    .glass { background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
+    .glass-card { background: rgba(18, 18, 18, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); }
+    .sidebar-item-active { background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0) 100%); border-left: 3px solid #f59e0b; color: #fbbf24 !important; }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-    input:focus, select:focus, textarea:focus { border-color: rgba(99, 102, 241, 0.5) !important; outline: none; }
+    input:focus, select:focus, textarea:focus { border-color: rgba(245, 158, 11, 0.5) !important; outline: none; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
-<body class="h-full text-slate-300 antialiased selection:bg-indigo-500/30">
+<body class="h-full text-slate-300 antialiased selection:bg-amber-500/30">
 
   <!-- Mobile Nav Toggle -->
   <div class="lg:hidden fixed bottom-6 right-6 z-[200]">
-    <button onclick="toggleSidebar()" class="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center shadow-2xl shadow-indigo-500/40 text-white border border-indigo-400/30">
+    <button onclick="toggleSidebar()" class="w-14 h-14 bg-amber-600 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/40 text-white border border-amber-400/30">
       <i data-lucide="menu" id="menuIcon"></i>
     </button>
   </div>
@@ -52,10 +52,10 @@
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-[150] w-72 glass border-r border-slate-800 flex flex-col transition-all duration-300 -translate-x-full lg:translate-x-0 lg:static shrink-0">
       <div class="p-8 flex flex-col h-full">
         <div class="flex items-center gap-3 mb-12">
-          <img src="/static/LogoZSGiA.png" alt="Logo" class="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/20 object-cover">
+          <img src="/static/LogoZSGiA.png" alt="Logo" class="w-10 h-10 rounded-xl shadow-lg shadow-amber-500/20 object-cover">
           <div class="flex flex-col">
             <span class="text-lg font-bold text-white leading-none">Zárate System</span>
-            <span class="text-[10px] text-indigo-400 font-bold tracking-widest uppercase mt-1">Division IA</span>
+            <span class="text-[10px] text-amber-500 font-bold tracking-widest uppercase mt-1">Division IA</span>
           </div>
         </div>
 
@@ -83,7 +83,7 @@
 
     <div id="sidebarOverlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[140] hidden lg:hidden"></div>
 
-    <main class="flex-1 flex flex-col min-w-0 bg-slate-950 relative overflow-hidden">
+    <main class="flex-1 flex flex-col min-w-0 bg-black relative overflow-hidden">
       <!-- Top Bar -->
       <header class="h-16 glass-card border-b border-white/5 flex items-center justify-between px-8 lg:px-12 shrink-0">
         <div class="flex items-center gap-2 text-slate-500">

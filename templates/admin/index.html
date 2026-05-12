@@ -13,9 +13,9 @@
         <span class="text-[10px] font-black text-amber-400 uppercase tracking-widest">Local</span>
     </div>
     {% endif %}
-    <div class="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-        <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></span>
-        <span class="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Live</span>
+    <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+        <span class="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span>
+        <span class="text-[10px] font-black text-amber-500 uppercase tracking-widest">Live</span>
     </div>
 {% endblock %}
 
@@ -24,9 +24,9 @@
 
     <!-- Quick Stats Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="glass-card p-6 rounded-[2rem] hover:border-indigo-500/30 transition-all group">
+        <div class="glass-card p-6 rounded-[2rem] hover:border-amber-500/30 transition-all group">
             <div class="flex items-center justify-between mb-4">
-                <div class="p-3 bg-indigo-600/10 rounded-2xl text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                <div class="p-3 bg-amber-600/10 rounded-2xl text-amber-500 group-hover:bg-amber-600 group-hover:text-white transition-all">
                     <i data-lucide="messages-square" class="w-6 h-6"></i>
                 </div>
                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Chat Total</span>
@@ -75,16 +75,16 @@
             <div class="glass-card rounded-[2.5rem] overflow-hidden">
                 <div class="p-8 border-b border-white/5 flex justify-between items-center bg-slate-900/20">
                     <h2 class="text-xl font-bold text-white flex items-center gap-3">
-                        <i data-lucide="history" class="text-indigo-500 w-5 h-5"></i> Sesiones Recientes
+                        <i data-lucide="history" class="text-amber-500 w-5 h-5"></i> Sesiones Recientes
                     </h2>
-                    <a href="/admin/history" class="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest">Ver todo</a>
+                    <a href="/admin/history" class="text-xs font-bold text-amber-500 hover:text-amber-400 transition-colors uppercase tracking-widest">Ver todo</a>
                 </div>
                 <div class="p-2">
                     <div class="space-y-1">
                         {% for thread in threads %}
                         <a href="/admin/chat/{{ thread.id }}" class="flex items-center justify-between p-6 rounded-[1.5rem] hover:bg-white/5 transition-all group">
                             <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400 font-bold group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
+                                <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-400 font-bold group-hover:bg-amber-600 group-hover:text-white transition-all duration-300">
                                     {{ thread.name[:2]|upper }}
                                 </div>
                                 <div>
@@ -100,7 +100,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <i data-lucide="chevron-right" class="w-5 h-5 text-slate-800 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all"></i>
+                            <i data-lucide="chevron-right" class="w-5 h-5 text-slate-800 group-hover:text-amber-500 group-hover:translate-x-1 transition-all"></i>
                         </a>
                         {% endfor %}
                         {% if not threads %}
@@ -119,7 +119,7 @@
             <!-- Distribución por Canal -->
             <div class="glass-card p-8 rounded-[2.5rem]">
                 <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-3">
-                    <i data-lucide="share-2" class="text-indigo-400 w-5 h-5"></i> Por Canal
+                    <i data-lucide="share-2" class="text-amber-500 w-5 h-5"></i> Por Canal
                 </h2>
                 <div class="space-y-4">
                     {% for channel, count in metrics.channel_distribution.items() %}
@@ -129,7 +129,7 @@
                             <span class="text-white font-black">{{ count }}</span>
                         </div>
                         <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                            <div class="h-full {% if channel == 'WhatsApp' %}bg-emerald-500{% elif channel == 'Telegram' %}bg-sky-500{% else %}bg-indigo-500{% endif %} shadow-[0_0_10px_rgba(99,102,241,0.3)]" 
+                            <div class="h-full {% if channel == 'WhatsApp' %}bg-emerald-500{% elif channel == 'Telegram' %}bg-sky-500{% else %}bg-amber-500{% endif %} shadow-[0_0_10px_rgba(245,158,11,0.3)]" 
                                  style="width: {{ (count / metrics.total_sessions * 100) if metrics.total_sessions > 0 else 0 }}%"></div>
                         </div>
                     </div>
@@ -138,18 +138,18 @@
             </div>
 
             <!-- Top Temas -->
-            <div class="glass-card p-8 rounded-[2.5rem] border-indigo-500/10">
+            <div class="glass-card p-8 rounded-[2.5rem] border-amber-500/10">
                 <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-3">
-                    <i data-lucide="trending-up" class="text-indigo-400 w-5 h-5"></i> Temas Top
+                    <i data-lucide="trending-up" class="text-amber-500 w-5 h-5"></i> Temas Top
                 </h2>
                 <div class="space-y-4">
                     {% for topic in metrics.top_topics %}
-                    <div class="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-white/5 hover:border-indigo-500/20 transition-all">
+                    <div class="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-white/5 hover:border-amber-500/20 transition-all">
                         <div class="flex items-center gap-3 overflow-hidden">
-                            <div class="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                            <div class="w-2 h-2 bg-amber-500 rounded-full"></div>
                             <span class="text-xs text-slate-300 font-medium truncate">{{ topic.intent }}</span>
                         </div>
-                        <span class="text-[10px] font-black text-indigo-400 bg-indigo-400/10 px-2 py-0.5 rounded-lg">{{ topic.count }}</span>
+                        <span class="text-[10px] font-black text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-lg">{{ topic.count }}</span>
                     </div>
                     {% endfor %}
                     {% if not metrics.top_topics %}
@@ -185,10 +185,10 @@
             </div>
 
             <!-- Quick Info -->
-            <div class="glass-card p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-600 to-violet-700 border-none">
+            <div class="glass-card p-8 rounded-[2.5rem] bg-gradient-to-br from-amber-600 to-amber-800 border-none">
                 <h3 class="text-white font-bold text-lg leading-tight">Optimiza tu Conocimiento</h3>
-                <p class="text-indigo-100/70 text-sm mt-2 leading-relaxed">El bot ha detectado 3 temas nuevos que no sabe responder.</p>
-                <a href="/admin/gaps" class="mt-6 block w-full bg-white text-indigo-600 text-center py-3 rounded-2xl font-bold text-xs hover:bg-slate-100 transition-all uppercase tracking-widest">Resolver Gaps</a>
+                <p class="text-amber-100/70 text-sm mt-2 leading-relaxed">El bot ha detectado 3 temas nuevos que no sabe responder.</p>
+                <a href="/admin/gaps" class="mt-6 block w-full bg-white text-amber-700 text-center py-3 rounded-2xl font-bold text-xs hover:bg-slate-100 transition-all uppercase tracking-widest">Resolver Gaps</a>
             </div>
         </div>
     </div>

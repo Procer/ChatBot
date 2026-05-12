@@ -1,7 +1,17 @@
 @echo off
+setlocal enabledelayedexpansion
+
 echo ==========================================
-echo INICIANDO CHATBOT WHATSAPP (FASTAPI + ADMIN)
+echo    ZARATE IA - GESTOR DE INICIO
 echo ==========================================
+echo.
+echo Selecciona que servicios deseas activar:
+echo [1] Todo (WhatsApp + Telegram + Admin)
+echo [2] Solo WhatsApp (+ Admin)
+echo [3] Solo Telegram (+ Admin)
+echo [4] Solo Admin
+echo.
+set /p choice="Elige una opcion (1-4): "
 
 :: Verificar entorno virtual
 if not exist .venv (
@@ -10,20 +20,41 @@ if not exist .venv (
     exit /b
 )
 
-:: Lanzar contenedores de Docker (WhatsApp API)
-echo [DOCKER] Iniciando servicios de WhatsApp...
-docker-compose -f docker/docker-compose.yml up -d
-
 :: Cargar entorno virtual
 call .venv\Scripts\activate
 
-:: Lanzar el panel de administración en el navegador (en 3 segundos para dar tiempo al servidor)
+:: Procesar Eleccion
+if "%choice%"=="1" goto :ALL
+if "%choice%"=="2" goto :WHATSAPP
+if "%choice%"=="3" goto :TELEGRAM
+if "%choice%"=="4" goto :ADMIN
+goto :ADMIN
+
+:ALL
+echo [DOCKER] Iniciando servicios de WhatsApp...
+docker-compose -f docker/docker-compose.yml up -d
+echo [TELEGRAM] Iniciando polling...
+start /b python src/telegram_polling.py
+goto :SERVER
+
+:WHATSAPP
+echo [DOCKER] Iniciando servicios de WhatsApp...
+docker-compose -f docker/docker-compose.yml up -d
+goto :SERVER
+
+:TELEGRAM
+echo [TELEGRAM] Iniciando polling...
+start /b python src/telegram_polling.py
+goto :SERVER
+
+:ADMIN
+echo [INFO] Iniciando solo el Panel de Administracion...
+goto :SERVER
+
+:SERVER
+:: Lanzar el panel de administración en el navegador
 echo [WEB] Lanzando panel de administracion en breve...
 start /b cmd /c "timeout /t 5 /nobreak >nul && start http://localhost:8000/admin"
-
-:: Lanzar el polling de Telegram (el script decidira si debe correr segun el .env)
-echo [TELEGRAM] Verificando modo de conexion...
-start /b python src/telegram_polling.py
 
 :: Ejecutar el servidor FastAPI
 echo [SERVER] Iniciando FastAPI en puerto 8000...
