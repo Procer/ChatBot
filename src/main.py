@@ -263,6 +263,9 @@ async def green_api_webhook(request: Request, background_tasks: BackgroundTasks)
         data = await request.json()
         type_webhook = data.get("typeWebhook")
         
+        # LOG DE ENTRADA TOTAL
+        logging.info(f"[DEBUG-WA] EVENTO RECIBIDO: {type_webhook}")
+        
         if type_webhook != "incomingMessageReceived":
             return JSONResponse({"status": "ignored"})
             
