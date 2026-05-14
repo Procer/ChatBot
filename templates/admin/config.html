@@ -185,6 +185,30 @@
                 </div>
 
                 <div class="grid grid-cols-1 gap-6">
+                    <!-- MODO TEST -->
+                    <div class="p-8 bg-amber-500/5 border border-amber-500/10 rounded-[2.5rem] space-y-6">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-500">
+                                    <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-black text-white">Modo Test (Seguridad)</h3>
+                                    <p class="text-sm text-slate-500">Si está activado, el bot solo responderá a los números autorizados en la Whitelist.</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="test_mode" value="true" class="sr-only peer" {{ 'checked' if config.test_mode == 'true' }}>
+                                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                            </label>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Whitelist de Números (Separados por coma)</label>
+                            <input type="text" name="test_whitelist" value="{{ config.test_whitelist }}" placeholder="54911..., 54934..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                        </div>
+                    </div>
+
                     <div class="p-8 bg-rose-500/5 border border-rose-500/20 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-8">
                         <div class="space-y-2 text-center md:text-left">
                             <h4 class="text-base font-bold text-rose-500 flex items-center gap-2 justify-center md:justify-start">
