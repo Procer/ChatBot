@@ -1143,13 +1143,12 @@ async def save_channels_config(
     test_numbers: str = Form("")
 ):
     try:
-        # 1. Limpiar Webhook URL
+        logging.info(f"[CONFIG] Guardando canales: test_mode={test_mode_enabled}, numbers={test_numbers}")
         if webhook_base_url:
             parsed_url = re.match(r"(https?://[^/]+)", webhook_base_url)
             if parsed_url:
                 webhook_base_url = parsed_url.group(1)
 
-        # 2. Guardar en Base de Datos
         conn = get_db_settings()
         updates = [
             ('whatsapp_enabled', whatsapp_enabled), 
@@ -1162,11 +1161,10 @@ async def save_channels_config(
             ('test_numbers', test_numbers)
         ]
         for k, v in updates:
-            conn.execute("UPDATE config SET value = ? WHERE key = ?", (v, k))
+            conn.execute("UPDATE config SET value = ? WHERE key = ?", (str(v), k))
         conn.commit()
         conn.close()
         
-        # 3. Intentar Sincronizar (en segundo plano para no bloquear el guardado)
         if webhook_base_url:
             base_url = webhook_base_url.rstrip('/')
             if telegram_enabled == '1' and telegram_token:
@@ -1180,6 +1178,16 @@ async def save_channels_config(
     except Exception as e:
         logging.error(f"Error guardando canales: {e}")
         return RedirectResponse(url="/admin/channels?error=1", status_code=303)
+
+@app.get("/admin/connectivity", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+async def connectivity_panel(request: Request):
+    conn = get_db_settings()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM config")
+    config = {row['key']: row['value'] for row in cursor.fetchall()}
+    conn.close()
+    return templates.TemplateResponse(request=request, name="admin/channels.html", context={"config": config, "active_section": "control"})
 
 @app.get("/admin/history", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
 async def view_all_history(request: Request):
