@@ -1111,7 +1111,7 @@ async def admin_dashboard(request: Request):
 @app.get("/admin/channels", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
 async def view_channels(request: Request):
     conn = get_db_settings(); cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM config WHERE key IN ('whatsapp_enabled', 'whatsapp_instance_id', 'whatsapp_api_token', 'telegram_enabled', 'telegram_token', 'webhook_base_url')")
+    cursor.execute("SELECT key, value FROM config WHERE key IN ('whatsapp_enabled', 'whatsapp_instance_id', 'whatsapp_api_token', 'telegram_enabled', 'telegram_token', 'webhook_base_url', 'test_mode_enabled', 'test_numbers')")
     config = {row[0]: row[1] for row in cursor.fetchall()}
     conn.close()
     return templates.TemplateResponse(request=request, name="admin/channels.html", context={"config": config})
