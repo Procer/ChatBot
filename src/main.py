@@ -2121,5 +2121,7 @@ async def view_audit(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
+    # Obtener el puerto de la variable de entorno, por defecto 8000
+    port_env = int(os.getenv("PORT", 8000))
     # En producción (VPS) el reload debe ser False para evitar reinicios por cambios en la BD
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=port_env, reload=False)
