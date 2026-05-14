@@ -198,14 +198,14 @@
                                 </div>
                             </div>
                             <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" name="test_mode" value="true" class="sr-only peer" {{ 'checked' if config.test_mode == 'true' }}>
+                                <input type="checkbox" name="test_mode_enabled" value="1" class="sr-only peer" {{ 'checked' if config.test_mode_enabled == '1' }}>
                                 <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
                             </label>
                         </div>
                         
                         <div class="space-y-3">
                             <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Whitelist de Números (Separados por coma)</label>
-                            <input type="text" name="test_whitelist" value="{{ config.test_whitelist }}" placeholder="54911..., 54934..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                            <input type="text" name="test_numbers" value="{{ config.test_numbers }}" placeholder="54911..., 54934..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
                         </div>
                     </div>
 

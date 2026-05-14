@@ -1138,7 +1138,9 @@ async def save_channels_config(
     whatsapp_api_token: str = Form(""),
     telegram_enabled: str = Form("0"), 
     telegram_token: str = Form(""), 
-    webhook_base_url: str = Form("")
+    webhook_base_url: str = Form(""),
+    test_mode_enabled: str = Form("0"),
+    test_numbers: str = Form("")
 ):
     if webhook_base_url:
         parsed_url = re.match(r"(https?://[^/]+)", webhook_base_url)
@@ -1152,7 +1154,9 @@ async def save_channels_config(
         ('whatsapp_api_token', whatsapp_api_token),
         ('telegram_enabled', telegram_enabled), 
         ('telegram_token', telegram_token), 
-        ('webhook_base_url', webhook_base_url)
+        ('webhook_base_url', webhook_base_url),
+        ('test_mode_enabled', test_mode_enabled),
+        ('test_numbers', test_numbers)
     ]
     for k, v in updates: conn.execute("UPDATE config SET value = ? WHERE key = ?", (v, k))
     conn.commit(); conn.close()
