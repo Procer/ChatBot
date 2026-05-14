@@ -1142,35 +1142,44 @@ async def save_channels_config(
     test_mode_enabled: str = Form("0"),
     test_numbers: str = Form("")
 ):
-    if webhook_base_url:
-        parsed_url = re.match(r"(https?://[^/]+)", webhook_base_url)
-        if parsed_url:
-            webhook_base_url = parsed_url.group(1)
+    try:
+        # 1. Limpiar Webhook URL
+        if webhook_base_url:
+            parsed_url = re.match(r"(https?://[^/]+)", webhook_base_url)
+            if parsed_url:
+                webhook_base_url = parsed_url.group(1)
 
-    conn = get_db_settings()
-    updates = [
-        ('whatsapp_enabled', whatsapp_enabled), 
-        ('whatsapp_instance_id', whatsapp_instance_id),
-        ('whatsapp_api_token', whatsapp_api_token),
-        ('telegram_enabled', telegram_enabled), 
-        ('telegram_token', telegram_token), 
-        ('webhook_base_url', webhook_base_url),
-        ('test_mode_enabled', test_mode_enabled),
-        ('test_numbers', test_numbers)
-    ]
-    for k, v in updates: conn.execute("UPDATE config SET value = ? WHERE key = ?", (v, k))
-    conn.commit(); conn.close()
-    
-    if webhook_base_url:
-        base_url = webhook_base_url.rstrip('/')
-    else:
-        host = request.headers.get("host")
-        scheme = request.headers.get("x-forwarded-proto", "http")
-        base_url = f"{scheme}://{host}"
-    
-    if telegram_enabled == '1' and telegram_token: await setup_telegram_webhook(telegram_token, base_url)
-    if whatsapp_enabled == '1': await setup_whatsapp_webhook(base_url)
-    return RedirectResponse(url="/admin/channels?success=1", status_code=303)
+        # 2. Guardar en Base de Datos
+        conn = get_db_settings()
+        updates = [
+            ('whatsapp_enabled', whatsapp_enabled), 
+            ('whatsapp_instance_id', whatsapp_instance_id),
+            ('whatsapp_api_token', whatsapp_api_token),
+            ('telegram_enabled', telegram_enabled), 
+            ('telegram_token', telegram_token), 
+            ('webhook_base_url', webhook_base_url),
+            ('test_mode_enabled', test_mode_enabled),
+            ('test_numbers', test_numbers)
+        ]
+        for k, v in updates:
+            conn.execute("UPDATE config SET value = ? WHERE key = ?", (v, k))
+        conn.commit()
+        conn.close()
+        
+        # 3. Intentar Sincronizar (en segundo plano para no bloquear el guardado)
+        if webhook_base_url:
+            base_url = webhook_base_url.rstrip('/')
+            if telegram_enabled == '1' and telegram_token:
+                try: await setup_telegram_webhook(telegram_token, base_url)
+                except: pass
+            if whatsapp_enabled == '1':
+                try: await setup_whatsapp_webhook(base_url)
+                except: pass
+        
+        return RedirectResponse(url="/admin/channels?success=1", status_code=303)
+    except Exception as e:
+        logging.error(f"Error guardando canales: {e}")
+        return RedirectResponse(url="/admin/channels?error=1", status_code=303)
 
 @app.get("/admin/history", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
 async def view_all_history(request: Request):
