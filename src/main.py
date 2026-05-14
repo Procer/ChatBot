@@ -345,33 +345,25 @@ async def send_whatsapp_interactive(number: str, text: str, options: list):
     clean_number = number.split("@")[0]
     chat_id = f"{clean_number}@c.us"
     
-    # 1. BOTONES (Hasta 3 opciones)
-    if 1 <= len(options) <= 3:
-        url = f"https://api.green-api.com/waInstance{g_id}/sendButtons/{g_token}"
-        buttons = []
-        for i, opt in enumerate(options):
-            buttons.append({"buttonId": f"btn_{i}", "buttonText": opt, "type": "quick_reply"})
-        payload = {"chatId": chat_id, "message": text, "buttons": buttons}
+    # USAMOS MENSAJE DE TEXTO NORMAL (Más confiable que botones/listas que dan error 400)
+    url = f"https://api.green-api.com/waInstance{g_id}/sendMessage/{g_token}"
     
-    # 2. LISTAS (De 4 a 10 opciones)
-    else:
-        url = f"https://api.green-api.com/waInstance{g_id}/sendListMessage/{g_token}"
-        rows = []
-        for i, opt in enumerate(options):
-            rows.append({"rowId": f"row_{i}", "title": opt})
-        payload = {
-            "chatId": chat_id,
-            "message": text,
-            "title": "Seleccionar opción",
-            "buttonText": "Ver opciones",
-            "sections": [{"title": "Sugerencias", "rows": rows}]
-        }
+    options_text = ""
+    if options:
+        options_text = "\n\n" + "\n".join([f"🔹 {opt}" for opt in options])
+    
+    payload = {
+        "chatId": chat_id,
+        "message": f"{text}{options_text}"
+    }
 
     async with httpx.AsyncClient() as client:
         try:
             r = await client.post(url, json=payload, timeout=30.0)
             if r.status_code == 200:
                 return r.json().get("idMessage")
+            else:
+                logging.error(f"[GREEN-API] Error enviando mensaje: {r.status_code} - {r.text}")
         except Exception as e:
             logging.error(f"[GREEN-API] Error enviando interactivo: {e}")
     return None

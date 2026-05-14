@@ -421,18 +421,13 @@ def call_model(state: AgentState):
             
             system_prompt += f"""
 ### 🧠 REGLAS CRÍTICAS DE EXTRACCIÓN (MAPEADO INTELIGENTE):
-1. **EXTRACCIÓN INDIVIDUALIZADA (OBLIGATORIO):** Si detectás varios datos del mismo tipo (ej: dos DNIs o dos nombres), NO los guardes juntos en un solo campo. Guardalos en sus campos correspondientes (DNI del Padre, DNI de la Madre, etc.).
-2. **PROHIBICIÓN DE NOMBRES DE ARCHIVO:** NUNCA guardes el nombre técnico del archivo (ej: "tg_...pdf" o "image.jpg") como valor de un campo. El hecho de que se recibió un archivo ya queda registrado por el sistema. Los campos solo deben contener datos de texto legibles (nombres, documentos, estados, etc.).
-3. **PROHIBICIÓN DE AGRUPAR:** Nunca uses comas o la palabra "y" para guardar dos valores en un solo campo si existen campos separados para cada uno. 
-3. **EXTRACCIÓN PROACTIVA:** Si el usuario envía información que corresponde a CUALQUIERA de los campos requeridos (incluso si no es el que pediste), usá 'registrar_dato_tramite' inmediatamente.
-4. **DETECCIÓN MÚLTIPLE:** Si en un solo mensaje el usuario da varios datos, llamá a 'registrar_dato_tramite' varias veces.
-5. **INFERENCIA INTELIGENTE:** Mapeá el lenguaje natural a los campos técnicos.
-   - "mi documento es..." -> DNI.
-   - "vivo en..." -> Dirección.
-   - "me llamo..." -> Nombre.
-6. **VALORES COMPUESTOS:** Si el campo es inherentemente múltiple (ej: "DNI de los padres") y NO hay campos individuales, guardalos indicando a quién pertenece cada uno (ej: "Padre: 123, Madre: 456").
-7. **NO TE TRABES:** Si el usuario no tiene un dato, decile: "No hay problema, seguimos con lo demás". Pasá al siguiente campo faltante de forma natural.
-8. **ARCHIVOS:** Si falta un documento, aclará que puede enviarlo por este chat.
+1. **EXTRACCIÓN INMEDIATA (OBLIGATORIO):** En cuanto detectes un dato (Nombre, DNI, Dirección, etc.) en el mensaje del usuario, DEBES llamar a 'registrar_dato_tramite' inmediatamente. No esperes al final de tu respuesta.
+2. **SIEMPRE USA HERRAMIENTAS:** No confirmes los datos solo con texto (ej: "Ok, anoté tu DNI"). Si no usás la herramienta 'registrar_dato_tramite', el sistema NO lo guardará y el trámite no avanzará.
+3. **EXTRACCIÓN PROACTIVA:** Si el usuario envía información que corresponde a CUALQUIERA de los campos requeridos (incluso si no es el que pediste en ese momento), regístralo igual.
+4. **NO TE TRABES:** Si el usuario dice que no tiene un dato o no lo sabe ahora, decile "No hay problema, seguimos" y pasá al siguiente campo. No te quedes pidiendo lo mismo en bucle.
+5. **VALORES COMPUESTOS:** Si el campo es "DNI de los padres", guardalos indicando a quién pertenece cada uno (ej: "Padre: 123, Madre: 456").
+6. **DETECCIÓN MÚLTIPLE:** Si en un solo mensaje el usuario da varios datos, llamá a 'registrar_dato_tramite' varias veces en la misma respuesta.
+7. **ARCHIVOS:** Si falta un documento, aclará que puede enviarlo por este chat.
 """
             if user_name: system_prompt += f" Estás hablando con {user_name}."
         else:
@@ -495,7 +490,7 @@ def state_manager(state: AgentState):
             try:
                 data = json.loads(msg.content)
                 if data.get("status") == "activated":
-                    print(f" - Onboarding Activado: {data.get('topic')}")
+                    print(f" [MANAGER] >>> ACTIVANDO ONBOARDING: {data.get('topic')}")
                     new_state["onboarding_active"] = True
                     new_state["form_topic"] = data["topic"]
                     new_state["fields_to_collect"] = data["fields"]
@@ -503,27 +498,25 @@ def state_manager(state: AgentState):
                     new_state["storage_dest"] = data["storage"]
                 elif data.get("status") == "profile_update":
                     name = data.get("full_name")
-                    print(f" - Actualizando perfil de usuario: {name} para thread {t_id}")
+                    print(f" [MANAGER] >>> ACTUALIZANDO PERFIL: {name} (Thread: {t_id})")
                     save_user_profile(t_id, name)
                     collected_data["Nombre del Cliente"] = name
                     new_state["collected_data"] = collected_data
                 elif data.get("status") == "recorded":
                     campo = data.get("campo").strip(" .*")
                     valor = data.get("valor")
-                    print(f" - Dato Registrado: {campo} = {valor}")
+                    print(f" [MANAGER] >>> DATO CAPTURADO: [{campo}] = {valor}")
                     
-                    # MEJORA: Si el campo ya tiene un valor, acumulamos en lugar de sobrescribir
-                    # Esto permite guardar múltiples DNIs o nombres en un solo campo si el bot los envía por separado
                     if campo in collected_data:
                         existente = str(collected_data[campo])
-                        if valor not in existente: # Evitar duplicados por re-ejecución
+                        if valor not in existente:
                             collected_data[campo] = f"{existente}, {valor}"
                     else:
                         collected_data[campo] = valor
-                        
+                    
                     new_state["collected_data"] = collected_data
             except Exception as e:
-                logging.warning(f"Error parseando tool output: {e}")
+                print(f" [MANAGER] !!! Error procesando herramienta: {e}")
                 continue
         if isinstance(msg, HumanMessage): break
 
