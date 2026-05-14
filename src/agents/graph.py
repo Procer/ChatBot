@@ -445,10 +445,10 @@ def call_model(state: AgentState):
 2. **INICIO DE TRÁMITE:** Solo después de dar la información, preguntá si quiere comenzar con el trámite ahora. Si dice que sí, usá 'iniciar_onboarding_tramite'.
 3. **RECONOCIMIENTO DE DATOS:** Si el usuario te da un dato suelto (como su nombre) sin estar en un trámite, usá 'registrar_nombre_usuario'.
 
-### 📅 REGLAS DE AGENDAMIENTO:
-1. **RESERVA ORIENTADA:** Cuando el usuario pida un turno, NO listes todos los horarios. Usá 'consultar_disponibilidad' y, basándote en la respuesta, preguntá primero si prefiere MAÑANA o TARDE, o sugerí 2 o 3 opciones específicas.
-2. **PROACTIVIDAD:** Si el usuario dice "mañana a la mañana", buscá los turnos de mañana, elegí los 3 mejores y ofrecelos directamente. Ej: "¡Dale! Para mañana a la mañana tengo a las 09:30, 10:00 o 11:30. ¿Te sirve alguno?".
-3. **TURNOS PARA HOY:** Si pide para hoy, recordá que el sistema ya filtra los horarios que ya pasaron. Solo ofrecé lo que esté disponible a partir de ahora.
+### 📂 ENVÍO DE DOCUMENTACIÓN:
+- Si un tema del "CONOCIMIENTO OFICIAL" indica que tiene un archivo adjunto (marcado como [CON_ARCHIVO]), y considerás que es útil para el usuario, agregá la etiqueta `[SEND_FILE: nombre_del_tema]` exactamente así al final de tu mensaje. 
+- Ejemplo: "Aquí tenés los requisitos. [SEND_FILE: Requisitos Carnet]"
+- El sistema se encargará de enviar el archivo real. Vos solo poné la etiqueta.
 """
 
     # Inyección de Conocimiento
@@ -456,9 +456,13 @@ def call_model(state: AgentState):
         db_path = os.path.join(ROOT_DIR, "settings.sqlite")
         conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
-        cursor.execute("SELECT topic, content, form_fields FROM knowledge")
+        cursor.execute("SELECT topic, content, form_fields, media_path FROM knowledge")
         kb = cursor.fetchall()
-        kb_text = "\n".join([f"- {r[0]}: {r[1]} (Campos: {r[2]})" for r in kb])
+        kb_text = ""
+        for r in kb:
+            has_media = " [CON_ARCHIVO]" if r[3] else ""
+            kb_text += f"- {r[0]}{has_media}: {r[1]} (Campos: {r[2]})\n"
+        
         system_prompt += f"\n\n### CONOCIMIENTO OFICIAL:\n{kb_text}"
         conn.close()
     except Exception as e:

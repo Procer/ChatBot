@@ -1,51 +1,25 @@
-# 🤖 Chatbot WhatsApp (LangGraph + Evolution API + LangSmith)
+# 🤖 ZSG-Bot-iA | Guía de Referencia para IA
 
-Guía de implementación para un chatbot profesional de atención al cliente con capacidad RAG y persistencia de memoria.
+> [!IMPORTANT]
+> Toda la información técnica, lógica de negocio, arquitectura y manuales del sistema se encuentran centralizados en la carpeta **`/docs`**.
 
-## 📋 Checklist de Proyecto
+## 📂 Directorio de Documentación Maestra
 
-- [ ] **Fase 1: Infraestructura Base**
-    - [ ] Instalar Docker y configurar Evolution API.
-    - [ ] Configurar instancia de WhatsApp en Evolution API.
-    - [ ] Configurar entorno virtual de Python y dependencias (LangGraph, LangSmith, OpenAI, FastAPI).
-    - [ ] Configurar variables de entorno (`.env`) para OpenAI y LangSmith.
-- [ ] **Fase 2: Cerebro del Bot (LangGraph)**
-    - [ ] Definir el `State` del agente (para memoria y contexto).
-    - [ ] Implementar el nodo de "Decisor" (¿Conversación abierta o flujo guiado?).
-    - [ ] Integrar persistencia (Checkpointer) para recordar usuarios entre días.
-    - [ ] Configurar agente de Gemini (Gemini 1.5 Flash para optimizar costes).
-    - [ ] **Prueba Local: Chat por consola para validar lógica.**
-- [ ] **Fase 3: Conocimiento (RAG)**
-    - [ ] Configurar base de datos vectorial local (Chroma o FAISS).
-    - [ ] Crear script de ingesta de documentos (PDFs de información).
-    - [ ] Implementar herramienta de recuperación (Retriever) dentro del grafo.
-- [ ] **Fase 4: Comunicación (Evolution API)**
-    - [ ] Crear un servidor Webhook (FastAPI) para recibir mensajes de WhatsApp.
-    - [ ] Implementar lógica de envío de texto e imágenes/PDFs desde el bot.
-    - [ ] Gestionar la recepción de archivos desde el usuario.
-- [ ] **Fase 5: Observabilidad y Despliegue**
-    - [ ] Activar tracing en LangSmith para depuración.
-    - [ ] Pruebas de usuario y ajuste de prompts de atención al cliente.
+Para comprender, mantener o escalar este proyecto, consulta los siguientes archivos en orden:
 
-## 📂 Estructura del Proyecto
+1.  **[01_INTRODUCCION.md](docs/01_INTRODUCCION.md)**: Visión general, objetivos y arquitectura de alto nivel.
+2.  **[02_TECNOLOGIA.md](docs/02_TECNOLOGIA.md)**: Detalle del Stack Tecnológico (FastAPI, LangGraph, SQLite, etc.).
+3.  **[03_BASES_DE_DATOS.md](docs/03_BASES_DE_DATOS.md)**: Estructura de tablas y persistencia de datos.
+4.  **[04_LOGICA_Y_FLUJO.md](docs/04_LOGICA_Y_FLUJO.md)**: Funcionamiento del cerebro del bot y nodos de decisión.
+5.  **[05_REGLAS_DE_NEGOCIO.md](docs/05_REGLAS_DE_NEGOCIO.md)**: Normas operativas y funciones del Panel Admin.
 
-```text
-Chatbot/
-├── data/               # Documentos para RAG (PDFs, etc.)
-├── docker/             # Configuración de Evolution API
-│   └── docker-compose.yml
-├── src/                # Código fuente de Python
-│   ├── agents/         # Nodos y lógica de LangGraph
-│   ├── api/            # Servidor FastAPI para Webhooks
-│   ├── database/       # Conexiones a BD Vectorial
-│   └── main.py         # Punto de entrada principal
-├── .env                # Variables de entorno
-├── GEMINI.md           # Guía y checklist (este archivo)
-└── requirements.txt    # Dependencias del proyecto
-```
+---
 
-## 🛠️ Comandos Útiles
+## 🚀 Instrucción Crítica para el Agente AI
+Cuando trabajes en este repositorio:
+- **NO** asumas lógicas de otros proyectos.
+- **CONSULTA** siempre los archivos en `/docs` antes de proponer cambios estructurales.
+- **MANTÉN** la estética premium (Bento Design / Glassmorphism) definida en los templates.
 
-- Crear entorno virtual: `python -m venv .venv`
-- Activar entorno: `.venv\Scripts\activate` (Windows)
-- Instalar dependencias: `pip install -r requirements.txt`
+---
+© 2026 Zárate System Group | v2.5.0

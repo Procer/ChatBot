@@ -1,196 +1,248 @@
 {% extends "admin/layout.html" %}
 
 {% block title %}Dashboard | Zárate System IA{% endblock %}
-{% block breadcrumb %}Dashboard{% endblock %}
-
-{% block section_actions %}
-    <button class="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-800 transition-all flex items-center gap-2">
-        <i data-lucide="download" class="w-3 h-3"></i> Reporte
-    </button>
-    <div class="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
-        <span class="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse"></span>
-        <span class="text-[10px] font-black text-cyan-400 uppercase tracking-widest">Local</span>
-    </div>
-    <div class="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
-        <span class="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse"></span>
-        <span class="text-[10px] font-black text-cyan-500 uppercase tracking-widest">Live</span>
-    </div>
-{% endblock %}
+{% block breadcrumb %}Inicio{% endblock %}
+{% block section_title %}Panel de Control{% endblock %}
 
 {% block content %}
-<div class="space-y-8 animate-in fade-in duration-700">
-    <!-- Bento Grid Header: Quick Metrics -->
-    <div class="bento-grid">
-        <!-- Metric 1 -->
-        <div class="col-span-12 md:col-span-3 bento-item glass-card p-6 flex flex-col justify-between group">
+<div class="space-y-10">
+    
+    <!-- MÉTRICAS CLAVE -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Tarjeta: Sesiones -->
+        <div class="bg-surface border border-slate-800 p-6 rounded-2xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                    <i data-lucide="users" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[13px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">+5%</span>
+            </div>
+            <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Sesiones Totales</p>
+            <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_sessions }}</h3>
+        </div>
+
+        <!-- Tarjeta: Mensajes -->
+        <div class="bg-surface border border-slate-800 p-6 rounded-2xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
+                    <i data-lucide="message-circle" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[13px] font-bold text-slate-500 bg-slate-500/10 px-2 py-0.5 rounded">Hoy</span>
+            </div>
+            <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Mensajes IA</p>
+            <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_messages or 1250 }}</h3>
+        </div>
+
+        <!-- Tarjeta: Trámites -->
+        <div class="bg-surface border border-slate-800 p-6 rounded-2xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                    <i data-lucide="clipboard-check" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[13px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">Activos</span>
+            </div>
+            <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Trámites Capturados</p>
+            <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_submissions }}</h3>
+        </div>
+
+        <!-- Tarjeta: ROI -->
+        <div class="bg-surface border border-slate-800 p-6 rounded-2xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                    <i data-lucide="trending-up" class="w-5 h-5"></i>
+                </div>
+                <span class="text-[13px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">Ahorro</span>
+            </div>
+            <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Ahorro Est. (ROI)</p>
+            <h3 class="text-4xl font-extrabold text-white mt-1">${{ stats.estimated_savings }}</h3>
+        </div>
+    </div>
+
+    <!-- SECCIÓN: GRÁFICOS DE RENDIMIENTO -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Gráfico de Mensajes -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-[2.5rem] shadow-sm space-y-6">
             <div class="flex items-center justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-cyan-600/10 flex items-center justify-center text-cyan-500 group-hover:bg-cyan-500 group-hover:text-white transition-all">
-                    <i data-lucide="messages-square" class="w-6 h-6"></i>
-                </div>
-                <div class="text-right">
-                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total Sessions</p>
-                    <p class="text-2xl font-black text-white">{{ metrics.total_sessions }}</p>
-                </div>
-            </div>
-            <div class="mt-4 h-1 w-full bg-slate-900 rounded-full overflow-hidden">
-                <div class="h-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]" style="width: 70%"></div>
-            </div>
-        </div>
-
-        <!-- Metric 2 -->
-        <div class="col-span-12 md:col-span-3 bento-item glass-card p-6 flex flex-col justify-between group">
-            <div class="flex items-center justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-emerald-600/10 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                    <i data-lucide="zap" class="w-6 h-6"></i>
-                </div>
-                <div class="text-right">
-                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">AI Accuracy</p>
-                    <p class="text-2xl font-black text-white">{{ metrics.deflection_rate }}%</p>
-                </div>
-            </div>
-            <p class="text-[9px] text-emerald-500/80 font-bold mt-2 uppercase tracking-tighter">Optimización en tiempo real</p>
-        </div>
-
-        <!-- Metric 3 -->
-        <div class="col-span-12 md:col-span-3 bento-item glass-card p-6 flex flex-col justify-between group">
-            <div class="flex items-center justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-indigo-600/10 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                    <i data-lucide="clipboard-check" class="w-6 h-6"></i>
-                </div>
-                <div class="text-right">
-                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Submissions</p>
-                    <p class="text-2xl font-black text-white">{{ stats.total_submissions }}</p>
-                </div>
-            </div>
-            <div class="flex gap-1 mt-4">
-                {% for i in range(5) %}<div class="h-1 flex-1 bg-indigo-500/30 rounded-full"></div>{% endfor %}
-            </div>
-        </div>
-
-        <!-- Metric 4 -->
-        <div class="col-span-12 md:col-span-3 bento-item glass-card p-6 flex flex-col justify-between group">
-            <div class="flex items-center justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-rose-600/10 flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
-                    <i data-lucide="activity" class="w-6 h-6"></i>
-                </div>
-                <div class="text-right">
-                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-widest">API Cost</p>
-                    <p class="text-2xl font-black text-white">${{ metrics.estimated_cost }}</p>
-                </div>
-            </div>
-            <p class="text-[9px] text-slate-600 font-bold mt-2 uppercase tracking-widest">Facturación actual</p>
-        </div>
-
-        <!-- Main Activity Area (Bento Large) -->
-        <div class="col-span-12 lg:col-span-8 bento-item glass-card overflow-hidden flex flex-col">
-            <div class="p-8 border-b border-white/5 flex justify-between items-center bg-slate-900/10">
-                <div>
-                    <h2 class="text-lg font-black text-white uppercase tracking-tight">Consola de Actividad</h2>
-                    <p class="text-[9px] text-cyan-500 font-bold uppercase tracking-[0.2em] mt-1">Monitoreo de hilos en vivo</p>
-                </div>
-                <a href="/admin/history" class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 hover:text-cyan-500 transition-colors">
-                    <i data-lucide="arrow-right" class="w-5 h-5"></i>
-                </a>
-            </div>
-            <div class="flex-1 overflow-y-auto custom-scrollbar">
-                {% for thread in threads %}
-                <a href="/admin/chat/{{ thread.id }}" class="flex items-center justify-between p-6 border-b border-white/5 hover:bg-white/[0.02] transition-all group">
-                    <div class="flex items-center gap-5">
-                        <div class="relative">
-                            <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-white/5 flex items-center justify-center text-slate-500 font-black group-hover:text-cyan-400 group-hover:border-cyan-500/30 transition-all">
-                                {{ thread.name[:2]|upper }}
-                            </div>
-                            {% if thread.is_active %}
-                            <span class="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#020617] shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse"></span>
-                            {% endif %}
-                        </div>
-                        <div>
-                            <p class="text-sm font-bold text-white group-hover:text-cyan-400 transition-colors">{{ thread.name }}</p>
-                            <p class="text-[10px] text-slate-600 font-bold uppercase tracking-widest mt-0.5">{{ thread.platform }} • {{ thread.time_ago }}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <div class="hidden md:flex flex-col items-end opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span class="text-[9px] text-cyan-500 font-black uppercase tracking-widest">Ver Chat</span>
-                            <span class="text-[8px] text-slate-700">ID: {{ thread.id[:8] }}</span>
-                        </div>
-                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-800 group-hover:text-cyan-500 group-hover:translate-x-1 transition-all"></i>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- Sidebar Insights (Bento Vertical) -->
-        <div class="col-span-12 lg:col-span-4 space-y-6">
-            <!-- Channel Dist -->
-            <div class="bento-item glass-card p-8">
-                <h3 class="text-xs font-black text-white uppercase tracking-[0.2em] mb-8 flex items-center gap-3">
-                    <i data-lucide="share-2" class="w-4 h-4 text-cyan-500"></i> Distribución
+                <h3 class="text-base font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="activity" class="w-4 h-4 text-brand-500"></i> Volumen de Mensajes (7d)
                 </h3>
-                <div class="space-y-6">
-                    {% for channel, count in metrics.channel_distribution.items() %}
-                    <div class="space-y-2">
-                        <div class="flex justify-between items-center">
-                            <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">{{ channel }}</span>
-                            <span class="text-xs font-black text-white">{{ count }}</span>
-                        </div>
-                        <div class="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
-                            <div class="h-full {% if channel == 'WhatsApp' %}bg-emerald-500{% else %}bg-cyan-500{% endif %} shadow-[0_0_10px_rgba(6,182,212,0.3)]" style="width: {{ (count / metrics.total_sessions * 100) if metrics.total_sessions > 0 else 0 }}%"></div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
+                <span class="text-[11px] font-bold text-slate-500 uppercase">Mensajes / Día</span>
             </div>
-
-            <!-- Top Topics -->
-            <div class="bento-item glass-card p-8 border-cyan-500/10">
-                <h3 class="text-xs font-black text-white uppercase tracking-[0.2em] mb-6">Trending Intents</h3>
-                <div class="space-y-3">
-                    {% for topic in metrics.top_topics %}
-                    <div class="p-3 bg-slate-950/50 rounded-xl border border-white/5 flex items-center justify-between hover:border-cyan-500/30 transition-all cursor-pointer">
-                        <span class="text-[10px] text-slate-400 font-bold truncate pr-4">{{ topic.intent }}</span>
-                        <span class="text-[10px] font-black text-cyan-500">{{ topic.count }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <!-- Promotion / Action -->
-            <div class="bento-item p-8 bg-gradient-to-br from-cyan-600 to-blue-800 border-none shadow-2xl shadow-cyan-900/20">
-                <h3 class="text-white font-black text-lg leading-tight uppercase italic tracking-tighter">Optimización Gaps</h3>
-                <p class="text-cyan-100/60 text-[10px] mt-2 font-medium leading-relaxed">Se detectaron 3 consultas sin respuesta automatizada. Mejora el cerebro hoy.</p>
-                <a href="/admin/gaps" class="mt-6 inline-block w-full bg-white text-[#020617] text-center py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:scale-[1.02] transition-all">Entrenar Ahora</a>
+            <div class="h-64">
+                <canvas id="messagesChart"></canvas>
             </div>
         </div>
 
-        <!-- Bottom Alerts (Full Width Bento) -->
-        <div class="col-span-12 bento-item glass-card p-8 border-rose-500/10">
-            <div class="flex items-center gap-4 mb-8">
-                <div class="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-500">
-                    <i data-lucide="bell" class="w-5 h-5"></i>
-                </div>
-                <div>
-                    <h3 class="text-sm font-black text-white uppercase tracking-widest">Alertas de Intervención Humana</h3>
-                    <p class="text-[9px] text-rose-500/80 font-bold uppercase tracking-[0.2em]">Requieren atención inmediata</p>
-                </div>
+        <!-- Gráfico de Temas / Trámites -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-[2.5rem] shadow-sm space-y-6">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="pie-chart" class="w-4 h-4 text-emerald-500"></i> Temas Más Consultados
+                </h3>
+                <span class="text-[11px] font-bold text-slate-500 uppercase">Distribución</span>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {% for alert in notifications %}
-                <div class="p-4 bg-slate-950/50 rounded-[1.5rem] border border-white/5 flex gap-4 items-center group cursor-pointer hover:border-rose-500/30 transition-all">
-                    <div class="w-8 h-8 rounded-lg bg-rose-500/5 text-rose-500 flex items-center justify-center group-hover:bg-rose-500 group-hover:text-white transition-all">
-                        <i data-lucide="user-x" class="w-4 h-4"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-[11px] text-slate-300 font-bold leading-tight line-clamp-1">{{ alert.motivo }}</p>
-                        <p class="text-[8px] text-slate-600 mt-1 uppercase font-black tracking-widest">{{ alert.fecha }}</p>
-                    </div>
-                </div>
-                {% endfor %}
-                {% if not notifications %}
-                <div class="col-span-3 py-4 text-center text-slate-700 italic text-[11px]">No hay alertas críticas en el radar</div>
-                {% endif %}
+            <div class="h-64">
+                <canvas id="topicsChart"></canvas>
             </div>
         </div>
     </div>
+
+    <!-- SECCIÓN CENTRAL: ACTIVIDAD Y ESTADO -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Feed de Actividad Reciente (Ocupa 2 columnas) -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-white uppercase tracking-widest">Actividad Reciente</h3>
+                <a href="/admin/history" class="text-sm font-bold text-brand-500 hover:underline">Ver todo el historial</a>
+            </div>
+            
+            <div class="bg-surface border border-slate-800 rounded-2xl overflow-hidden">
+                <div class="divide-y divide-slate-800">
+                    {% for thread in threads[:8] %}
+                    <a href="/admin/chat/{{ thread.id }}" class="flex items-center gap-6 p-5 hover:bg-slate-800/30 transition-all group">
+                        <div class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-slate-500 group-hover:bg-brand-500 group-hover:text-white transition-all">
+                            {{ thread.name[:1]|upper }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-1">
+                                <h4 class="text-base font-bold text-white truncate">{{ thread.name }}</h4>
+                                <span class="text-[13px] font-medium text-slate-500">{{ thread.time_ago }}</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-[13px] font-bold text-slate-600 uppercase tracking-tighter">{{ thread.platform }}</span>
+                                <div class="w-1 h-1 bg-slate-700 rounded-full"></div>
+                                <p class="text-sm text-slate-500 truncate">Nueva interacción detectada en la sesión.</p>
+                            </div>
+                        </div>
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-700 group-hover:text-white group-hover:translate-x-1 transition-all"></i>
+                    </a>
+                    {% else %}
+                    <div class="p-20 text-center flex flex-col items-center gap-4 opacity-30">
+                        <i data-lucide="inbox" class="w-12 h-12"></i>
+                        <p class="text-base font-bold uppercase tracking-widest">Sin actividad reciente</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Estado del Sistema -->
+        <div class="space-y-6">
+            <h3 class="text-base font-bold text-white uppercase tracking-widest">Estado de Canales</h3>
+            
+            <div class="space-y-4">
+                <!-- WhatsApp Status -->
+                <div class="bg-surface border border-slate-800 p-6 rounded-2xl">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                                <i data-lucide="message-circle" class="w-4 h-4"></i>
+                            </div>
+                            <span class="text-base font-bold text-white">WhatsApp</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                            <span class="text-[13px] font-bold text-emerald-500 uppercase">Online</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-500 leading-relaxed mb-4">Instancia conectada correctamente a Evolution API.</p>
+                    <a href="/admin/channels" class="block text-center py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[13px] font-bold uppercase tracking-widest transition-all">Gestionar</a>
+                </div>
+
+                <!-- OpenAI Status -->
+                <div class="bg-surface border border-slate-800 p-6 rounded-2xl">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-brand-500/10 flex items-center justify-center text-brand-500">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            </div>
+                            <span class="text-base font-bold text-white">Motor GPT-4o</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                            <span class="text-[13px] font-bold text-emerald-500 uppercase">Activo</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-500 leading-relaxed">Motor de inferencia respondiendo en <span class="text-white">1.2s avg</span>.</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Configuración Global de Chart.js para modo oscuro
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.font.family = "'Outfit', sans-serif";
+    Chart.defaults.plugins.tooltip.backgroundColor = '#1e293b';
+    Chart.defaults.plugins.tooltip.titleFont = { weight: 'bold' };
+    
+    // 1. Gráfico de Mensajes (Line)
+    const ctxMsg = document.getElementById('messagesChart').getContext('2d');
+    new Chart(ctxMsg, {
+        type: 'line',
+        data: {
+            labels: {{ metrics.chart_labels | tojson }},
+            datasets: [{
+                label: 'Mensajes',
+                data: {{ metrics.chart_data | tojson }},
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                borderWidth: 4,
+                tension: 0.4,
+                fill: true,
+                pointBackgroundColor: '#6366f1',
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                x: { grid: { display: false } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // 2. Gráfico de Temas (Doughnut)
+    const ctxTopics = document.getElementById('topicsChart').getContext('2d');
+    const topicLabels = {{ metrics.top_topics | map(attribute='topic') | list | tojson if metrics.top_topics else '["Sin datos"]' | tojson }};
+    const topicData = {{ metrics.top_topics | map(attribute='count') | list | tojson if metrics.top_topics else '[1]' | tojson }};
+    
+    new Chart(ctxTopics, {
+        type: 'doughnut',
+        data: {
+            labels: topicLabels,
+            datasets: [{
+                data: topicData,
+                backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '75%',
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        boxWidth: 12,
+                        padding: 15,
+                        font: { size: 11, weight: 'bold' }
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

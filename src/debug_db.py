@@ -1,28 +1,15 @@
 import sqlite3
-import json
+import os
 
-def check_db():
-    conn = sqlite3.connect('settings.sqlite')
+db_path = r"c:\laragon\www\Rondan\Chatbot\analytics.sqlite"
+if os.path.exists(db_path):
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
-    tables = ['knowledge', 'form_submissions', 'proceedings', 'config']
-    
-    for table in tables:
-        print(f"\n--- Contenido de la tabla: {table} ---")
-        try:
-            cursor.execute(f"PRAGMA table_info({table})")
-            columns = cursor.fetchall()
-            col_names = [col[1] for col in columns]
-            print(f"Columnas: {col_names}")
-            
-            cursor.execute(f"SELECT * FROM {table}")
-            rows = cursor.fetchall()
-            for row in rows:
-                print(row)
-        except Exception as e:
-            print(f"Error al leer {table}: {e}")
-            
+    cursor.execute("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 10")
+    rows = cursor.fetchall()
+    for row in rows:
+        print(dict(row))
     conn.close()
-
-if __name__ == "__main__":
-    check_db()
+else:
+    print("DB NOT FOUND")

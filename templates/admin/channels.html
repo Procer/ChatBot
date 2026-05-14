@@ -1,251 +1,190 @@
 {% extends "admin/layout.html" %}
 
-{% block title %}Canales de Comunicación | Zárate System IA{% endblock %}
-{% block breadcrumb %}Canales{% endblock %}
+{% block title %}Canales | Zárate System IA{% endblock %}
+{% block breadcrumb %}Conectividad{% endblock %}
+{% block section_title %}Canales de Comunicación{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
-    {% if request.query_params.get('success') %}
-    <div class="mb-8 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top duration-500">
-        <div class="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
-            <i data-lucide="check" class="w-6 h-6"></i>
-        </div>
-        <div>
-            <h4 class="text-sm font-bold text-white">¡Configuración Exitosa!</h4>
-            <p class="text-xs text-emerald-500/80">Los webhooks han sido vinculados automáticamente a tu servidor.</p>
-        </div>
-    </div>
-    {% endif %}
-
-    <header class="mb-12">
-        <h1 class="text-3xl font-bold text-white tracking-tight">Canales de Comunicación</h1>
-        <p class="text-slate-500 mt-2">Configuración y guías paso a paso para conectar tu bot.</p>
-    </header>
-
+<div class="max-w-4xl mx-auto space-y-10">
+    
     <form action="/admin/channels/save" method="post" class="space-y-10">
-        <!-- GLOBAL CONFIG SECTION -->
-        <div class="glass-card rounded-[2.5rem] border border-white/5 overflow-hidden">
-            <div class="p-8 md:p-10">
-                <div class="flex items-center gap-4 mb-8">
-                    <div class="p-4 rounded-2xl bg-indigo-500/10 text-indigo-400">
-                        <i data-lucide="globe" class="w-8 h-8"></i>
+        
+        <!-- URL Pública -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-2xl shadow-sm">
+            <div class="flex items-center gap-4 mb-8">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                    <i data-lucide="globe" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-white">Servidor de Enlace</h3>
+                    <p class="text-base text-slate-500">Configuración del endpoint para recibir eventos externos.</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <label class="text-[15px] font-bold text-slate-400 uppercase tracking-widest ml-1">URL Pública del Webhook</label>
+                <div class="relative">
+                    <input type="text" name="webhook_base_url" value="{{ config.webhook_base_url }}" placeholder="https://tu-dominio.com" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-brand-500 transition-all">
+                    <i data-lucide="link" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-700"></i>
+                </div>
+                <div class="p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl flex items-center justify-between">
+                    <p class="text-[14px] text-slate-400 leading-relaxed italic">
+                        "Asegúrate de que esta URL sea accesible desde internet."
+                    </p>
+                    <button type="button" onclick="syncWebhooks()" class="text-[13px] font-bold text-brand-500 hover:underline uppercase tracking-widest flex items-center gap-2">
+                        <i data-lucide="refresh-cw" class="w-3 h-3"></i> Sincronizar Webhooks
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WhatsApp (Green-API) -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-2xl shadow-sm">
+            <div class="flex flex-col md:flex-row gap-10">
+                <div class="flex-1 space-y-8">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                                <i data-lucide="message-circle" class="w-5 h-5"></i>
+                            </div>
+                            <h3 class="text-lg font-bold text-white">WhatsApp <span class="text-[13px] text-slate-600 font-normal uppercase ml-2 tracking-widest">(Green-API)</span></h3>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="whatsapp_enabled" value="1" {% if config.whatsapp_enabled == '1' %}checked{% endif %} class="sr-only peer">
+                            <div class="w-12 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
                     </div>
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">Configuración de Red</h2>
-                        <p class="text-[10px] text-indigo-500/70 font-bold uppercase tracking-widest">Túneles y Dominios Públicos</p>
+
+                    <div class="grid grid-cols-1 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">ID de Instancia</label>
+                            <input type="text" name="whatsapp_instance_id" value="{{ config.whatsapp_instance_id }}" placeholder="Ej: 1101123456" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-brand-500 transition-all">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">API Token</label>
+                            <input type="password" name="whatsapp_api_token" value="{{ config.whatsapp_api_token }}" placeholder="Tu Token de Green-API" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-brand-500 transition-all">
+                        </div>
+                    </div>
+
+                    <div class="bg-panel/40 p-6 rounded-2xl border border-slate-800 space-y-6">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[13px] font-bold text-slate-500 uppercase tracking-widest">Estado de Conexión</span>
+                            <div id="wa-badge" class="px-3 py-1 bg-slate-800 text-slate-500 rounded-lg text-[12px] font-bold uppercase">Consultando...</div>
+                        </div>
+
+                        <div id="wa-qr-box" class="hidden flex flex-col items-center gap-4 p-6 bg-white rounded-xl border border-emerald-500/20">
+                            <img id="wa-qr-img" src="" alt="QR" class="w-48 h-48">
+                            <p class="text-[12px] font-bold text-slate-900 uppercase">Escanea con WhatsApp</p>
+                        </div>
+
+                        <button type="button" onclick="logoutWA()" class="w-full py-2.5 bg-slate-800 hover:bg-rose-500/10 rounded-lg text-[13px] font-bold uppercase text-slate-400 hover:text-rose-500 transition-all">Desconectar Instancia</button>
                     </div>
                 </div>
 
-                <div class="space-y-4">
-                    <div class="space-y-2">
-                        <label class="text-[11px] font-bold uppercase tracking-widest text-slate-500 ml-1">URL Base para Webhooks (Public URL)</label>
-                        <div class="relative">
-                            <input type="text" name="webhook_base_url" value="{{ config.webhook_base_url }}" placeholder="https://tu-tunel-ngrok.app" class="w-full bg-slate-950/50 border border-white/5 rounded-2xl p-5 text-white outline-none focus:border-indigo-500/50 transition-all font-mono text-sm">
-                            <i data-lucide="link" class="w-5 h-5 text-slate-600 absolute right-6 top-5"></i>
-                        </div>
-                        <p class="text-[10px] text-slate-500 ml-1 mt-2">
-                            <i data-lucide="info" class="w-3 h-3 inline-block mr-1"></i> 
-                            Si usas <b>ngrok</b>, pega aquí la URL generada. Si lo dejas vacío, el sistema intentará detectarla automáticamente (solo funciona en producción).
+                <div class="md:w-64 space-y-4 pt-2">
+                    <h4 class="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Ayuda Técnica</h4>
+                    <p class="text-[14px] text-slate-500 leading-relaxed">
+                        Obtén tus credenciales en el panel de <a href="https://green-api.com" target="_blank" class="text-brand-500 hover:underline">Green-API</a>. 
+                    </p>
+                    <div class="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl">
+                        <p class="text-[13px] text-amber-500/80 leading-relaxed">
+                            <b>Nota:</b> Si usas variables de entorno (.env), estas tendrán prioridad si los campos de arriba están vacíos.
                         </p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- WHATSAPP SECTION -->
-        <div class="glass-card rounded-[2.5rem] border border-white/5 overflow-hidden">
-            <div class="p-8 md:p-10 flex flex-col lg:flex-row gap-10">
-                <!-- Configuración -->
-                <div class="flex-1 space-y-8">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-4">
-                            <div class="p-4 rounded-2xl bg-emerald-500/10 text-emerald-500">
-                                <i data-lucide="message-circle" class="w-8 h-8"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-2xl font-bold text-white">WhatsApp</h2>
-                                <p class="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest">Evolution API Enterprise</p>
-                            </div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" name="whatsapp_enabled" value="1" {% if config.whatsapp_enabled == '1' %}checked{% endif %} class="sr-only peer">
-                            <div class="w-14 h-7 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-600"></div>
-                        </label>
+        <!-- Telegram -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-2xl shadow-sm">
+            <div class="flex items-center justify-between mb-8">
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center text-sky-400">
+                        <i data-lucide="send" class="w-5 h-5"></i>
                     </div>
-
-                    <div id="wa-status-container" class="bg-slate-950/50 p-6 rounded-3xl border border-white/5 space-y-6">
-                        <div class="flex items-center justify-between">
-                            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <i data-lucide="activity" class="w-4 h-4"></i> Estado de Conexión
-                            </h4>
-                            <div id="wa-badge" class="px-3 py-1 bg-slate-800 text-slate-400 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-                                <span class="w-1.5 h-1.5 bg-slate-500 rounded-full"></span> Consultando...
-                            </div>
-                        </div>
-
-                        <div id="wa-qr-box" class="hidden flex flex-col items-center justify-center p-6 bg-white rounded-2xl border-4 border-emerald-500/20">
-                            <img id="wa-qr-img" src="" alt="WhatsApp QR" class="w-48 h-48 mb-4">
-                            <p class="text-[10px] text-slate-900 font-bold uppercase text-center">Escanea para conectar</p>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <button type="button" onclick="restartWA()" class="p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group flex flex-col items-center gap-2">
-                                <i data-lucide="refresh-cw" class="w-5 h-5 text-indigo-400 group-hover:rotate-180 transition-all duration-500"></i>
-                                <span class="text-[10px] font-bold text-slate-400 uppercase">Reiniciar</span>
-                            </button>
-                            <button type="button" onclick="logoutWA()" class="p-4 bg-white/5 hover:bg-rose-500/10 border border-white/5 rounded-2xl transition-all group flex flex-col items-center gap-2">
-                                <i data-lucide="log-out" class="w-5 h-5 text-rose-500"></i>
-                                <span class="text-[10px] font-bold text-slate-400 uppercase">Cerrar Sesión</span>
-                            </button>
-                        </div>
-                    </div>
+                    <h3 class="text-lg font-bold text-white">Telegram</h3>
                 </div>
-
-                <!-- Guía de Ayuda -->
-                <div class="lg:w-80 bg-emerald-500/5 p-8 border-l border-emerald-500/10 space-y-6">
-                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                        <i data-lucide="help-circle" class="w-4 h-4 text-emerald-500"></i> Soporte de Conexión
-                    </h3>
-                    <div id="wa-info" class="text-[11px] text-slate-400 leading-relaxed">
-                        Si el bot no responde, intenta reiniciar la instancia. Asegúrate de que tu teléfono tenga internet estable.
-                    </div>
-                    <ul class="space-y-4">
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                            <p class="text-[11px] text-slate-400">Estado <b>OPEN</b>: El bot está listo.</p>
-                        </li>
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                            <p class="text-[11px] text-slate-400">Si aparece el QR, escanealo desde WhatsApp > Dispositivos Vinculados.</p>
-                        </li>
-                    </ul>
-                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="telegram_enabled" value="1" {% if config.telegram_enabled == '1' %}checked{% endif %} class="sr-only peer">
+                    <div class="w-12 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
+                </label>
             </div>
-        </div>
 
-        <script>
-            async function updateWAStatus() {
-                try {
-                    const response = await fetch('/admin/whatsapp/status');
-                    const data = await response.json();
-                    const badge = document.getElementById('wa-badge');
-                    const qrBox = document.getElementById('wa-qr-box');
-                    
-                    if (data.state === 'open') {
-                        badge.className = "px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
-                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Conectado (Open)';
-                        qrBox.classList.add('hidden');
-                    } else if (data.state === 'connecting' || data.state === 'pairing') {
-                        badge.className = "px-3 py-1 bg-cyan-500/10 text-cyan-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
-                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse"></span> Vinculando...';
-                        loadQR();
-                    } else {
-                        badge.className = "px-3 py-1 bg-rose-500/10 text-rose-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-2";
-                        badge.innerHTML = '<span class="w-1.5 h-1.5 bg-rose-500 rounded-full"></span> Desconectado';
-                        loadQR();
-                    }
-                } catch (e) {
-                    console.error("Error consultando estado WA:", e);
-                }
-            }
-
-            async function loadQR() {
-                const response = await fetch('/admin/whatsapp/qr');
-                const data = await response.json();
-                const qrBox = document.getElementById('wa-qr-box');
-                const qrImg = document.getElementById('wa-qr-img');
-                
-                if (data.status === 'success' && data.data.base64) {
-                    qrImg.src = data.data.base64;
-                    qrBox.classList.remove('hidden');
-                } else if (data.status === 'success' && data.data.code) {
-                    // Si Evolution API da code pero no base64, podría ser pairing code
-                    // Por ahora asumimos base64
-                }
-            }
-
-            async function restartWA() {
-                if(!confirm("¿Deseas reiniciar la instancia de WhatsApp?")) return;
-                await fetch('/admin/whatsapp/restart', {method: 'POST'});
-                alert("Petición de reinicio enviada.");
-                setTimeout(updateWAStatus, 3000);
-            }
-
-            async function logoutWA() {
-                if(!confirm("¿Seguro que deseas cerrar la sesión? Tendrás que escanear el QR de nuevo.")) return;
-                await fetch('/admin/whatsapp/logout', {method: 'POST'});
-                location.reload();
-            }
-
-            // Iniciar monitoreo
-            setInterval(updateWAStatus, 10000);
-            updateWAStatus();
-        </script>
-            </div>
-        </div>
-
-        <!-- TELEGRAM SECTION -->
-        <div class="glass-card rounded-[2.5rem] border border-white/5 overflow-hidden">
-            <div class="p-8 md:p-10 flex flex-col lg:flex-row gap-10">
-                <!-- Configuración -->
-                <div class="flex-1 space-y-8">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-4">
-                            <div class="p-4 rounded-2xl bg-sky-500/10 text-sky-400">
-                                <i data-lucide="send" class="w-8 h-8"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-2xl font-bold text-white">Telegram</h2>
-                                <p class="text-[10px] text-sky-500/70 font-bold uppercase tracking-widest">Bot API Oficial</p>
-                            </div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" name="telegram_enabled" value="1" {% if config.telegram_enabled == '1' %}checked{% endif %} class="sr-only peer">
-                            <div class="w-14 h-7 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-sky-600"></div>
-                        </label>
-                    </div>
-
-                    <div class="space-y-3">
-                        <label class="text-[11px] font-bold uppercase tracking-widest text-slate-500 ml-1">Bot Token (BotFather)</label>
-                        <div class="relative">
-                            <input type="password" name="telegram_token" value="{{ config.telegram_token }}" placeholder="123456789:ABCDEF..." class="w-full bg-slate-950/50 border border-white/5 rounded-2xl p-5 text-white outline-none focus:border-sky-500/50 transition-all font-mono">
-                            <i data-lucide="key" class="w-5 h-5 text-slate-600 absolute right-6 top-5"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Guía de Ayuda -->
-                <div class="lg:w-80 bg-sky-500/5 p-8 border-l border-sky-500/10 space-y-6">
-                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                        <i data-lucide="help-circle" class="w-4 h-4 text-sky-400"></i> Guía de Configuración
-                    </h3>
-                    <ul class="space-y-4">
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-sky-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
-                            <p class="text-[11px] text-slate-400">Habla con <a href="https://t.me/botfather" target="_blank" class="text-sky-400 underline">@BotFather</a> y usa <code class="text-sky-300">/newbot</code>.</p>
-                        </li>
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-sky-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
-                            <p class="text-[11px] text-slate-400">Copia el Token API y pégalo en el campo de la izquierda.</p>
-                        </li>
-                        <li class="flex gap-3">
-                            <span class="w-5 h-5 rounded-full bg-sky-500 text-white text-[10px] flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
-                            <div class="space-y-2">
-                                <p class="text-[11px] text-slate-400">Configura el webhook pegando esto en tu navegador:</p>
-                                <code class="block p-2 bg-slate-950 rounded text-[9px] text-sky-400 font-mono break-all select-all border border-sky-500/20">https://api.telegram.org/bot<TU_TOKEN>/setWebhook?url=https://tu-dominio.com/webhook/telegram</code>
-                            </div>
-                        </li>
-                    </ul>
-                </div>
+            <div class="space-y-2">
+                <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Bot Token (BotFather)</label>
+                <input type="password" name="telegram_token" value="{{ config.telegram_token }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-brand-500 transition-all">
             </div>
         </div>
 
         <!-- Botón Guardar -->
         <div class="flex justify-end pt-4">
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-2xl font-bold transition-all shadow-2xl shadow-indigo-500/20 flex items-center gap-3 text-sm uppercase tracking-widest">
-                <i data-lucide="save" class="w-5 h-5"></i> Guardar Cambios en Canales
+            <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-10 py-4 rounded-xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-brand-600/20">
+                Guardar Configuración
             </button>
         </div>
     </form>
 </div>
+
+<script>
+    async function updateWAStatus() {
+        try {
+            const response = await fetch('/admin/whatsapp/status');
+            const data = await response.json();
+            const badge = document.getElementById('wa-badge');
+            const qrBox = document.getElementById('wa-qr-box');
+            
+            if (data.status === 'open') {
+                badge.className = "px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[12px] font-bold uppercase border border-emerald-500/20";
+                badge.innerText = "Conectado";
+                qrBox.classList.add('hidden');
+            } else {
+                badge.className = "px-3 py-1 bg-rose-500/10 text-rose-500 rounded-lg text-[12px] font-bold uppercase border border-rose-500/20";
+                badge.innerText = "Desconectado";
+                loadQR();
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadQR() {
+        const response = await fetch('/admin/whatsapp/qr');
+        const data = await response.json();
+        const qrBox = document.getElementById('wa-qr-box');
+        const qrImg = document.getElementById('wa-qr-img');
+        
+        if (data.status === 'qr' && data.base64) {
+            qrImg.src = `data:image/png;base64,${data.base64}`;
+            qrBox.classList.remove('hidden');
+        } else {
+            qrBox.classList.add('hidden');
+        }
+    }
+
+    async function logoutWA() {
+        if (!confirm('¿Seguro que deseas desconectar el número de WhatsApp?')) return;
+        const res = await fetch('/admin/whatsapp/logout', {method: 'POST'});
+        const data = await res.json();
+        if (data.status === 'ok') location.reload();
+        else alert('Error al desconectar');
+    }
+
+    async function syncWebhooks() {
+        const btn = event.currentTarget;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Sincronizando...';
+        lucide.createIcons();
+        
+        try {
+            const res = await fetch('/admin/whatsapp/sync-webhooks', {method: 'POST'});
+            const data = await res.json();
+            if (data.status === 'ok') alert('Webhooks sincronizados con éxito');
+            else alert('Error: ' + (data.message || 'Error desconocido'));
+        } catch (e) { alert('Error de conexión'); }
+        
+        btn.innerHTML = originalText;
+        lucide.createIcons();
+    }
+
+    setInterval(updateWAStatus, 15000);
+    updateWAStatus();
+</script>
 {% endblock %}

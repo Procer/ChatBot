@@ -46,14 +46,14 @@ def log_token_usage(thread_id, model, prompt_tokens, completion_tokens):
     except Exception as e:
         logging.error(f"Analytics Log: {e}")
 
-def log_message(thread_id, role, content):
+def log_message(thread_id, role, content, whatsapp_id=None):
     """Guarda el contenido de un mensaje en el historial legible."""
     try:
         conn = sqlite3.connect(ANALYTICS_DB)
         conn.execute("""
-            INSERT INTO messages (thread_id, role, content)
-            VALUES (?, ?, ?)
-        """, (thread_id, role, content))
+            INSERT INTO messages (thread_id, role, content, whatsapp_id)
+            VALUES (?, ?, ?, ?)
+        """, (thread_id, role, content, whatsapp_id))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -116,17 +116,43 @@ def get_dashboard_metrics():
         cursor.execute("SELECT intent, COUNT(*) as count FROM session_analytics WHERE intent IS NOT NULL GROUP BY intent ORDER BY count DESC LIMIT 5")
         top_topics = [dict(row) for row in cursor.fetchall()]
 
-        # 7. Datos para el Gráfico (Últimos 7 días)
+        # 7. Datos para el Gráfico (Últimos 7 días de mensajes)
         cursor.execute("""
-            SELECT strftime('%m-%d', timestamp) as day, SUM(prompt_tokens + completion_tokens) as tokens 
-            FROM token_usage 
+            SELECT strftime('%m-%d', timestamp) as day, COUNT(*) as count 
+            FROM messages 
+            WHERE role = 'user'
             GROUP BY day 
             ORDER BY day DESC LIMIT 7
         """)
-        rows = cursor.fetchall()[::-1]
-        chart_labels = [r['day'] for r in rows] or ["Hoy"]
-        chart_data = [r['tokens'] for r in rows] or [0]
-        
+        rows_msg = cursor.fetchall()[::-1]
+        msg_labels = [r['day'] for r in rows_msg] or ["Hoy"]
+        msg_data = [r['count'] for r in rows_msg] or [0]
+
+        # 8. Trámites por día (Esto requiere settings.sqlite)
+        submissions_per_day = {"labels": ["Hoy"], "data": [0]}
+        try:
+            conn_s = sqlite3.connect(os.path.join(BASE_DIR, "settings.sqlite"))
+            conn_s.row_factory = sqlite3.Row
+            cursor_s = conn_s.cursor()
+            cursor_s.execute("""
+                SELECT strftime('%m-%d', created_at) as day, COUNT(*) as count 
+                FROM form_submissions 
+                GROUP BY day 
+                ORDER BY day DESC LIMIT 7
+            """)
+            rows_sub = cursor_s.fetchall()[::-1]
+            if rows_sub:
+                submissions_per_day = {
+                    "labels": [r['day'] for r in rows_sub],
+                    "data": [r['count'] for r in rows_sub]
+                }
+            
+            # Top Temas Reales (de submissions)
+            cursor_s.execute("SELECT topic, COUNT(*) as count FROM form_submissions GROUP BY topic ORDER BY count DESC LIMIT 5")
+            top_topics = [dict(row) for row in cursor_s.fetchall()]
+            conn_s.close()
+        except: pass
+
         conn.close()
         return {
             "total_sessions": total_sessions,
@@ -136,8 +162,9 @@ def get_dashboard_metrics():
             "model_distribution": model_distribution,
             "channel_distribution": channel_distribution,
             "top_topics": top_topics,
-            "chart_labels": chart_labels,
-            "chart_data": chart_data
+            "chart_labels": msg_labels,
+            "chart_data": msg_data,
+            "submissions_per_day": submissions_per_day
         }
     except Exception as e:
         logging.error(f"Analytics Dashboard: {e}")
