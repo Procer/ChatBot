@@ -46,6 +46,22 @@ def check_brain():
         else:
             print("❌ ERROR: Webhook Base URL no configurada.")
 
+        # 3.5 Verificar Mensaje de Bienvenida y Archivo
+        cursor.execute("SELECT key, value FROM config WHERE key IN ('welcome_media_path', 'welcome_message_text')")
+        w_cfg = dict(cursor.fetchall())
+        w_media = w_cfg.get('welcome_media_path')
+        print(f"✅ Mensaje de bienvenida: '{w_cfg.get('welcome_message_text', '')}'")
+        if w_media:
+            clean_media = w_media[1:] if w_media.startswith('/') else w_media
+            phys_path = os.path.join(ROOT_DIR, clean_media)
+            print(f"📎 Archivo de bienvenida en BD: '{w_media}'")
+            if os.path.exists(phys_path):
+                print(f"   ✅ Archivo físico ENCONTRADO en el servidor: {phys_path} ({os.path.getsize(phys_path)} bytes)")
+            else:
+                print(f"   ❌ ERROR: El archivo físico NO EXISTE en la ruta: {phys_path}")
+        else:
+            print("ℹ️ No hay imagen de bienvenida configurada.")
+
         # 4. Verificar Vector DB
         chroma_path = os.path.join(ROOT_DIR, "chroma_db")
         if os.path.exists(chroma_path):
