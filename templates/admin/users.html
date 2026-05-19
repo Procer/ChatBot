@@ -1,0 +1,460 @@
+{% extends "admin/layout.html" %}
+{% block title %}ZSG-Bot-iA | Gestión de Usuarios{% endblock %}
+{% block breadcrumb %}Sistema{% endblock %}
+{% block section_title %}Gestión de Usuarios{% endblock %}
+
+{% block extra_head %}
+<style>
+    .badge-superadmin { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+    .badge-operator   { background: linear-gradient(135deg, #0ea5e9, #06b6d4); }
+    .modal-overlay { backdrop-filter: blur(8px); background: rgba(0,0,0,0.7); }
+    .perm-chip { transition: all .15s ease; }
+    .perm-chip input:checked + label { background: rgba(99,102,241,0.2); border-color: #6366f1; color: #a5b4fc; }
+    .avatar-circle { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+    .user-row:hover { background: rgba(99,102,241,0.04); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 lg:p-0 space-y-6">
+
+    <!-- HEADER -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-black text-white">Usuarios del Panel</h1>
+            <p class="text-sm text-slate-500 mt-0.5">Administrá accesos y permisos de cada operador</p>
+        </div>
+        <button onclick="openCreateModal()"
+            class="flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-brand-500/20">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> Nuevo Usuario
+        </button>
+    </div>
+
+    <!-- TABLA DE USUARIOS -->
+    <div class="glass rounded-2xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-800/60">
+                    <th class="px-5 py-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Usuario</th>
+                    <th class="px-5 py-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">Rol</th>
+                    <th class="px-5 py-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Último Acceso</th>
+                    <th class="px-5 py-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Estado</th>
+                    <th class="px-5 py-3.5 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/40">
+                {% for u in users_list %}
+                <tr class="user-row transition-colors">
+                    <!-- Avatar + Nombre -->
+                    <td class="px-5 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="avatar-circle w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm shrink-0">
+                                {{ u.full_name[0] | upper }}
+                            </div>
+                            <div>
+                                <p class="font-bold text-white leading-none">{{ u.full_name }}</p>
+                                <p class="text-xs text-slate-500 mt-0.5">@{{ u.username }}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <!-- Rol -->
+                    <td class="px-5 py-4 hidden md:table-cell">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold text-white
+                            {% if u.role == 'superadmin' %}badge-superadmin{% else %}badge-operator{% endif %}">
+                            <i data-lucide="{% if u.role == 'superadmin' %}shield-check{% else %}user{% endif %}" class="w-3 h-3"></i>
+                            {{ 'Super Admin' if u.role == 'superadmin' else 'Operador' }}
+                        </span>
+                    </td>
+                    <!-- Último login -->
+                    <td class="px-5 py-4 hidden lg:table-cell">
+                        <span class="text-slate-400">{{ u.last_login_fmt or '—' }}</span>
+                    </td>
+                    <!-- Estado -->
+                    <td class="px-5 py-4">
+                        <button onclick="toggleActive({{ u.id }}, {{ u.is_active }}, this)"
+                            class="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg transition-all
+                            {% if u.is_active %}bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20{% else %}bg-rose-500/10 text-rose-400 hover:bg-rose-500/20{% endif %}"
+                            {% if u.id == user.id %}disabled title="No podés desactivarte a vos mismo"{% endif %}>
+                            <span class="w-1.5 h-1.5 rounded-full {% if u.is_active %}bg-emerald-400{% else %}bg-rose-400{% endif %}"></span>
+                            {{ 'Activo' if u.is_active else 'Inactivo' }}
+                        </button>
+                    </td>
+                    <!-- Acciones -->
+                    <td class="px-5 py-4 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                            {% if u.role != 'superadmin' %}
+                            <button onclick="openPermissionsModal({{ u.id }}, '{{ u.full_name }}')"
+                                title="Gestionar permisos"
+                                class="p-2 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-all">
+                                <i data-lucide="key" class="w-4 h-4"></i>
+                            </button>
+                            {% endif %}
+                            <button onclick="openResetModal({{ u.id }}, '{{ u.full_name }}')"
+                                title="Resetear contraseña"
+                                class="p-2 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all">
+                                <i data-lucide="lock-keyhole" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="openEditModal({{ u.id }}, '{{ u.full_name }}', '{{ u.username }}', '{{ u.email or '' }}', '{{ u.role }}')"
+                                title="Editar datos"
+                                class="p-2 text-slate-500 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-all">
+                                <i data-lucide="pencil" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="px-5 py-12 text-center text-slate-600">
+                        <i data-lucide="users" class="w-10 h-10 mx-auto mb-3 opacity-30"></i>
+                        <p class="font-semibold">No hay usuarios creados aún</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: CREAR USUARIO -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="modal-create" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-create')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-md mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-black text-white">Nuevo Usuario</h2>
+            <button onclick="closeModal('modal-create')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5">Nombre completo *</label>
+                    <input id="c-fullname" type="text" placeholder="Juan López"
+                        class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5">Username *</label>
+                    <input id="c-username" type="text" placeholder="juanl"
+                        class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Email</label>
+                <input id="c-email" type="email" placeholder="juan@empresa.com"
+                    class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5">Contraseña *</label>
+                    <input id="c-password" type="password" placeholder="Mín. 6 caracteres"
+                        class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5">Rol</label>
+                    <select id="c-role" class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none transition-colors">
+                        <option value="operator">Operador</option>
+                        <option value="superadmin">Super Admin</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div id="c-error" class="hidden text-xs text-rose-400 font-semibold bg-rose-500/10 rounded-lg px-3 py-2"></div>
+        <div class="flex gap-3 pt-1">
+            <button onclick="closeModal('modal-create')" class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onclick="createUser()" class="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 rounded-xl text-sm font-bold text-white transition-colors">Crear Usuario</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: EDITAR USUARIO -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="modal-edit" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-edit')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-md mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-black text-white">Editar Usuario</h2>
+            <button onclick="closeModal('modal-edit')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <input type="hidden" id="e-id">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Nombre completo</label>
+                <input id="e-fullname" type="text" class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Email</label>
+                <input id="e-email" type="email" class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Rol</label>
+                <select id="e-role" class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none transition-colors">
+                    <option value="operator">Operador</option>
+                    <option value="superadmin">Super Admin</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex gap-3 pt-1">
+            <button onclick="closeModal('modal-edit')" class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onclick="saveEdit()" class="flex-1 py-2.5 bg-sky-500 hover:bg-sky-600 rounded-xl text-sm font-bold text-white transition-colors">Guardar Cambios</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: RESETEAR CONTRASEÑA -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="modal-reset" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-reset')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-sm mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h2 class="text-lg font-black text-white">Resetear Contraseña</h2>
+            <button onclick="closeModal('modal-reset')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <input type="hidden" id="r-id">
+        <p id="r-name" class="text-sm text-slate-400"></p>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Nueva contraseña</label>
+                <input id="r-password" type="password" placeholder="Mín. 6 caracteres"
+                    class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">Confirmar contraseña</label>
+                <input id="r-confirm" type="password" placeholder="Repetir contraseña"
+                    class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none transition-colors">
+            </div>
+        </div>
+        <div id="r-error" class="hidden text-xs text-rose-400 font-semibold bg-rose-500/10 rounded-lg px-3 py-2"></div>
+        <div class="flex gap-3 pt-1">
+            <button onclick="closeModal('modal-reset')" class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onclick="saveReset()" class="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 rounded-xl text-sm font-bold text-white transition-colors">Guardar Clave</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- MODAL: GESTIÓN DE PERMISOS -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="modal-perms" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-perms')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+            <div>
+                <h2 class="text-lg font-black text-white">Permisos de Acceso</h2>
+                <p id="perms-username" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <button onclick="closeModal('modal-perms')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <input type="hidden" id="p-id">
+
+        <!-- Grid de permisos por sección -->
+        <div id="perms-grid" class="overflow-y-auto custom-scrollbar flex-1 space-y-4 pr-1">
+            {% set sections = menu_items_list | groupby('section') %}
+            {% for section, items in sections %}
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        {{ section | capitalize }}
+                    </p>
+                    <label class="flex items-center gap-1.5 cursor-pointer group">
+                        <input type="checkbox" id="toggle-{{ section }}" class="sr-only peer" onchange="toggleSection('{{ section }}', this.checked)">
+                        <div class="w-3.5 h-3.5 border border-slate-600 rounded bg-slate-800/50 flex items-center justify-center transition-colors group-hover:border-brand-500 peer-checked:bg-brand-500 peer-checked:border-brand-500">
+                            <i data-lucide="check" class="w-2.5 h-2.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                        </div>
+                        <span class="text-[10px] font-bold text-slate-500 group-hover:text-slate-300 transition-colors">Seleccionar todo</span>
+                    </label>
+                </div>
+                <div class="space-y-1">
+                    {% for item in items %}
+                    <div class="perm-chip">
+                        <input type="checkbox" id="perm-{{ item.key }}" value="{{ item.key }}" data-section="{{ section }}"
+                            class="perm-checkbox sr-only peer" onchange="updateSectionToggle('{{ section }}')">
+                        <label for="perm-{{ item.key }}"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-800 cursor-pointer transition-all hover:border-slate-700 text-sm font-semibold text-slate-400 peer-checked:bg-brand-500/10 peer-checked:border-brand-500 peer-checked:text-brand-300">
+                            <i data-lucide="{{ item.icon or 'circle' }}" class="w-4 h-4 shrink-0"></i>
+                            {{ item.label }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="flex gap-3 pt-1 shrink-0">
+            <button onclick="closeModal('modal-perms')" class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onclick="savePermissions()" class="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 rounded-xl text-sm font-bold text-white transition-colors">Guardar Permisos</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="fixed bottom-6 right-6 z-[100] hidden">
+    <div id="toast-inner" class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl text-sm font-bold">
+        <i id="toast-icon" class="w-4 h-4"></i>
+        <span id="toast-msg"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.remove('hidden'); lucide.createIcons(); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function showToast(msg, ok = true) {
+    const t = document.getElementById('toast');
+    const inner = document.getElementById('toast-inner');
+    const icon  = document.getElementById('toast-icon');
+    document.getElementById('toast-msg').textContent = msg;
+    inner.className = `flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl text-sm font-bold ${ok ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`;
+    icon.setAttribute('data-lucide', ok ? 'check-circle' : 'x-circle');
+    lucide.createIcons();
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
+async function api(method, url, body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    return res.json();
+}
+
+// ── Crear usuario ─────────────────────────────────────────────────────────────
+function openCreateModal() {
+    ['c-fullname','c-username','c-email','c-password'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('c-role').value = 'operator';
+    document.getElementById('c-error').classList.add('hidden');
+    openModal('modal-create');
+}
+
+async function createUser() {
+    const payload = {
+        full_name: document.getElementById('c-fullname').value.trim(),
+        username:  document.getElementById('c-username').value.trim(),
+        email:     document.getElementById('c-email').value.trim(),
+        password:  document.getElementById('c-password').value.trim(),
+        role:      document.getElementById('c-role').value,
+    };
+    if (!payload.full_name || !payload.username || !payload.password) {
+        showError('c-error', 'Completá los campos obligatorios'); return;
+    }
+    const res = await api('POST', '/api/admin/users', payload);
+    if (res.status === 'ok') { showToast('Usuario creado correctamente'); setTimeout(() => location.reload(), 1200); }
+    else showError('c-error', res.message || 'Error al crear el usuario');
+}
+
+// ── Editar usuario ────────────────────────────────────────────────────────────
+function openEditModal(id, name, username, email, role) {
+    document.getElementById('e-id').value      = id;
+    document.getElementById('e-fullname').value = name;
+    document.getElementById('e-email').value   = email;
+    document.getElementById('e-role').value    = role;
+    openModal('modal-edit');
+}
+
+async function saveEdit() {
+    const id = document.getElementById('e-id').value;
+    const payload = {
+        full_name: document.getElementById('e-fullname').value.trim(),
+        email:     document.getElementById('e-email').value.trim(),
+        role:      document.getElementById('e-role').value,
+    };
+    const res = await api('PATCH', `/api/admin/users/${id}`, payload);
+    if (res.status === 'ok') { showToast('Usuario actualizado'); setTimeout(() => location.reload(), 1200); }
+    else showToast('Error al guardar', false);
+}
+
+// ── Activar / Desactivar ──────────────────────────────────────────────────────
+async function toggleActive(id, current, btn) {
+    const newVal = current ? 0 : 1;
+    const res = await api('PATCH', `/api/admin/users/${id}`, { is_active: newVal });
+    if (res.status === 'ok') { showToast(newVal ? 'Usuario activado' : 'Usuario desactivado'); setTimeout(() => location.reload(), 1000); }
+    else showToast('Error al cambiar estado', false);
+}
+
+// ── Resetear contraseña ───────────────────────────────────────────────────────
+function openResetModal(id, name) {
+    document.getElementById('r-id').value = id;
+    document.getElementById('r-name').textContent = `Cambiando clave de: ${name}`;
+    document.getElementById('r-password').value = '';
+    document.getElementById('r-confirm').value  = '';
+    document.getElementById('r-error').classList.add('hidden');
+    openModal('modal-reset');
+}
+
+async function saveReset() {
+    const id  = document.getElementById('r-id').value;
+    const pw  = document.getElementById('r-password').value.trim();
+    const pw2 = document.getElementById('r-confirm').value.trim();
+    if (pw.length < 6) { showError('r-error', 'Mínimo 6 caracteres'); return; }
+    if (pw !== pw2)    { showError('r-error', 'Las contraseñas no coinciden'); return; }
+    const res = await api('PATCH', `/api/admin/users/${id}/reset-password`, { password: pw });
+    if (res.status === 'ok') { showToast('Contraseña actualizada'); closeModal('modal-reset'); }
+    else showError('r-error', res.message || 'Error al resetear');
+}
+
+// ── Permisos ──────────────────────────────────────────────────────────────────
+async function openPermissionsModal(id, name) {
+    document.getElementById('p-id').value = id;
+    document.getElementById('perms-username').textContent = `Editando permisos de: ${name}`;
+    // Desmarcar todos
+    document.querySelectorAll('#perms-grid input[type=checkbox]').forEach(cb => cb.checked = false);
+    // Cargar permisos actuales
+    const res = await api('GET', `/api/admin/users/${id}/permissions`);
+    if (res.status === 'ok') {
+        res.permissions.forEach(key => {
+            const cb = document.getElementById(`perm-${key}`);
+            if (cb) cb.checked = true;
+        });
+        // Actualizar toggles de sección
+        document.querySelectorAll('[id^="toggle-"]').forEach(toggle => {
+            const section = toggle.id.replace('toggle-', '');
+            updateSectionToggle(section);
+        });
+    }
+    openModal('modal-perms');
+}
+
+function toggleSection(section, isChecked) {
+    document.querySelectorAll(`.perm-checkbox[data-section="${section}"]`).forEach(cb => {
+        cb.checked = isChecked;
+    });
+}
+
+function updateSectionToggle(section) {
+    const checkboxes = document.querySelectorAll(`.perm-checkbox[data-section="${section}"]`);
+    const toggle = document.getElementById(`toggle-${section}`);
+    if (toggle && checkboxes.length > 0) {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        toggle.checked = allChecked;
+    }
+}
+
+async function savePermissions() {
+    const id = document.getElementById('p-id').value;
+    const granted = Array.from(document.querySelectorAll('#perms-grid .perm-checkbox:checked')).map(cb => cb.value);
+    const res = await api('POST', `/api/admin/users/${id}/permissions`, { permissions: granted });
+    if (res.status === 'ok') { showToast('Permisos guardados'); closeModal('modal-perms'); }
+    else showToast('Error al guardar permisos', false);
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function showError(elId, msg) {
+    const el = document.getElementById(elId);
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+</script>
+{% endblock %}

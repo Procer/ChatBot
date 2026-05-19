@@ -2,157 +2,183 @@
 
 {% block title %}Trámites | Zárate System IA{% endblock %}
 {% block breadcrumb %}Trámites{% endblock %}
-{% block section_title %}Bandeja de Entrada{% endblock %}
+{% block section_title %}Trámites Recibidos{% endblock %}
 
 {% block header_actions %}
-    <div class="flex items-center gap-4">
-        <span class="text-[13px] font-bold text-slate-500 uppercase tracking-widest">{{ submissions|length }} Registros</span>
+    <div class="flex items-center gap-3">
+        <span class="text-[13px] font-bold text-slate-500 hidden md:block">{{ submissions|length }} registros</span>
+        <button onclick="exportToCSV()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-600 hover:text-white rounded-xl text-[13px] font-bold uppercase tracking-widest transition-all">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Exportar todo
+        </button>
         <button onclick="window.location.reload()" class="p-2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
         </button>
     </div>
 {% endblock %}
 
+{% block extra_head %}
+<style>
+    .sub-row { border-left: 2px solid transparent; }
+    .sub-row.selected { border-left-color: #6366f1; background: rgba(99,102,241,0.05); }
+    .sub-row.selected .sub-name { color: #fff; }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(51,65,85,0.5); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    #submissionView { animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="flex h-[calc(100vh-140px)] gap-6 lg:-mt-4">
-    
-    <!-- COLA DE CAPTURA (SIDEBAR IZQUIERDO) -->
-    <div class="w-80 lg:w-96 flex flex-col bg-slate-950/20 border-r border-slate-800/50">
-        <div class="p-8 border-b border-slate-800/50 bg-slate-900/10">
-            <h5 class="text-[14px] font-black text-brand-500 uppercase tracking-[0.3em]">Cola de Captura</h5>
-            <div class="flex items-center justify-between mt-4">
-                <div class="flex -space-x-2">
-                    {% for s in submissions[:3] %}
-                    <div class="w-7 h-7 rounded-full border-2 border-slate-900 bg-slate-800 flex items-center justify-center text-[13px] font-black text-white">
-                        {{ s.user_name[:1] }}
-                    </div>
-                    {% endfor %}
-                </div>
-                <span class="text-[13px] font-bold text-slate-500">{{ submissions|length }} totales</span>
+<div class="flex h-[calc(100vh-140px)] -mt-0 lg:-mt-4 overflow-hidden">
+
+    <!-- ── LISTA DE REGISTROS ────────────────────────────────────── -->
+    <aside class="w-64 lg:w-72 flex flex-col border-r border-slate-800/50 shrink-0">
+
+        <!-- Filtros compactos -->
+        <div class="px-3 py-3 space-y-2 border-b border-slate-800/40">
+            <div class="relative">
+                <i data-lucide="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600"></i>
+                <input id="searchInput" type="text" placeholder="Buscar..." oninput="filterSubmissions()"
+                    class="w-full bg-slate-900/60 border border-slate-800 rounded-lg py-2 pl-8 pr-3 text-[13px] text-white placeholder-slate-600 outline-none focus:border-brand-500/50 transition-all">
             </div>
+            <select id="topicFilter" onchange="filterSubmissions()"
+                class="w-full bg-slate-900/60 border border-slate-800 rounded-lg py-2 px-3 text-[12px] text-slate-500 outline-none focus:border-brand-500/50 transition-all appearance-none cursor-pointer">
+                <option value="">Todos los trámites</option>
+                {% set seen = [] %}
+                {% for s in submissions %}
+                    {% if s.topic not in seen %}
+                        {% set _ = seen.append(s.topic) %}
+                        <option value="{{ s.topic }}">{{ s.topic }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
         </div>
 
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+        <!-- Items -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar py-1" id="submissionsList">
             {% for s in submissions %}
-            <div id="sub-{{ s.id }}" 
+            <div id="sub-{{ s.id }}"
+                 data-name="{{ s.user_name|lower }}"
+                 data-topic="{{ s.topic }}"
                  onclick="showSubmission({{ s.id }})"
-                 class="sub-row group p-5 rounded-2xl cursor-pointer hover:bg-slate-800/40 transition-all border border-transparent hover:border-slate-800/50 relative">
-                <div class="flex justify-between items-start mb-2">
-                    <span class="text-[11px] font-black text-slate-600 uppercase tracking-tighter">ID-{{ s.id }}</span>
-                    <span class="text-[12px] font-medium text-slate-500">{{ s.formatted_date.split(' ')[0] }}</span>
+                 class="sub-row group flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-slate-800/30 transition-all">
+                <!-- Avatar inicial -->
+                <div class="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700/50 flex items-center justify-center text-slate-400 font-black text-xs shrink-0 group-hover:border-slate-600 transition-all">
+                    {{ s.user_name[:1]|upper }}
                 </div>
-                <h4 class="text-sm font-bold text-slate-300 group-hover:text-white transition-colors leading-tight">{{ s.user_name }}</h4>
-                <div class="mt-3 flex items-center gap-3">
-                    <div class="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                    <span class="text-[12px] font-black text-slate-500 uppercase tracking-widest">{{ s.topic }}</span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex justify-between items-baseline gap-1">
+                        <span class="sub-name text-[13px] font-semibold text-slate-400 group-hover:text-white transition-colors truncate">{{ s.user_name }}</span>
+                        <span class="text-[10px] text-slate-700 shrink-0">{{ s.formatted_date.split(' ')[0] }}</span>
+                    </div>
+                    <p class="text-[11px] text-slate-600 truncate mt-0.5">{{ s.topic }}</p>
                 </div>
-                
-                <!-- Indicador de Selección -->
-                <div class="absolute left-2 top-1/2 -translate-y-1/2 w-1 h-8 bg-brand-500 rounded-full scale-y-0 transition-transform origin-center active-indicator"></div>
             </div>
             {% endfor %}
-        </div>
-    </div>
 
-    <!-- VISUALIZADOR DE REPORTE (ÁREA DERECHA) -->
-    <div class="flex-1 flex flex-col min-w-0 p-8 lg:p-12 overflow-y-auto custom-scrollbar bg-slate-900/30">
-        
-        <!-- Estado Vacío -->
-        <div id="emptyDetail" class="flex-1 flex flex-col items-center justify-center text-center opacity-40">
-            <div class="relative mb-8">
-                <div class="w-24 h-24 rounded-[2.5rem] bg-slate-800/30 border border-slate-700/50 flex items-center justify-center text-slate-600 rotate-12">
-                    <i data-lucide="layout-list" class="w-12 h-12"></i>
-                </div>
-                <div class="absolute -bottom-2 -right-2 w-10 h-10 rounded-2xl bg-brand-600/20 border border-brand-500/30 flex items-center justify-center text-brand-500 -rotate-12">
-                    <i data-lucide="search" class="w-5 h-5"></i>
-                </div>
+            {% if not submissions %}
+            <div class="py-12 text-center px-6 opacity-50">
+                <i data-lucide="inbox" class="w-8 h-8 text-slate-700 mx-auto mb-3"></i>
+                <p class="text-[12px] text-slate-600 font-bold">Sin registros aún</p>
             </div>
-            <h3 class="text-3xl font-black text-white tracking-tighter">Centro de Inspección</h3>
-            <p class="text-slate-500 mt-4 max-w-sm leading-relaxed font-medium">Seleccioná un registro del panel izquierdo para auditar la información recolectada por el asistente.</p>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- ── PANEL DE DETALLE ───────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        <!-- Estado vacío -->
+        <div id="emptyDetail" class="flex-1 flex flex-col items-center justify-center text-center p-10 opacity-35">
+            <div class="w-16 h-16 rounded-3xl bg-slate-800/50 border border-slate-700/30 flex items-center justify-center mb-4">
+                <i data-lucide="file-search" class="w-8 h-8 text-slate-600"></i>
+            </div>
+            <h3 class="text-lg font-black text-white">Seleccioná un registro</h3>
+            <p class="text-[13px] text-slate-500 mt-1.5 max-w-xs leading-relaxed">Elegí un trámite del panel izquierdo para ver su detalle.</p>
         </div>
 
-        <!-- Vista de Reporte -->
-        <div id="submissionView" class="hidden animate-in fade-in slide-in-from-right-4 duration-500">
-            <!-- Header Moderno -->
-            <div class="flex items-start justify-between mb-12">
-                <div class="flex items-center gap-10">
-                    <div class="relative">
-                        <div class="w-24 h-24 rounded-[2.5rem] bg-gradient-to-br from-brand-600 to-brand-400 flex items-center justify-center text-white shadow-[0_20px_50px_rgba(37,99,235,0.3)]">
-                            <i data-lucide="file-text" class="w-12 h-12"></i>
-                        </div>
-                        <div class="absolute -bottom-2 -right-2 w-8 h-8 rounded-xl bg-emerald-500 border-4 border-slate-900 flex items-center justify-center">
-                            <i data-lucide="check" class="w-4 h-4 text-white"></i>
-                        </div>
+        <!-- Vista de detalle -->
+        <div id="submissionView" class="hidden flex-col flex-1 overflow-hidden">
+
+            <!-- HEADER DEL DETALLE -->
+            <div class="px-6 py-4 border-b border-slate-800/60 flex items-center justify-between gap-4 shrink-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div id="view_avatar"
+                        class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-700 to-indigo-900 flex items-center justify-center text-white font-black text-base shrink-0 shadow-md shadow-brand-900/40">
+                        ?
                     </div>
-                    <div>
-                        <div class="flex items-center gap-3 mb-2">
-                            <h2 id="view_name" class="text-5xl font-black text-white tracking-tighter">---</h2>
-                        </div>
-                        <div class="flex items-center gap-4 text-slate-500">
-                            <div class="flex items-center gap-2 px-3 py-1 bg-slate-800/50 rounded-full border border-slate-700/50">
-                                <span class="w-2 h-2 rounded-full bg-brand-500"></span>
-                                <span id="view_topic_badge" class="text-[13px] font-black uppercase tracking-widest text-slate-300">---</span>
-                            </div>
-                            <span class="text-[14px] font-bold uppercase tracking-widest flex items-center gap-2">
-                                <i data-lucide="calendar" class="w-4 h-4 text-slate-600"></i>
-                                <span id="view_date">---</span>
-                            </span>
+                    <div class="min-w-0">
+                        <h2 id="view_name" class="text-[15px] font-black text-white leading-tight truncate">---</h2>
+                        <div class="flex items-center gap-2 mt-0.5">
+                            <span id="view_topic_badge" class="text-[11px] font-black text-brand-400 uppercase tracking-wider truncate">---</span>
+                            <span class="text-slate-700">·</span>
+                            <span id="view_date" class="text-[11px] text-slate-500 shrink-0">---</span>
                         </div>
                     </div>
                 </div>
-                <div class="flex gap-3">
-                    <a id="view_chat" href="#" class="p-4 bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-brand-400 rounded-3xl transition-all hover:scale-105">
-                        <i data-lucide="message-circle" class="w-6 h-6"></i>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <a id="view_chat" href="#"
+                        class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/70 border border-slate-700/50 text-slate-400 hover:text-brand-400 hover:border-brand-500/40 rounded-lg transition-all text-[12px] font-bold">
+                        <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline">Ver chat</span>
                     </a>
-                    <button class="px-8 py-4 bg-white text-slate-950 font-black text-sm uppercase tracking-widest rounded-3xl hover:bg-brand-500 hover:text-white transition-all shadow-xl hover:shadow-brand-600/20 active:scale-95">
-                        Exportar Reporte
+                    <button onclick="exportCurrentToCSV()"
+                        class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 border border-emerald-500/20 text-emerald-500 hover:bg-emerald-600 hover:text-white rounded-lg transition-all text-[12px] font-bold">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline">CSV</span>
+                    </button>
+                    <button onclick="window.print()"
+                        class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/70 border border-slate-700/50 text-slate-400 hover:text-white rounded-lg transition-all text-[12px] font-bold">
+                        <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                        <span class="hidden sm:inline">Imprimir</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Report Grid -->
-            <div class="grid grid-cols-12 gap-8">
-                <div class="col-span-12 lg:col-span-8 space-y-12">
-                    <!-- Datos Extraídos Section -->
-                    <div class="space-y-6">
-                        <h5 class="text-[14px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                            Información Extraída <span class="h-[1px] flex-1 bg-slate-800"></span>
-                        </h5>
-                        <div id="dataGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- JS Content -->
-                        </div>
-                    </div>
+            <!-- BODY: campos + archivos -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar px-6 py-5 space-y-7">
 
-                    <!-- Archivos Section -->
-                    <div id="filesSection" class="hidden space-y-6">
-                        <h5 class="text-[14px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-3">
-                            Documentación <span class="h-[1px] flex-1 bg-slate-800"></span>
-                        </h5>
-                        <div id="filesGrid" class="grid grid-cols-2 gap-4">
-                            <!-- JS Content -->
-                        </div>
+                <!-- Tabla de campos -->
+                <div>
+                    <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.25em] mb-3 flex items-center gap-3">
+                        Información recopilada
+                        <span class="flex-1 h-px bg-slate-800/70"></span>
+                    </p>
+                    <div id="dataList" class="rounded-xl border border-slate-800/70 overflow-hidden divide-y divide-slate-800/50">
+                        <!-- Poblado por JS -->
                     </div>
                 </div>
 
-                <div class="col-span-12 lg:col-span-4">
-                    <div class="bg-brand-600/5 border border-brand-500/10 p-8 rounded-[2rem] space-y-8 sticky top-0">
-                        <h6 class="text-sm font-black text-brand-400 uppercase tracking-widest">Resumen de Auditoría</h6>
-                        <div class="space-y-4">
-                            <div class="flex justify-between items-center py-3 border-b border-brand-500/10 text-[14px]">
-                                <span class="text-slate-500 font-bold uppercase">Estado</span>
-                                <span class="px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full font-black tracking-widest uppercase text-[12px]">Completado</span>
-                            </div>
-                            <div class="flex justify-between items-center py-3 border-b border-brand-500/10 text-[14px]">
-                                <span class="text-slate-500 font-bold uppercase">Precisión IA</span>
-                                <span class="text-white font-black">98.5%</span>
-                            </div>
-                        </div>
-                        <p class="text-[13px] text-slate-500 leading-relaxed italic">"Toda la información ha sido validada mediante el procesamiento de lenguaje natural (NLP)."</p>
-                        <a id="view_delete" href="#" class="flex items-center gap-2 text-[13px] font-black text-rose-500/50 hover:text-rose-500 transition-colors uppercase tracking-widest pt-4" onclick="return confirm('¿Borrar registro permanentemente?')">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i> Eliminar Registro
-                        </a>
+                <!-- Documentos adjuntos -->
+                <div id="filesSection" class="hidden">
+                    <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.25em] mb-3 flex items-center gap-3">
+                        Documentos adjuntos
+                        <span class="flex-1 h-px bg-slate-800/70"></span>
+                    </p>
+                    <div id="filesGrid" class="flex flex-wrap gap-2.5">
+                        <!-- Poblado por JS -->
                     </div>
                 </div>
+            </div>
+
+            <!-- FOOTER: meta + eliminar -->
+            <div class="px-6 py-3.5 border-t border-slate-800/60 flex items-center justify-between shrink-0 bg-slate-900/30">
+                <div class="flex items-center gap-6">
+                    <div>
+                        <p class="text-[9px] text-slate-600 font-black uppercase tracking-widest">Teléfono</p>
+                        <p id="view_phone" class="text-[13px] font-semibold text-slate-400 mt-0.5 font-mono">---</p>
+                    </div>
+                    <div>
+                        <p class="text-[9px] text-slate-600 font-black uppercase tracking-widest">ID del registro</p>
+                        <p id="view_id" class="text-[13px] font-semibold text-slate-400 mt-0.5 font-mono">---</p>
+                    </div>
+                </div>
+                <a id="view_delete" href="#"
+                    class="flex items-center gap-1.5 text-[12px] font-bold text-rose-500/40 hover:text-rose-500 transition-colors uppercase tracking-widest"
+                    onclick="return confirm('¿Borrar este registro permanentemente?')">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Eliminar
+                </a>
             </div>
         </div>
     </div>
@@ -162,86 +188,150 @@
 
 <script>
     const submissions = JSON.parse(document.getElementById('submissions-data').textContent);
-    
+    let _currentSubId = null;
+
     function showSubmission(id) {
+        _currentSubId = id;
         const sub = submissions.find(s => s.id == id);
         if (!sub) return;
-        
-        // Efectos visuales de selección
-        document.querySelectorAll('.sub-row').forEach(r => {
-            r.classList.remove('bg-brand-600/5', 'border-brand-500/20');
-            r.querySelector('.active-indicator').classList.remove('scale-y-100');
-            r.querySelector('.active-indicator').classList.add('scale-y-0');
-        });
-        const row = document.getElementById(`sub-${sub.id}`);
-        row.classList.add('bg-brand-600/5', 'border-brand-500/20');
-        row.querySelector('.active-indicator').classList.remove('scale-y-0');
-        row.querySelector('.active-indicator').classList.add('scale-y-100');
-        
+
+        // Selección visual en lista
+        document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('selected'));
+        document.getElementById(`sub-${sub.id}`).classList.add('selected');
+
         document.getElementById('emptyDetail').classList.add('hidden');
-        document.getElementById('submissionView').classList.remove('hidden');
-        
-        // Llenar datos de cabecera
-        document.getElementById('view_name').innerText = sub.user_name;
-        document.getElementById('view_topic_badge').innerText = sub.topic;
-        document.getElementById('view_date').innerText = sub.formatted_date;
+        const view = document.getElementById('submissionView');
+        view.classList.remove('hidden');
+        view.classList.add('flex');
+
+        // Header
+        const initial = sub.user_name ? sub.user_name[0].toUpperCase() : '?';
+        document.getElementById('view_avatar').textContent = initial;
+        document.getElementById('view_name').textContent = sub.user_name;
+        document.getElementById('view_topic_badge').textContent = sub.topic;
+        document.getElementById('view_date').textContent = sub.formatted_date;
         document.getElementById('view_chat').href = `/admin/chat/${sub.thread_id}`;
         document.getElementById('view_delete').href = `/admin/submissions/delete/${sub.id}`;
-        
-        // Grid de Datos con mejor estética
-        const grid = document.getElementById('dataGrid');
-        grid.innerHTML = '';
-        Object.entries(sub.parsed_data).forEach(([key, value]) => {
-            if (key === "Nombre del Cliente") return;
-            
-            // Si el valor es un archivo o ID técnico, NO lo mostramos en la grid de texto
-            // ya que ya aparece en la sección de 'Documentación Adjunta'
-            if (typeof value === 'string' && (value.startsWith('tg_') || value.includes('(Adjunto)') || value.includes('/uploads/'))) {
-                return;
-            }
 
-            const card = document.createElement('div');
-            card.className = 'bg-slate-900/40 border border-slate-800/80 p-6 rounded-2xl hover:bg-slate-800/30 transition-all group';
-            card.innerHTML = `
-                <p class="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-2 group-hover:text-brand-500 transition-colors">${key}</p>
-                <div class="text-[13px] font-bold text-slate-200">${value}</div>
-            `;
-            grid.appendChild(card);
+        // Footer
+        document.getElementById('view_id').textContent = `#${sub.id}`;
+        const rawPhone = sub.thread_id || '';
+        const phone = rawPhone.replace('@s.whatsapp.net', '').replace('@c.us', '') || '—';
+        document.getElementById('view_phone').textContent = phone;
+
+        // ── Tabla de campos ──────────────────────────────────────
+        const list = document.getElementById('dataList');
+        list.innerHTML = '';
+
+        const entries = Object.entries(sub.parsed_data || {}).filter(([k, v]) => {
+            if (k === 'Nombre del Cliente') return false;
+            if (typeof v === 'string' && (v.startsWith('tg_') || v.includes('(Adjunto)') || v.includes('/uploads/'))) return false;
+            return true;
         });
-        
-        // Sección de Archivos
+
+        if (entries.length === 0) {
+            list.innerHTML = '<div class="px-5 py-8 text-center text-[13px] text-slate-600 italic">Sin datos adicionales registrados</div>';
+        } else {
+            entries.forEach(([key, value], idx) => {
+                const strVal = String(value);
+                const isLong = strVal.length > 60;
+                const row = document.createElement('div');
+                const bg = idx % 2 === 0 ? 'bg-slate-900/20' : '';
+
+                if (isLong) {
+                    row.className = `px-5 py-4 ${bg}`;
+                    row.innerHTML = `
+                        <p class="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1.5">${escHtml(key)}</p>
+                        <p class="text-[13px] text-slate-200 leading-relaxed">${escHtml(strVal)}</p>
+                    `;
+                } else {
+                    row.className = `flex items-center gap-4 px-5 py-3 ${bg}`;
+                    row.innerHTML = `
+                        <span class="w-40 shrink-0 text-[10px] font-black text-slate-600 uppercase tracking-widest">${escHtml(key)}</span>
+                        <span class="text-[13px] font-semibold text-slate-200 flex-1">${escHtml(strVal)}</span>
+                    `;
+                }
+                list.appendChild(row);
+            });
+        }
+
+        // ── Archivos adjuntos ────────────────────────────────────
         const fileSec = document.getElementById('filesSection');
         const fileGrid = document.getElementById('filesGrid');
         fileGrid.innerHTML = '';
-        
+
         if (sub.attachments && sub.attachments.length > 0) {
             fileSec.classList.remove('hidden');
             sub.attachments.forEach(file => {
-                const btn = document.createElement('a');
-                btn.href = file.file_path;
-                btn.target = "_blank";
-                btn.className = "bg-slate-900/40 border border-slate-800 p-5 rounded-2xl flex items-center gap-4 hover:border-brand-500/50 transition-all group";
-                btn.innerHTML = `
-                    <div class="w-10 h-10 rounded-xl bg-slate-950 flex items-center justify-center text-slate-600 group-hover:text-brand-500 shadow-inner">
-                        <i data-lucide="file-check" class="w-5 h-5"></i>
+                const a = document.createElement('a');
+                a.href = file.file_path;
+                a.target = '_blank';
+                a.className = 'flex items-center gap-3 px-4 py-2.5 bg-slate-900/60 border border-slate-800/80 hover:border-brand-500/40 rounded-xl transition-all group max-w-xs';
+                a.innerHTML = `
+                    <div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-brand-400 transition-colors shrink-0">
+                        <i data-lucide="paperclip" class="w-4 h-4"></i>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-[13px] font-black text-slate-400 uppercase truncate">${file.context || 'Documento'}</p>
-                        <p class="text-[11px] font-bold text-slate-600 truncate">${file.file_name}</p>
+                    <div class="min-w-0">
+                        <p class="text-[12px] font-bold text-slate-300 truncate">${escHtml(file.context || 'Documento')}</p>
+                        <p class="text-[10px] text-slate-600 truncate">${escHtml(file.file_name)}</p>
                     </div>
                 `;
-                fileGrid.appendChild(btn);
+                fileGrid.appendChild(a);
             });
-        } else { fileSec.classList.add('hidden'); }
-        
+        } else {
+            fileSec.classList.add('hidden');
+        }
+
         if (window.lucide) lucide.createIcons();
     }
-</script>
 
-<style>
-    .sub-row:hover .active-indicator { opacity: 0.5; }
-    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.5); border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-</style>
+    function escHtml(str) {
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── FILTROS ───────────────────────────────────────────────────
+    function filterSubmissions() {
+        const q = document.getElementById('searchInput').value.toLowerCase();
+        const topic = document.getElementById('topicFilter').value;
+        document.querySelectorAll('.sub-row').forEach(row => {
+            const name = row.dataset.name || '';
+            const rowTopic = row.dataset.topic || '';
+            const matchQ = !q || name.includes(q) || rowTopic.toLowerCase().includes(q);
+            const matchT = !topic || rowTopic === topic;
+            row.style.display = (matchQ && matchT) ? '' : 'none';
+        });
+    }
+
+    // ── EXPORTAR CSV — TODOS ──────────────────────────────────────
+    function exportToCSV() {
+        if (!submissions || submissions.length === 0) { alert('No hay trámites para exportar.'); return; }
+        const allKeys = new Set();
+        submissions.forEach(s => Object.keys(s.parsed_data || {}).forEach(k => allKeys.add(k)));
+        const keys = ['ID', 'Nombre', 'Trámite', 'Fecha', ...allKeys];
+        const rows = submissions.map(s => {
+            const base = [s.id, s.user_name, s.topic, s.formatted_date];
+            const data = [...allKeys].map(k => `"${(s.parsed_data[k] || '').toString().replace(/"/g, '""')}"`);
+            return [...base.map(v => `"${v}"`), ...data].join(',');
+        });
+        downloadCSV([keys.join(','), ...rows].join('\n'), `tramites_${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    // ── EXPORTAR CSV — REGISTRO ACTUAL ────────────────────────────
+    function exportCurrentToCSV() {
+        if (!_currentSubId) { alert('Seleccioná un registro primero.'); return; }
+        const sub = submissions.find(s => s.id == _currentSubId);
+        if (!sub) return;
+        const keys = ['ID', 'Nombre', 'Trámite', 'Fecha', ...Object.keys(sub.parsed_data || {})];
+        const vals = [sub.id, sub.user_name, sub.topic, sub.formatted_date, ...Object.values(sub.parsed_data || {})];
+        downloadCSV([keys.join(','), vals.map(v => `"${v}"`).join(',')].join('\n'),
+            `tramite_${sub.id}_${sub.user_name.replace(/\s+/g, '_')}.csv`);
+    }
+
+    function downloadCSV(content, filename) {
+        const a = document.createElement('a');
+        a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(content);
+        a.download = filename;
+        a.click();
+    }
+</script>
 {% endblock %}

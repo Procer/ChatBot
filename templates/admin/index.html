@@ -15,7 +15,7 @@
                 <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
                     <i data-lucide="users" class="w-5 h-5"></i>
                 </div>
-                <span class="text-[13px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">+5%</span>
+                <span class="text-[13px] font-bold text-slate-500 bg-slate-800/50 px-2 py-0.5 rounded">Total</span>
             </div>
             <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Sesiones Totales</p>
             <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_sessions }}</h3>
@@ -30,7 +30,7 @@
                 <span class="text-[13px] font-bold text-slate-500 bg-slate-500/10 px-2 py-0.5 rounded">Hoy</span>
             </div>
             <p class="text-sm font-bold text-slate-500 uppercase tracking-widest">Mensajes IA</p>
-            <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_messages or 1250 }}</h3>
+            <h3 class="text-4xl font-extrabold text-white mt-1">{{ stats.total_messages or 0 }}</h3>
         </div>
 
         <!-- Tarjeta: Trámites -->
@@ -133,7 +133,7 @@
             
             <div class="space-y-4">
                 <!-- WhatsApp Status -->
-                <div class="bg-surface border border-slate-800 p-6 rounded-2xl">
+                <div class="bg-surface border border-slate-800 p-6 rounded-2xl" id="wa-status-card">
                     <div class="flex items-center justify-between mb-6">
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
@@ -141,12 +141,12 @@
                             </div>
                             <span class="text-base font-bold text-white">WhatsApp</span>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            <span class="text-[13px] font-bold text-emerald-500 uppercase">Online</span>
+                        <div class="flex items-center gap-2" id="wa-status-badge">
+                            <span class="w-2 h-2 bg-slate-600 rounded-full"></span>
+                            <span class="text-[13px] font-bold text-slate-500 uppercase">Verificando...</span>
                         </div>
                     </div>
-                    <p class="text-sm text-slate-500 leading-relaxed mb-4">Instancia conectada correctamente a Evolution API.</p>
+                    <p class="text-sm text-slate-500 leading-relaxed mb-4" id="wa-status-text">Consultando estado de la instancia Green-API...</p>
                     <a href="/admin/channels" class="block text-center py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[13px] font-bold uppercase tracking-widest transition-all">Gestionar</a>
                 </div>
 
@@ -164,7 +164,7 @@
                             <span class="text-[13px] font-bold text-emerald-500 uppercase">Activo</span>
                         </div>
                     </div>
-                    <p class="text-sm text-slate-500 leading-relaxed">Motor de inferencia respondiendo en <span class="text-white">1.2s avg</span>.</p>
+                    <p class="text-sm text-slate-500 leading-relaxed">Motor de inferencia procesando solicitudes en tiempo real.</p>
                 </div>
             </div>
         </div>
@@ -244,5 +244,27 @@
             }
         }
     });
+    // === STATUS REAL DE WHATSAPP ===
+    async function checkWhatsAppStatus() {
+        const badge = document.getElementById('wa-status-badge');
+        const text = document.getElementById('wa-status-text');
+        if (!badge || !text) return;
+        try {
+            const res = await fetch('/admin/whatsapp/status');
+            const data = await res.json();
+            const state = data.state || data.stateInstance || 'unknown';
+            const isOnline = ['authorized', 'connected', 'online'].includes(state.toLowerCase());
+            badge.innerHTML = isOnline
+                ? `<span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span><span class="text-[13px] font-bold text-emerald-500 uppercase">Online</span>`
+                : `<span class="w-2 h-2 bg-rose-500 rounded-full"></span><span class="text-[13px] font-bold text-rose-500 uppercase">${state}</span>`;
+            text.textContent = isOnline
+                ? 'Instancia Green-API conectada correctamente.'
+                : `Estado: ${state}. Revisá la configuración de conectividad.`;
+        } catch(e) {
+            badge.innerHTML = `<span class="w-2 h-2 bg-slate-600 rounded-full"></span><span class="text-[13px] font-bold text-slate-500 uppercase">Sin datos</span>`;
+            text.textContent = 'No se pudo verificar el estado de WhatsApp.';
+        }
+    }
+    checkWhatsAppStatus();
 </script>
 {% endblock %}

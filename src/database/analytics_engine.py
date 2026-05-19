@@ -105,9 +105,11 @@ def get_dashboard_metrics():
         if not model_distribution: model_distribution = {"Sin Datos": 0}
 
         # 5. Distribución por Canal
-        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE thread_id LIKE 'wa_%'")
+        # WA: thread_id contiene @c.us (formato real de Green-API)
+        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE thread_id LIKE '%@c.us%' OR thread_id LIKE '%@g.us%'")
         wa_count = cursor.fetchone()[0] or 0
-        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE thread_id LIKE 'tg_%'")
+        # Telegram: solo dígitos, sin '@', sin prefijos especiales
+        cursor.execute("SELECT COUNT(*) FROM session_analytics WHERE CAST(thread_id AS TEXT) NOT LIKE '%@%' AND thread_id NOT LIKE 'playground%' AND thread_id NOT LIKE 'usuario_nuevo_%' AND CAST(thread_id AS TEXT) GLOB '[0-9]*'")
         tg_count = cursor.fetchone()[0] or 0
         wc_count = total_sessions - (wa_count + tg_count)
         channel_distribution = {"WhatsApp": wa_count, "Telegram": tg_count, "Webchat": max(0, wc_count)}

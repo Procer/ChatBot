@@ -2,16 +2,9 @@
 setlocal enabledelayedexpansion
 
 echo ==========================================
-echo    ZARATE IA - GESTOR DE INICIO
+echo    ZARATE IA - GESTOR LOCAL PRO
 echo ==========================================
 echo.
-echo Selecciona que servicios deseas activar:
-echo [1] Todo (WhatsApp + Telegram + Admin)
-echo [2] Solo WhatsApp (+ Admin)
-echo [3] Solo Telegram (+ Admin)
-echo [4] Solo Admin
-echo.
-set /p choice="Elige una opcion (1-4): "
 
 :: Verificar entorno virtual
 if not exist .venv (
@@ -23,41 +16,26 @@ if not exist .venv (
 :: Cargar entorno virtual
 call .venv\Scripts\activate
 
-:: Procesar Eleccion
-if "%choice%"=="1" goto :ALL
-if "%choice%"=="2" goto :WHATSAPP
-if "%choice%"=="3" goto :TELEGRAM
-if "%choice%"=="4" goto :ADMIN
-goto :ADMIN
-
-:ALL
-echo [DOCKER] Iniciando servicios de WhatsApp...
-docker-compose -f docker/docker-compose.yml up -d
-echo [TELEGRAM] Iniciando polling...
-start /b python src/telegram_polling.py
-goto :SERVER
-
-:WHATSAPP
-echo [DOCKER] Iniciando servicios de WhatsApp...
-docker-compose -f docker/docker-compose.yml up -d
-goto :SERVER
-
-:TELEGRAM
-echo [TELEGRAM] Iniciando polling...
-start /b python src/telegram_polling.py
-goto :SERVER
-
-:ADMIN
-echo [INFO] Iniciando solo el Panel de Administracion...
-goto :SERVER
-
-:SERVER
-:: Lanzar el panel de administración en el navegador
-echo [WEB] Lanzando panel de administracion en breve...
-start /b cmd /c "timeout /t 5 /nobreak >nul && start http://localhost:8000/admin"
-
-:: Ejecutar el servidor FastAPI
+:: 1. Iniciar Servidor Principal PRIMERO (en su propia ventana)
 echo [SERVER] Iniciando FastAPI en puerto 8000...
-python -m uvicorn src.main:app --reload --reload-dir src --host 0.0.0.0 --port 8000
+start "ZSG Bot - Servidor FastAPI" cmd /k "call .venv\Scripts\activate && python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
 
+:: 2. Esperar a que el servidor levante completamente antes de iniciar Telegram
+echo [WAIT] Esperando que el servidor inicialice (8 segundos)...
+timeout /t 8 /nobreak >nul
+
+:: 3. Iniciar Telegram Polling (ahora el server ya está listo)
+echo [TELEGRAM] Abriendo ventana de escucha de Telegram...
+start "ZSG Bot - Telegram Polling" cmd /k "call .venv\Scripts\activate && python src/telegram_polling.py"
+
+:: 4. Abrir el Panel Admin en el navegador
+echo [BROWSER] Abriendo panel de administracion...
+start http://localhost:8000/admin
+
+echo.
+echo ==========================================
+echo   Sistema iniciado correctamente.
+echo   Panel Admin: http://localhost:8000/admin
+echo   Cerrando esta ventana no detiene el bot.
+echo ==========================================
 pause

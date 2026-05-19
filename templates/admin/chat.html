@@ -300,14 +300,44 @@
 
         <!-- Mensajes Scroll -->
         <div id="chatLog" class="scroll-view">
+            {% set ns = namespace(last_date='') %}
             {% for msg in messages %}
+                {% set msg_date = msg.timestamp.split(' ')[0] if ' ' in msg.timestamp else msg.timestamp[:10] %}
+                {% if msg_date != ns.last_date %}
+                    {% set ns.last_date = msg_date %}
+                    <div class="flex items-center gap-3 my-4 px-2">
+                        <div class="flex-1 h-px bg-slate-800/60"></div>
+                        <span class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 py-1 bg-slate-800/40 rounded-full border border-slate-700/30">
+                            {% if msg_date == today %}Hoy{% elif msg_date == yesterday %}Ayer{% else %}{{ msg_date }}{% endif %}
+                        </span>
+                        <div class="flex-1 h-px bg-slate-800/60"></div>
+                    </div>
+                {% endif %}
             <div class="msg-group {{ 'items-end' if msg.type == 'human' else 'items-start' }}">
-                <div class="bubble {{ 'bubble-human' if msg.type == 'human' else 'bubble-bot' }}">
+                <div class="bubble {{ 'bubble-human' if msg.type == 'human' else 'bubble-bot' }} {{ 'opacity-50 italic' if msg.status == 'deleted' else '' }}">
                     {{ msg.content|safe }}
                 </div>
-                <span class="text-[9px] text-slate-600 font-bold uppercase px-2">
-                    {{ msg.timestamp.split(' ')[1][:5] if ' ' in msg.timestamp else '' }}
-                </span>
+                <div class="flex items-center gap-2 px-2 mt-0.5">
+                    <span class="text-[9px] text-slate-600 font-bold uppercase">
+                        {{ msg.timestamp.split(' ')[1][:5] if ' ' in msg.timestamp else '' }}
+                    </span>
+
+                    {% if msg.type == 'bot' or msg.role == 'admin' %}
+                        <div class="flex items-center">
+                            {% if msg.status == 'read' %}
+                                <i data-lucide="check-check" class="w-3 h-3 text-sky-400"></i>
+                            {% elif msg.status == 'delivered' %}
+                                <i data-lucide="check-check" class="w-3 h-3 text-slate-500"></i>
+                            {% elif msg.status == 'sent' %}
+                                <i data-lucide="check" class="w-3 h-3 text-slate-500"></i>
+                            {% elif msg.status == 'deleted' %}
+                                <i data-lucide="trash-2" class="w-3 h-3 text-rose-500"></i>
+                            {% elif msg.status == 'edited' %}
+                                <i data-lucide="pencil" class="w-3 h-3 text-amber-500"></i>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -503,12 +533,22 @@
         group.className = `msg-group ${type === 'human' ? 'items-end' : 'items-start'}`;
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
+        const statusIcon = type === 'human' ? '' : `
+            <div class="flex items-center ml-2">
+                <i data-lucide="check" class="w-3 h-3 text-slate-500"></i>
+            </div>
+        `;
+
         group.innerHTML = `
             <div class="bubble ${type === 'human' ? 'bubble-human' : 'bubble-bot'}">${content}</div>
-            <span class="text-[9px] text-slate-600 font-bold uppercase px-2">${time}</span>
+            <div class="flex items-center gap-2 px-2 mt-0.5">
+                <span class="text-[9px] text-slate-600 font-bold uppercase">${time}</span>
+                ${statusIcon}
+            </div>
         `;
         chatLog.appendChild(group);
         chatLog.scrollTop = chatLog.scrollHeight;
+        if (window.lucide) lucide.createIcons();
     }
 
     function submitFile() {
@@ -565,6 +605,14 @@
     }
 
     loadBrain();
+
+    // Enter para enviar, Shift+Enter para nueva línea
+    chatInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('interventionForm')?.dispatchEvent(new Event('submit'));
+        }
+    });
 
     // Filtro de hilos
     document.getElementById('threadSearch')?.addEventListener('input', (e) => {

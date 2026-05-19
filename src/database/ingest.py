@@ -14,10 +14,11 @@ import PyPDF2
 # Cargar variables de entorno
 load_dotenv()
 
-# Configuración de rutas
-CHROMA_PATH = "chroma_db"
-SETTINGS_DB = "settings.sqlite"
-DATA_DIR = "data"
+# Configuración de rutas (absolutas para garantizar consistencia)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
+SETTINGS_DB = os.path.join(BASE_DIR, "settings.sqlite")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 # Configuración de Embeddings
 AI_PROVIDER = os.getenv("AI_PROVIDER", "google").lower()

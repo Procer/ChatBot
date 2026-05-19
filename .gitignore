@@ -11,7 +11,8 @@ __pycache__/
 checkpoints.sqlite
 analytics.sqlite
 notifications.sqlite
-# settings.sqlite  <- Comenta esto si quieres subir tus ajustes locales al repo
+settings.sqlite
+*.sqlite
 
 # Datos y RAG
 chroma_db/

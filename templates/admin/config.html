@@ -271,69 +271,72 @@
     </main>
 </div>
 
+<!-- Form oculto para Reset Total (endpoint correcto) -->
+<form id="resetForm" action="/admin/system/reset-total" method="post" class="hidden"></form>
+
+<!-- Toast de notificaciones -->
+<div id="appToast" class="fixed bottom-6 right-6 z-[200] flex items-center gap-3 px-5 py-4 rounded-2xl border backdrop-blur-md shadow-2xl transition-all duration-500 opacity-0 translate-y-4 pointer-events-none" aria-live="polite"></div>
+
 <!-- MODAL DE CONOCIMIENTO -->
-<div id="knowledgeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm">
-    <div class="bg-surface border border-slate-800 w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
-        <div class="px-8 py-6 border-b border-slate-800 bg-panel/30 flex items-center justify-between">
+<div id="knowledgeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-slate-950/80 backdrop-blur-sm">
+    <div class="bg-surface border border-slate-800 w-full max-w-2xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
+        <!-- Header Fijo -->
+        <div class="px-8 py-6 border-b border-slate-800 bg-panel/30 flex items-center justify-between shrink-0">
             <h3 id="modalTitle" class="text-xl font-black text-white">Nuevo Conocimiento</h3>
-            <button onclick="closeKnowledgeModal()" class="p-2 text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <button onclick="closeKnowledgeModal()" class="p-2 text-slate-500 hover:text-white transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
         
-        <form id="knowledgeForm" action="/admin/knowledge/add" method="post" enctype="multipart/form-data" class="p-8 space-y-6">
-            <input type="hidden" name="item_id" id="item_id">
-            
-            <div class="grid grid-cols-2 gap-6">
-                <div class="space-y-2">
-                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tema / Tópico</label>
-                    <input type="text" name="topic" id="topic" required placeholder="Ej: Requisitos de Inscripción" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
-                </div>
-                <div class="space-y-2">
-                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Categoría</label>
-                    <input type="text" name="category" id="category" required placeholder="Ej: Trámites" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
-                </div>
-            </div>
-
-            <div class="space-y-2">
-                <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Información Detallada (IA)</label>
-                <textarea name="content" id="content" rows="6" required placeholder="Escribí aquí toda la información que el bot debe conocer sobre este tema..." class="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-base text-slate-300 focus:border-brand-500 outline-none transition-all resize-none custom-scrollbar"></textarea>
-            </div>
-
-            <div class="space-y-2">
-                <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Archivo Multimedia Adjunto (Opcional)</label>
-                <div class="flex flex-col gap-3">
-                    <input type="file" name="media" id="media" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-400 file:bg-brand-500/10 file:text-brand-500 file:border-0 file:rounded-lg file:px-4 file:py-2 file:mr-4 file:font-bold hover:file:bg-brand-500 hover:file:text-white transition-all">
-                    <div id="currentMedia" class="hidden text-[11px] text-brand-500 font-bold flex items-center justify-between gap-2 p-3 bg-brand-500/5 rounded-xl border border-brand-500/10">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="file-check" class="w-3.5 h-3.5"></i> 
-                            <span>Tiene archivo adjunto: <span id="currentMediaName" class="text-slate-400"></span></span>
-                        </div>
-                        <button type="button" id="btnRemoveMedia" class="text-rose-500 hover:text-rose-400 p-1 transition-all">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
+        <!-- Body con Scroll Interno -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-8">
+            <form id="knowledgeForm" action="/admin/knowledge/add" method="post" enctype="multipart/form-data" class="space-y-8">
+                <input type="hidden" name="item_id" id="item_id">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-2">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tema / Tópico</label>
+                        <input type="text" name="topic" id="topic" required placeholder="Ej: Requisitos de Inscripción" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Categoría</label>
+                        <input type="text" name="category" id="category" required placeholder="Ej: Trámites" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
                     </div>
                 </div>
-            </div>
 
-            <!-- NUEVO: OPCIONES INTERACTIVAS -->
-            <div class="space-y-3 p-6 bg-brand-500/5 border border-brand-500/10 rounded-2xl">
-                <div class="flex items-center justify-between">
-                    <label class="text-[13px] font-bold text-brand-500 uppercase tracking-widest flex items-center gap-2">
-                        <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> Botones e Interactividad (Opcional)
-                    </label>
-                    <span class="text-[8px] font-bold text-slate-600 uppercase">WhatsApp • Guía de Usuario</span>
-                </div>
-                <input type="text" name="interactive_options" id="interactive_options" placeholder="Ej: Ver Requisitos, Iniciar Trámite, Hablar con Humano" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
                 <div class="space-y-2">
-                    <p class="text-[12px] text-slate-600 italic"><strong>Botones:</strong> Separá las opciones por comas en el campo de arriba.</p>
-                    <p class="text-[12px] text-slate-600 italic"><strong>Cuestionarios:</strong> En los "Campos del Formulario" podés usar paréntesis. Ej: <code>Sexo(Masculino, Femenino)</code> enviará botones automáticamente.</p>
+                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Información Detallada (IA)</label>
+                    <textarea name="content" id="content" rows="6" required placeholder="Escribí aquí toda la información que el bot debe conocer sobre este tema..." class="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-base text-slate-300 focus:border-brand-500 outline-none transition-all resize-none custom-scrollbar"></textarea>
                 </div>
-            </div>
 
-            <div class="flex items-center gap-4 pt-4">
-                <button type="button" onclick="closeKnowledgeModal()" class="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-sm uppercase tracking-widest rounded-xl transition-all">Cancelar</button>
-                <button type="submit" class="flex-[2] py-4 bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-brand-600/20">Guardar Cambios</button>
-            </div>
-        </form>
+                <div class="space-y-2">
+                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Botones de Respuesta Rápida <span class="normal-case font-medium text-slate-600">(Opcional)</span></label>
+                    <textarea name="interactive_options" id="interactive_options" rows="2" placeholder="Consultar precio | Agendar turno | Hablar con operador" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-slate-300 focus:border-brand-500 outline-none transition-all resize-none custom-scrollbar"></textarea>
+                    <p class="text-[11px] text-slate-600 ml-1">Separar con |. Aparecen como botones en WhatsApp cuando el bot responde sobre este tema.</p>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Archivo Multimedia Adjunto (Opcional)</label>
+                    <div class="flex flex-col gap-3">
+                        <input type="file" name="media" id="media" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-400 file:bg-brand-500/10 file:text-brand-500 file:border-0 file:rounded-lg file:px-4 file:py-2 file:mr-4 file:font-bold hover:file:bg-brand-500 hover:file:text-white transition-all">
+                        <div id="currentMedia" class="hidden text-[11px] text-brand-500 font-bold flex items-center justify-between gap-2 p-3 bg-brand-500/5 rounded-xl border border-brand-500/10">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="file-check" class="w-3.5 h-3.5"></i> 
+                                <span>Tiene archivo adjunto: <span id="currentMediaName" class="text-slate-400"></span></span>
+                            </div>
+                            <button type="button" id="btnRemoveMedia" class="text-rose-500 hover:text-rose-400 p-1 transition-all">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </form>
+        </div>
+
+        <!-- Footer con Botones Fijo -->
+        <div class="p-8 bg-panel/30 border-t border-slate-800 flex items-center gap-4 shrink-0">
+            <button type="button" onclick="closeKnowledgeModal()" class="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-sm uppercase tracking-widest rounded-xl transition-all">Cancelar</button>
+            <button type="submit" form="knowledgeForm" class="flex-[2] py-4 bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-brand-600/20">Guardar Cambios</button>
+        </div>
     </div>
 </div>
 
@@ -341,26 +344,66 @@
 
 {% block extra_scripts %}
 <script>
+    // ── TOAST ────────────────────────────────────────────────────────────────
+    function showToast(message, type = 'success') {
+        const toast = document.getElementById('appToast');
+        const cfg = {
+            success: { border: 'border-emerald-500/30', bg: 'bg-emerald-950/90', text: 'text-emerald-300', icon: '✓' },
+            error:   { border: 'border-rose-500/30',    bg: 'bg-rose-950/90',    text: 'text-rose-300',    icon: '✕' },
+            warning: { border: 'border-amber-500/30',   bg: 'bg-amber-950/90',   text: 'text-amber-300',   icon: '⚠' }
+        }[type] || {};
+
+        toast.className = `fixed bottom-6 right-6 z-[200] flex items-center gap-3 px-5 py-4 rounded-2xl border backdrop-blur-md shadow-2xl transition-all duration-500 ${cfg.border} ${cfg.bg} ${cfg.text}`;
+        toast.innerHTML = `<span class="text-lg font-black">${cfg.icon}</span><span class="text-sm font-bold">${message}</span>`;
+        toast.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
+
+        clearTimeout(window._toastTimer);
+        window._toastTimer = setTimeout(() => {
+            toast.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+        }, 4500);
+    }
+
+    // Mostrar toast según URL params (resultado del guardado/reset)
+    (function checkUrlToasts() {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('success') === '1' || p.get('success_file') === '1')
+            showToast('Configuración guardada exitosamente');
+        else if (p.get('success_reset') === '1')
+            showToast('Sistema reseteado a valores de fábrica', 'warning');
+        else if (p.get('error_reset') === '1')
+            showToast('Error al resetear. Revisá los logs.', 'error');
+        else if (p.get('error_file') === '1')
+            showToast('Error al subir el archivo multimedia.', 'error');
+    })();
+
+    // ── TABS ─────────────────────────────────────────────────────────────────
     function switchTab(tabId) {
-        // Ocultar todos
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.remove('active-tab', 'bg-brand-500/5', 'text-brand-500');
             btn.classList.add('text-slate-500', 'hover:bg-slate-800/50');
         });
 
-        // Mostrar seleccionado
-        document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+        const tabEl = document.getElementById(`tab-${tabId}`);
+        if (tabEl) tabEl.classList.remove('hidden');
         const activeBtn = document.querySelector(`[data-tab="${tabId}"]`);
-        activeBtn.classList.add('active-tab', 'bg-brand-500/5', 'text-brand-500');
-        activeBtn.classList.remove('text-slate-500', 'hover:bg-slate-800/50');
-        
-        // Actualizar URL sin recargar
+        if (activeBtn) {
+            activeBtn.classList.add('active-tab', 'bg-brand-500/5', 'text-brand-500');
+            activeBtn.classList.remove('text-slate-500', 'hover:bg-slate-800/50');
+        }
+
         const url = new URL(window.location);
         url.searchParams.set('active_tab', tabId);
         window.history.pushState({}, '', url);
     }
 
+    // Tab por defecto = identidad, override si hay param en URL
+    (function initTabs() {
+        const p = new URLSearchParams(window.location.search);
+        switchTab(p.get('active_tab') || 'identidad');
+    })();
+
+    // ── KNOWLEDGE MODAL ───────────────────────────────────────────────────────
     function openKnowledgeModal() {
         document.getElementById('modalTitle').innerText = 'Nuevo Concepto';
         document.getElementById('knowledgeForm').action = '/admin/knowledge/add';
@@ -374,7 +417,7 @@
         try {
             const response = await fetch(`/admin/knowledge/get/${id}`);
             const data = await response.json();
-            
+
             document.getElementById('modalTitle').innerText = 'Editar Concepto';
             document.getElementById('knowledgeForm').action = '/admin/knowledge/update';
             document.getElementById('item_id').value = data.id;
@@ -382,22 +425,21 @@
             document.getElementById('category').value = data.category;
             document.getElementById('content').value = data.content;
             document.getElementById('interactive_options').value = data.interactive_options || '';
-            
+
             if (data.media_path) {
                 document.getElementById('currentMedia').classList.remove('hidden');
                 document.getElementById('currentMediaName').innerText = data.media_path.split('/').pop();
                 document.getElementById('btnRemoveMedia').onclick = function() {
-                    if(confirm('¿Quitar archivo adjunto de este concepto?')) {
+                    if (confirm('¿Quitar archivo adjunto de este concepto?'))
                         window.location.href = `/admin/knowledge/remove-media/${id}`;
-                    }
                 };
             } else {
                 document.getElementById('currentMedia').classList.add('hidden');
             }
-            
+
             document.getElementById('knowledgeModal').classList.remove('hidden');
         } catch (e) {
-            alert('Error al cargar los datos');
+            showToast('Error al cargar los datos del concepto.', 'error');
         }
     }
 
@@ -406,21 +448,14 @@
     }
 
     function deleteKnowledge(id) {
-        if (confirm('¿Estás seguro de eliminar este concepto?')) {
+        if (confirm('¿Estás seguro de eliminar este concepto?'))
             window.location.href = `/admin/knowledge/delete/${id}`;
-        }
     }
 
+    // ── RESET ─────────────────────────────────────────────────────────────────
     function confirmReset() {
-        if (confirm('⚠️ PELIGRO: Vas a borrar toda la base de datos. Esta acción no tiene vuelta atrás.\n\n¿Deseas continuar?')) {
-            document.querySelector('#tab-avanzado form').submit();
-        }
-    }
-
-    // Mantener la pestaña activa tras recargar (si hay success, etc)
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('active_tab')) {
-        switchTab(urlParams.get('active_tab'));
+        if (confirm('⚠️ PELIGRO: Vas a borrar toda la base de datos.\nEsta acción no tiene vuelta atrás.\n\n¿Deseas continuar?'))
+            document.getElementById('resetForm').submit();
     }
 </script>
 

@@ -36,11 +36,13 @@ async def telegram_polling():
     
     # 1. Obtener configuración de la base de datos
     try:
+        print("[*] Leyendo configuración de la base de datos...")
         conn = get_db_settings()
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM config WHERE key = 'telegram_token'")
         row = cursor.fetchone()
         token = row[0] if row and row[0] else None
+        print(f"[*] Token encontrado: {'SÍ' if token else 'NO'}")
         
         cursor.execute("SELECT value FROM config WHERE key = 'telegram_enabled'")
         enabled_row = cursor.fetchone()
@@ -51,28 +53,26 @@ async def telegram_polling():
         return
 
     if not token:
-        print("[AVISO] No se encontró un Token de Telegram. Configuralo en el Panel Admin.")
+        print("[AVISO] No se encontró un Token de Telegram. Configuralo en el Panel Admin o en el .env.")
         return
 
     if enabled == '0':
-        print("[AVISO] Telegram está desactivado en el Panel Admin.")
-        # Seguiremos intentando por si el usuario lo activa mientras el script corre
+        print("[AVISO] Telegram está desactivado en el Panel Admin (pero el polling seguirá intentando).")
     
     # 2. Limpiar webhook previo (obligatorio para usar polling)
-    # Solo lo hacemos si estamos en local o si el modo es polling explícito
     async with httpx.AsyncClient() as client:
         try:
             print(f"[*] Limpiando webhooks previos para permitir polling...")
             await client.get(f"https://api.telegram.org/bot{token}/deleteWebhook")
         except Exception as e:
-            print(f"[!] No se pudo limpiar el webhook (podría estar ya limpio): {e}")
+            print(f"[!] No se pudo limpiar el webhook: {e}")
 
     print(f"[OK] Escuchando mensajes en Telegram (Token: {token[:10]}...)")
     
     offset = 0
     async with httpx.AsyncClient() as client:
         while True:
-            # Re-verificar si está habilitado cada 30 segundos
+            # Re-verificar si está habilitado cada cierto tiempo
             if offset % 10 == 0:
                 try:
                     conn = get_db_settings(); cursor = conn.cursor()
@@ -96,9 +96,8 @@ async def telegram_polling():
                             user_text = message.get("text", message.get("caption", ""))
                             attachment = None
                             
-                            # Detectar Media
+                            # Media Detection
                             if "photo" in message:
-                                # Tomamos la versión de mayor resolución
                                 file_id = message["photo"][-1]["file_id"]
                                 from src.main import download_telegram_media
                                 attachment = await download_telegram_media(file_id, token)
@@ -106,21 +105,15 @@ async def telegram_polling():
                                 file_id = message["document"]["file_id"]
                                 from src.main import download_telegram_media
                                 attachment = await download_telegram_media(file_id, token)
-                            elif "video" in message:
-                                file_id = message["video"]["file_id"]
-                                from src.main import download_telegram_media
-                                attachment = await download_telegram_media(file_id, token)
                             
                             if user_text or attachment:
-                                print(f"[MSG] Telegram de {user_id}: {user_text} {'[ADJUNTO]' if attachment else ''}")
-                                # Ejecutar el procesamiento (esto llama a LangGraph)
+                                print(f"[MSG] Telegram de {user_id}: {user_text}")
                                 await process_bot_response(user_id, user_text, "telegram", attachment)
                     
                 except Exception as e:
                     print(f"[ERROR] Error en conexión con Telegram: {e}")
                     await asyncio.sleep(5)
             else:
-                # Si está desactivado, esperamos un poco antes de volver a chequear
                 await asyncio.sleep(5)
             
             await asyncio.sleep(0.5)

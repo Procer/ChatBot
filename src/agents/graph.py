@@ -207,7 +207,11 @@ def iniciar_onboarding_tramite(topic: str, thread_id: str = "unknown"):
         if not fields_str or fields_str.lower() == 'none' or has_form == 0:
             return json.dumps({"status": "info_only", "message": f"El tema '{real_topic}' no requiere formulario."})
 
-        clean_fields = ["Nombre del Cliente"] + [f.strip(" .*") for f in fields_str.split(",") if f.strip()]
+        # Split inteligente: ignorar comas que están dentro de paréntesis
+        # Ejemplo: "Estado Civil (Casados, Divorciados)" no debe partirse en dos
+        import re as _re
+        raw_fields = [f.strip(" .*") for f in _re.split(r',(?![^(]*\))', fields_str) if f.strip()]
+        clean_fields = ["Nombre del Cliente"] + raw_fields
         seen = set()
         final_fields = [x for x in clean_fields if not (x in seen or seen.add(x))]
         
@@ -305,13 +309,13 @@ def consultar_disponibilidad(fecha: str):
         return f"Error al consultar disponibilidad: {str(e)}"
 
 @tool
-def agendar_turno(fecha: str, hora: str, motivo: str):
+def agendar_turno(fecha: str, hora: str, motivo: str, thread_id: str = "unknown"):
     """
     Reserva un turno en una fecha y hora específica.
     fecha: YYYY-MM-DD, hora: HH:MM.
+    IMPORTANTE: Siempre pasá el thread_id del chat actual como argumento.
     """
-    # En un entorno real, extraeríamos el nombre del cliente del historial o se lo pediríamos
-    success = book_appointment("unknown_thread", fecha, hora, motivo)
+    success = book_appointment(thread_id, fecha, hora, motivo)
     if success:
         return f"¡Listo! Turno agendado para el {fecha} a las {hora} por {motivo}."
     return "No pude agendar el turno. Es posible que ese horario ya se haya ocupado."
@@ -359,7 +363,7 @@ def call_model(state: AgentState):
         system_prompt = f"Sos {bot_name}, el asistente de {company_name}. Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA."
 
     # Inyectar thread_id para uso de herramientas
-    system_prompt += f"\n- Tu ID de chat actual es: {t_id}. Siempre pasá este ID al usar la herramienta 'iniciar_onboarding_tramite'.\n"
+    system_prompt += f"\n- Tu ID de chat actual es: {t_id}. Siempre pasá este ID al usar las herramientas 'iniciar_onboarding_tramite' Y 'agendar_turno'.\n"
 
     # Inyectar Datos de la Empresa (Ficha)
     try:
