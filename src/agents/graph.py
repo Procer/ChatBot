@@ -441,7 +441,7 @@ def call_model(state: AgentState):
         system_prompt += """
 ### ℹ️ REGLAS DE INFORMACIÓN Y TRÁMITES:
 1. **INFORMACIÓN PRIMERO:** Si el usuario pregunta por un trámite (ej: "requisitos para X"), NO inicies la recolección de datos inmediatamente. Primero, brindá TODA la información y requisitos que tengas en tu conocimiento de forma clara y amable.
-2. **INICIO DE TRÁMITE:** Solo después de dar la información, preguntá si quiere comenzar con el trámite ahora. Si dice que sí, usá 'iniciar_onboarding_tramite'.
+2. **INICIO DE TRÁMITE:** Solo después de dar la información, y ÚNICAMENTE si el tema en el CONOCIMIENTO OFICIAL tiene la etiqueta `[TIENE_FORMULARIO]`, preguntá si quiere comenzar con el trámite ahora. Si dice que sí, usá 'iniciar_onboarding_tramite'. Si el tema tiene la etiqueta `[SOLO_INFORMACION]`, NO ofrezcas iniciar un trámite, recolectar datos ni agendar turnos bajo ningún concepto.
 3. **RECONOCIMIENTO DE DATOS:** Si el usuario te da un dato suelto (como su nombre) sin estar en un trámite, usá 'registrar_nombre_usuario'.
 
 ### 📂 ENVÍO DE DOCUMENTACIÓN:
@@ -455,12 +455,13 @@ def call_model(state: AgentState):
         db_path = os.path.join(ROOT_DIR, "settings.sqlite")
         conn = sqlite3.connect(db_path, timeout=30)
         cursor = conn.cursor()
-        cursor.execute("SELECT topic, content, form_fields, media_path FROM knowledge")
+        cursor.execute("SELECT topic, content, form_fields, media_path, has_form FROM knowledge")
         kb = cursor.fetchall()
         kb_text = ""
         for r in kb:
             has_media = " [CON_ARCHIVO]" if r[3] else ""
-            kb_text += f"- {r[0]}{has_media}: {r[1]} (Campos: {r[2]})\n"
+            has_form_tag = " [TIENE_FORMULARIO]" if r[4] == 1 else " [SOLO_INFORMACION]"
+            kb_text += f"- {r[0]}{has_media}{has_form_tag}: {r[1]} (Campos: {r[2]})\n"
         
         system_prompt += f"\n\n### CONOCIMIENTO OFICIAL:\n{kb_text}"
         conn.close()

@@ -1162,21 +1162,39 @@ async def _process_bot_response_inner(user_id: str, user_text: str, platform: st
                 match_file = re.search(r"\[SEND_FILE:\s*(.*?)\]", bot_response)
                 if match_file:
                     topic_to_send = match_file.group(1).strip()
+                    # Limpieza robusta del término de búsqueda
+                    topic_clean = topic_to_send
+                    for ext in ['.pdf', '.png', '.jpg', '.jpeg', '.docx', '.xlsx']:
+                        if topic_clean.lower().endswith(ext):
+                            topic_clean = topic_clean[:-len(ext)].strip()
+                    
+                    logging.info(f"[SEND_FILE] Procesando tag: '{topic_to_send}' -> Término limpio: '{topic_clean}'")
+                    
                     # Buscar en DB
                     conn_f = get_db_settings()
                     cursor_f = conn_f.cursor()
-                    cursor_f.execute("SELECT media_path FROM knowledge WHERE topic LIKE ?", (f"%{topic_to_send}%",))
+                    # Búsqueda flexible por tema o por nombre de archivo real
+                    cursor_f.execute(
+                        "SELECT media_path, topic FROM knowledge WHERE (topic LIKE ? OR media_path LIKE ?) AND media_path IS NOT NULL", 
+                        (f"%{topic_clean}%", f"%{topic_clean}%")
+                    )
                     row_f = cursor_f.fetchone()
                     
                     if row_f and row_f[0]:
                         media_path = row_f[0]
                         cursor_f.execute("SELECT value FROM config WHERE key = 'webhook_base_url'")
                         base_url = cursor_f.fetchone()[0].rstrip('/')
-                        public_url = f"{base_url}{media_path}"
+                        # Asegurar el slash / entre dominio y ruta
+                        media_slash = media_path if media_path.startswith('/') else f"/{media_path}"
+                        public_url = f"{base_url}{media_slash}"
                         filename = os.path.basename(media_path)
+                        
+                        logging.info(f"[SEND_FILE] Encontrado archivo para tema '{row_f[1]}': {public_url}")
                         
                         if platform == "whatsapp": await send_whatsapp_file(user_id, public_url, filename, "")
                         else: await send_telegram_file(user_id, public_url, "")
+                    else:
+                        logging.warning(f"[SEND_FILE] No se encontró ningún conocimiento con archivo adjunto para '{topic_clean}'")
                         
                     conn_f.close()
                     # Limpiar el tag de la respuesta final
