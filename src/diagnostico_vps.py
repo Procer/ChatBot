@@ -28,9 +28,13 @@ def check_brain():
             print("❌ ERROR: No hay 'system_prompt' en la base de datos.")
 
         # 2. Verificar Conocimiento (Trámites)
-        cursor.execute("SELECT COUNT(*) FROM knowledge")
-        count = cursor.fetchone()[0]
-        print(f"✅ Conocimiento: {count} trámites/temas cargados en la tabla 'knowledge'.")
+        cursor.execute("SELECT id, topic, media_path, has_form, form_fields FROM knowledge")
+        rows = cursor.fetchall()
+        print(f"✅ Conocimiento: {len(rows)} trámites/temas cargados en la tabla 'knowledge':")
+        for r in rows:
+            has_media = f"📎 Sí ({os.path.basename(r[2])})" if r[2] else "❌ No"
+            has_form = "📝 Sí" if r[3] == 1 else "❌ No"
+            print(f"   - [ID {r[0]}] '{r[1]}' | Formulario: {has_form} | Adjunto: {has_media}")
 
         # 3. Verificar Webhook
         cursor.execute("SELECT value FROM config WHERE key = 'webhook_base_url'")
