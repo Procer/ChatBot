@@ -1,70 +1,71 @@
-# 🚀 Plan de Acción: Despliegue en VPS y Evolución de Ambientes
+# 🚀 Plan de Acción Definitivo: Migración a SaaS (Multi-Cliente con Base de Datos Única)
 
-Este documento es tu hoja de ruta para pasar el bot a tu VPS de muestra hoy mismo, y los pasos a seguir más adelante para tener una arquitectura profesional (Test, Producción y Multi-Cliente).
-
----
-
-## FASE 1: Lo que hicimos hoy (Preparación Inmediata)
-
-Para poder subir el proyecto al VPS "por ahora" sin romper nada ni sobreescribir datos por error mediante GitHub:
-
-1.  **Protección de Bases de Datos (`.gitignore`):** Se modificó el archivo `.gitignore` para que **ningún** archivo `.sqlite` se suba al repositorio de GitHub. 
-    *   *Por qué:* Si se subía `settings.sqlite`, al hacer `git pull` en el VPS podías pisar la configuración o perder datos de clientes reales.
-2.  **Uso de Variables de Entorno:** El archivo `.env` ya estaba ignorado, lo cual es correcto.
-
-### 👉 ¿Cómo subir al VPS AHORA MISMO?
-
-1.  **Sube el código a GitHub:**
-    ```bash
-    git add .
-    git commit -m "Preparación para VPS: ignorar DBs"
-    git push origin main
-    ```
-2.  **En el VPS (Descarga de código):**
-    *   Si es la primera vez: `git clone [tu-repo]`
-    *   Si ya estaba clonado: `git pull origin main`
-3.  **Transferencia Manual del "Cerebro" (Solo la primera vez o si cambias algo vital en local):**
-    *   Usa un programa FTP (como FileZilla) o SCP para subir los siguientes archivos desde tu PC al VPS (reemplazando los del VPS):
-        *   `settings.sqlite` (Contiene tus configuraciones, trámites, prompt)
-        *   Carpeta `chroma_db/` (Base de datos vectorial)
-        *   Carpeta `data/` (Tus PDFs y TXTs)
-        *   Archivo `.env` (Configurado con IPs o dominios del VPS, no de localhost).
-4.  **Reinicia el bot en el VPS:**
-    *   Dependiendo de cómo lo corras (pm2, docker, etc.): `pm2 restart chatbot` (o el comando que uses).
-
-> **Nota Crítica en el VPS:** Entra al Panel de Admin en el VPS y asegúrate de que la "Webhook Base URL" sea la IP o dominio del VPS, y haz clic en "Sincronizar Webhooks" para que Evolution/WhatsApp apunte allí.
+Este documento define la hoja de ruta paso a paso para transformar ZSG-Bot-iA de un proyecto stand-alone a un software SaaS escalable, utilizando un único servidor (VPS) y una única base de datos SQL Server estructurada por `client_id`.
 
 ---
 
-## FASE 2: Separación Test vs Producción (Próximas Semanas)
+## 🏗️ FASE 1: Refactorización de Base de Datos (El Cimiento)
+**Objetivo:** Abandonar SQLite (o bases de datos dispersas) y centralizar todo en SQL Server con seguridad por inquilino (Multi-Tenant).
 
-Una vez que el cliente apruebe esta muestra, prepararemos el VPS definitivo con dos ambientes.
-
-### 1. Reestructurar Carpetas
-Tendremos dos copias del bot en el servidor:
-*   `/var/www/chatbot-test`
-*   `/var/www/chatbot-prod`
-
-### 2. Archivos `.env` Distintos
-Cada carpeta tendrá su propio archivo `.env`:
-*   **Test `.env`:** Puerto 8001, conecta a la instancia de WhatsApp de "Pruebas".
-*   **Prod `.env`:** Puerto 8000, conecta a la instancia de WhatsApp "Oficial".
-
-### 3. Proxy Inverso (Nginx)
-Configuraremos Nginx para redirigir el tráfico:
-*   Peticiones a `test.tudominio.com` -> Puerto 8001
-*   Peticiones a `app.tudominio.com` -> Puerto 8000
+1. **Implementar Sistema de Migraciones:**
+   - Si el backend usa Python (FastAPI), instalar y configurar **Alembic** junto con SQLAlchemy.
+   - *Por qué:* Esto permitirá hacer cambios en las tablas (agregar columnas) mediante scripts de código, manteniendo sincronizados todos los ambientes.
+2. **Crear el Esquema Base Multi-Cliente:**
+   - Crear el primer script de migración para generar las tablas maestras descritas en la nueva arquitectura:
+     - `ADM_Clients`
+     - `ADM_ClientSettings` (Feature Flags)
+     - `ADM_Users`
+     - `BOT_Conversations` (con `client_id`)
+     - `DATA_Submissions` (con `client_id`)
+3. **Refactorizar las Consultas (Código):**
+   - Modificar todo el código del backend y de LangGraph para que **ninguna** consulta a la base de datos se ejecute sin el filtro `WHERE client_id = ?`.
+   - Modificar la lógica del Webhook de Evolution/Telegram para que, al recibir un mensaje, identifique inmediatamente a qué `client_id` pertenece esa instancia.
 
 ---
 
-## FASE 3: Sistema Multi-Cliente (Escalabilidad)
+## 🎛️ FASE 2: Sistema de "Tildes" (Feature Flags)
+**Objetivo:** Poder desplegar código para todos, pero activar funciones solo para quienes queramos.
 
-Cuando comiences a vender el bot a distintos clientes.
+1. **Panel Súper Admin (UI):**
+   - Actualizar el panel "Modo Dios" para que al editar un cliente se puedan marcar checkboxes (ej. "Activar RAG", "Exportación a PDF", "Derivación a Humano").
+   - Estos tildes se guardan en `ADM_ClientSettings`.
+2. **Protección Lógica en LangGraph:**
+   - En el grafo (cerebro del bot), agregar validaciones antes de los nodos clave.
+   - *Ejemplo:* Antes de entrar al nodo `query_rag`, verificar `if current_client.settings.feat_rag_enabled == True`. Si es falso, saltar al nodo de respuesta básica.
 
-### Opción Elegida (A definir)
-1.  **Multi-Instancia (Docker):** Ejecutar varios contenedores en tu VPS actual, uno por cliente. Cada uno con su puerto y su base de datos aislada. (Más económico y muy organizado).
-2.  **Un VPS por Cliente:** Contratar un VPS pequeño (ej. 4GB RAM) dedicado 100% para un cliente nuevo grande. (Más seguro y rendimiento aislado).
+---
 
-### Pasos Generales:
-*   Si usamos la arquitectura actual (1 base de datos SQLite por instancia), la opción **Multi-Instancia (Docker)** es perfecta y muy rápida de desplegar. Cada cliente tendrá su propia carpeta `chroma_db` y su propio `settings.sqlite`.
-*   Automatizar el despliegue con GitHub Actions para que al pushear a "main" se actualice automáticamente.
+## 🌿 FASE 3: Ambientes y Repositorio (Git Flow)
+**Objetivo:** Dejar de probar código en el entorno donde operan los clientes reales.
+
+1. **Organización en GitHub:**
+   - Asegurarse de que el repositorio sea privado.
+   - Crear dos ramas principales (Branches):
+     - `main` (Producción - Código estable).
+     - `test` (Pruebas - Donde subes lo que programas en tu PC).
+2. **Configuración del VPS (El Servidor Físico):**
+   - Crear dos carpetas / aplicaciones corriendo en paralelo:
+     - `/var/www/chatbot-test` (Escuchando en el puerto ej: 8001).
+     - `/var/www/chatbot-prod` (Escuchando en el puerto ej: 8000).
+3. **Archivos de Entorno (`.env`):**
+   - El `.env` de `chatbot-test` apuntará a la base de datos `ZSG_Master_Test` y a instancias de WhatsApp de prueba.
+   - El `.env` de `chatbot-prod` apuntará a la base de datos `ZSG_Master_Prod` y a los números reales.
+
+---
+
+## 🚀 FASE 4: Flujo de Despliegue (DevOps)
+**Objetivo:** Que actualizar el sistema tome 1 minuto y no rompa nada.
+
+1. **Desarrollo y Prueba Local:**
+   - Programas en tu PC -> Corres migración local -> Pruebas -> Haces push a la rama `test`.
+2. **Despliegue a Test:**
+   - Entras al VPS en la carpeta `chatbot-test`.
+   - Ejecutas `git pull origin test`.
+   - Ejecutas el comando de migración (`alembic upgrade head`) para actualizar la DB de prueba.
+   - Reinicias el servicio de prueba. Pruebas con tu celular.
+3. **Pase a Producción:**
+   - Si todo fue bien, en GitHub unes (merge) `test` hacia `main`.
+   - Entras a la carpeta `chatbot-prod` en el VPS.
+   - Haces `git pull origin main`.
+   - Ejecutas la migración (`alembic upgrade head`) para actualizar la DB real.
+   - Reinicias Producción. Todo listo.

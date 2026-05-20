@@ -18,6 +18,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from sqlalchemy.orm import Session
+from src.database.session import get_db
+from src.database.models import Client, ClientSettings, Conversation, Submission
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 import uvicorn
@@ -640,7 +644,7 @@ def get_whatsapp_creds(cfg_dict):
         
     return g_id, g_token
 
-async def setup_whatsapp_webhook(base_url: str):
+async def setup_whatsapp_webhook(base_url: str, client_slug: str = "default"):
     db = get_db_settings(); cursor = db.cursor()
     cursor.execute("SELECT key, value FROM config WHERE key IN ('whatsapp_instance_id', 'whatsapp_api_token')")
     cfg = dict(cursor.fetchall())
@@ -650,8 +654,12 @@ async def setup_whatsapp_webhook(base_url: str):
     if not g_id or not g_token or g_id == 'admin': return False
 
     url = f"https://api.green-api.com/waInstance{g_id}/setSettings/{g_token}"
+    
+    # URL Multi-cliente!
+    webhook_final = f"{base_url}/webhook/{client_slug}/greenapi"
+    
     payload = {
-        "webhookUrl": f"{base_url}/webhook/greenapi",
+        "webhookUrl": webhook_final,
         "outgoingMessageWebhook": "yes",
         "stateInstanceWebhook": "yes",
         "incomingMessageWebhook": "yes",
@@ -752,12 +760,18 @@ async def download_attachment(url: str, filename: str):
 
 # --- WEBHOOKS ---
 
-@app.post("/webhook/greenapi")
-async def green_api_webhook(request: Request, background_tasks: BackgroundTasks):
+@app.post("/webhook/{client_slug}/greenapi")
+async def green_api_webhook(client_slug: str, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         # LOG DE IMPACTO INMEDIATO
         raw_body = await request.body()
-        logging.info(f"!!! [GREEN-API] PETICIÓN RECIBIDA !!! - Body Size: {len(raw_body)} bytes")
+        logging.info(f"!!! [GREEN-API] PETICIÓN RECIBIDA !!! - Cliente: {client_slug} - Body Size: {len(raw_body)} bytes")
+        
+        # Validación Multi-Cliente
+        client = db.query(Client).filter(Client.slug == client_slug, Client.status == 'active').first()
+        if not client:
+            logging.warning(f"[GREEN-API] Webhook ignorado: Cliente '{client_slug}' no encontrado o inactivo.")
+            return JSONResponse({"status": "ignored", "reason": "Client not found"})
         
         data = json.loads(raw_body)
         type_webhook = data.get("typeWebhook")
@@ -872,6 +886,8 @@ async def green_api_webhook(request: Request, background_tasks: BackgroundTasks)
 
         logging.info(f"[GREEN-API] Mensaje procesable de {user_id}: {user_text}")
         
+        # Pasamos el client_id al procesador de fondo (Falta adaptar process_bot_response en el siguiente paso)
+        # Por ahora lo mantenemos igual para no romper, pero ya tenemos el client_id disponible!
         background_tasks.add_task(process_bot_response, user_id, user_text, "whatsapp", attachment)
         return JSONResponse({"status": "ok"})
     except Exception as e:
