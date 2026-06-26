@@ -31,9 +31,13 @@
                     <tr onclick="window.location.href='/admin/chat/{{ thread.id }}'" class="hover:bg-slate-800/30 cursor-pointer group transition-all">
                         <td class="px-8 py-5">
                             <div class="flex items-center gap-4">
+                                {% if thread.avatar %}
+                                <img src="{{ thread.avatar }}" class="w-10 h-10 rounded-xl object-cover border border-slate-800 shrink-0" alt="Avatar">
+                                {% else %}
                                 <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-500 group-hover:bg-brand-500 group-hover:text-white transition-all">
                                     {{ thread.name[:1]|upper }}
                                 </div>
+                                {% endif %}
                                 <div>
                                     <h4 class="text-base font-bold text-white group-hover:text-brand-500 transition-colors">{{ thread.name }}</h4>
                                     <p class="text-[13px] text-slate-600 font-mono">{{ thread.id[:12] }}...</p>

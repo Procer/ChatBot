@@ -26,3 +26,9 @@ scratch/
 *.sqlite-wal
 uploads/
 prompt_debug.txt
+actual_prompt.txt
+
+# Carpetas de archivos legacy y scripts de debugging
+legacy/
+scripts_legacy/
+checkpoints.sqlite.bak

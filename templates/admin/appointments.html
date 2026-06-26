@@ -6,6 +6,9 @@
 
 {% block header_actions %}
     <div class="flex items-center gap-4">
+        <button onclick="openNewAppointmentModal()" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-lg shadow-brand-600/20 flex items-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Turno
+        </button>
         <div class="flex bg-slate-800/50 p-1 rounded-xl border border-slate-800">
             <button onclick="setView('calendar')" id="btn-view-calendar" class="px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all bg-brand-600 text-white shadow-lg shadow-brand-600/20">Calendario</button>
             <button onclick="setView('list')" id="btn-view-list" class="px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all text-slate-500 hover:text-white">Lista</button>
@@ -64,7 +67,7 @@
                         <th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase">Fecha / Hora</th>
                         <th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase">Cliente</th>
                         <th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase">Motivo</th>
-                        <th class="px-8 py-4 text-right"></th>
+                        <th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase text-right">Acciones</th>
                     </tr>
                 </thead>
                 <tbody id="list-body" class="divide-y divide-slate-800">
@@ -72,6 +75,75 @@
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
+
+<!-- MODAL DE NUEVO TURNO -->
+<div id="appointmentModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden">
+    <div class="w-full max-w-md bg-surface border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden">
+        <div class="p-8 border-b border-slate-800 bg-panel/30 flex justify-between items-center">
+            <div>
+                <h3 class="text-lg font-bold text-white">Agendar Turno Manual</h3>
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Completá los datos de la cita</p>
+            </div>
+            <button onclick="closeAppointmentModal()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-all">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+        
+        <form action="/admin/appointments/add" method="POST" class="p-8 space-y-6">
+            <div class="space-y-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Nombre del Cliente</label>
+                <input type="text" name="client_name" required placeholder="Ej: Juan Pérez" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Teléfono / ID Chat (Opcional)</label>
+                <input type="text" name="thread_id" placeholder="Ej: 5491122334455" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Fecha</label>
+                    <input type="date" name="date" id="modal_date" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Hora</label>
+                    <input type="text" name="time" required placeholder="Ej: 10:30" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Trámite / Servicio</label>
+                <select name="service_topic" id="service_topic" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                    <option value="">Turno General / Otro</option>
+                    {% for svc in services_list %}
+                    <option value="{{ svc.topic }}">{{ svc.topic }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Detalle / Motivo</label>
+                <input type="text" name="reason" placeholder="Ej: Reunión inicial" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+            </div>
+
+            <div class="flex items-center justify-between p-4 bg-slate-900/30 border border-slate-800 rounded-xl">
+                <div>
+                    <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">Sincronizar Google Calendar</label>
+                    <span class="text-[9px] text-slate-500">Requiere tener Google Calendar integrado.</span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" name="sync_google" value="1" class="sr-only peer" checked>
+                    <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                </label>
+            </div>
+
+            <div class="flex gap-4">
+                <button type="button" onclick="closeAppointmentModal()" class="w-1/2 py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all">Cancelar</button>
+                <button type="submit" class="w-1/2 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-brand-600/20">Guardar</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -86,26 +158,37 @@
     function setView(view) {
         document.getElementById('view-list').classList.toggle('hidden', view !== 'list');
         document.getElementById('view-calendar').classList.toggle('hidden', view !== 'calendar');
-        document.getElementById('btn-view-list').className = view === 'list' ? 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-brand-600 text-white shadow-lg' : 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white';
-        document.getElementById('btn-view-calendar').className = view === 'calendar' ? 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-brand-600 text-white shadow-lg' : 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white';
+        document.getElementById('btn-view-list').className = view === 'list' ? 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-brand-600 text-white shadow-lg shadow-brand-600/20' : 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white';
+        document.getElementById('btn-view-calendar').className = view === 'calendar' ? 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest bg-brand-600 text-white shadow-lg shadow-brand-600/20' : 'px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white';
         if (view === 'list') renderList();
     }
 
     function renderList() {
         const body = document.getElementById('list-body');
-        body.innerHTML = allAppointments.map(a => `
+        body.innerHTML = allAppointments.map(a => {
+            const dateParts = a.date.split('-');
+            const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : a.date;
+            return `
             <tr class="hover:bg-slate-800/30 transition-all cursor-pointer">
                 <td class="px-8 py-5">
-                    <span class="text-white font-bold block">${a.date}</span>
+                    <span class="text-white font-bold block">${formattedDate}</span>
                     <span class="text-slate-500 text-[10px] font-bold">${a.time} HS</span>
                 </td>
                 <td class="px-8 py-5">
                     <span class="text-slate-200 font-bold">${a.client_name}</span>
                 </td>
                 <td class="px-8 py-5 text-sm text-slate-500 truncate max-w-xs">${a.reason}</td>
-                <td class="px-8 py-5 text-right"><i data-lucide="chevron-right" class="w-4 h-4 text-slate-700"></i></td>
+                <td class="px-8 py-5 text-right flex justify-end items-center gap-4">
+                    <span class="text-[10px] font-bold ${a.status === 'cancelled' ? 'text-red-500/80 bg-red-500/10 border border-red-500/20' : 'text-brand-500 bg-brand-500/10 border border-brand-500/20'} px-2.5 py-1 rounded-full uppercase">${a.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}</span>
+                    ${a.status !== 'cancelled' ? `
+                    <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-lg transition-all" title="Cancelar Turno">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                    ` : ''}
+                </td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
         lucide.createIcons();
     }
 
@@ -129,7 +212,7 @@
                 <div onclick="selectDay('${dateStr}')" class="relative p-2 border-r border-b border-slate-800 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800/50 transition-all ${isSelected ? 'bg-brand-500/10' : ''}">
                     <span class="text-xs font-bold ${isSelected ? 'text-brand-500 scale-125' : 'text-slate-600'}">${day}</span>
                     <div class="mt-1 flex gap-0.5">
-                        ${dayApps.slice(0,3).map(() => `<div class="w-1 h-1 rounded-full bg-brand-500/60"></div>`).join('')}
+                        ${dayApps.slice(0,3).map(a => `<div class="w-1 h-1 rounded-full ${a.status === 'cancelled' ? 'bg-red-500/60' : 'bg-brand-500/60'}"></div>`).join('')}
                     </div>
                 </div>
             `;
@@ -152,10 +235,17 @@
             list.innerHTML = '<div class="flex flex-col items-center justify-center h-full opacity-10 py-10"><i data-lucide="calendar-x" class="w-12 h-12"></i><p class="text-[10px] font-bold uppercase mt-2">Sin turnos</p></div>';
         } else {
             list.innerHTML = apps.map(a => `
-                <div class="p-4 bg-panel/40 border border-slate-800 rounded-xl space-y-2">
+                <div class="p-4 bg-panel/40 border border-slate-800 rounded-xl space-y-2 relative group">
                     <div class="flex justify-between items-center">
                         <span class="text-xs font-bold text-white">${a.time} HS</span>
-                        <span class="text-[9px] font-bold text-brand-500 uppercase">Confirmado</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] font-bold ${a.status === 'cancelled' ? 'text-red-500' : 'text-brand-500'} uppercase">${a.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}</span>
+                            ${a.status !== 'cancelled' ? `
+                            <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-1 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-md transition-all" title="Cancelar Turno">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                            ` : ''}
+                        </div>
                     </div>
                     <p class="text-sm font-semibold text-slate-200">${a.client_name}</p>
                     <p class="text-[10px] text-slate-500 line-clamp-1">${a.reason}</p>
@@ -167,5 +257,29 @@
 
     function changeMonth(delta) { currentMonth += delta; if (currentMonth > 11) { currentMonth = 0; currentYear++; } else if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); }
     function goToToday() { const n = new Date(); currentMonth = n.getMonth(); currentYear = n.getFullYear(); selectedDate = n.toISOString().split('T')[0]; renderCalendar(); }
+
+    function openNewAppointmentModal() {
+        document.getElementById('modal_date').value = selectedDate;
+        document.getElementById('appointmentModal').classList.remove('hidden');
+    }
+
+    function closeAppointmentModal() {
+        document.getElementById('appointmentModal').classList.add('hidden');
+    }
+
+    async function cancelAppointment(id) {
+        if (!confirm("¿Estás seguro de que querés cancelar este turno?")) return;
+        try {
+            const response = await fetch(`/admin/appointments/cancel/${id}`, { method: 'POST' });
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert("Error al cancelar el turno.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error de conexión.");
+        }
+    }
 </script>
 {% endblock %}

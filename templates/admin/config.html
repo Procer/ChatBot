@@ -2,7 +2,7 @@
 
 {% block title %}Configuración | Zárate System IA{% endblock %}
 {% block breadcrumb %}Ajustes{% endblock %}
-{% block section_title %}Configuración del Sistema{% endblock %}
+{% block section_title %}Centro de Entrenamiento{% endblock %}
 
 {% block header_actions %}
     <div class="flex items-center gap-3">
@@ -10,6 +10,13 @@
         <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-lg text-[13px] font-bold uppercase animate-pulse">
             <i data-lucide="refresh-cw" class="w-3 h-3"></i> Sincronización Pendiente
         </div>
+        <form action="/admin/config/sync" method="post" class="m-0">
+            <input type="hidden" name="active_tab" value="{{ active_tab or 'conocimiento' }}">
+            <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold uppercase tracking-widest transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+                Sincronizar IA
+            </button>
+        </form>
         {% endif %}
         <button type="submit" form="mainConfigForm" class="bg-brand-600 hover:bg-brand-500 text-white px-8 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-brand-600/20 flex items-center gap-2">
             <i data-lucide="save" class="w-4 h-4"></i>
@@ -44,6 +51,7 @@
         
         <!-- FORMULARIO PRINCIPAL (Identidad, Empresa, Avanzado) -->
         <form id="mainConfigForm" action="/admin/config/save-all" method="post" enctype="multipart/form-data">
+            <input type="hidden" name="active_tab" id="form_active_tab" value="{{ active_tab or 'identidad' }}">
             
             <!-- SECCIÓN: IDENTIDAD -->
             <div id="tab-identidad" class="tab-content {{ '' if active_tab == 'identidad' or not active_tab else 'hidden' }} space-y-10">
@@ -148,7 +156,17 @@
                     </div>
                     <div class="space-y-3">
                         <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Horarios de Atención</label>
-                        <input type="text" name="working_hours" value="{{ external.working_hours or '' }}" placeholder="Lunes a Viernes 09:00 - 18:00" class="w-full bg-surface border border-slate-800 rounded-xl p-4 text-white font-medium focus:border-brand-500 outline-none transition-all shadow-sm">
+                        <input type="text" name="working_hours" value="{{ config.working_hours or '' }}" placeholder="Lunes a Viernes 09:00 - 18:00" class="w-full bg-surface border border-slate-800 rounded-xl p-4 text-white font-medium focus:border-brand-500 outline-none transition-all shadow-sm">
+                    </div>
+                    <div class="space-y-3 flex items-center justify-between p-4 bg-slate-900/30 border border-slate-800 rounded-xl md:col-span-2">
+                        <div>
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest block">Usar Horarios de Atención para Turnos</label>
+                            <span class="text-[11px] text-slate-500">Si está activo, los clientes podrán reservar turnos usando este horario de atención general. Si está inactivo, solo servirá de información.</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" name="enable_working_hours_for_scheduling" value="1" class="sr-only peer" {{ 'checked' if config.enable_working_hours_for_scheduling == '1' }}>
+                            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
+                        </label>
                     </div>
                 </div>
 
@@ -173,6 +191,175 @@
                     <div class="space-y-3">
                         <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Mensaje de Fuera de Horario</label>
                         <textarea name="out_of_office_message" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">{{ config.out_of_office_message }}</textarea>
+                    </div>
+                </div>
+
+                <!-- SECCIÓN: RECORDATORIOS AUTOMÁTICOS -->
+                <div class="p-8 bg-brand-500/5 border border-brand-500/10 rounded-[2.5rem] space-y-6">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-brand-500/20 flex items-center justify-center text-brand-500">
+                            <i data-lucide="bell" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-black text-white">Recordatorios de Turnos Automatizados</h3>
+                            <p class="text-sm text-slate-500">Configurá notificaciones automáticas para enviar antes de la cita por WhatsApp/Telegram.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- Recordatorio 24 Horas -->
+                        <div class="p-6 bg-slate-900/40 border border-slate-800 rounded-2xl space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h4 class="text-sm font-bold text-white">Recordatorio de Largo Plazo</h4>
+                                    <p class="text-xs text-slate-500">Se envía antes del turno programado.</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer font-bold">
+                                    <input type="checkbox" name="reminder_24h_enabled" value="1" class="sr-only peer" {{ 'checked' if config.reminder_24h_enabled == '1' }}>
+                                    <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                                </label>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4 items-center">
+                                <div class="col-span-2">
+                                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Enviar con antelación de</label>
+                                    <span class="text-[10px] text-slate-500">Horas previas al turno</span>
+                                </div>
+                                <div class="flex items-center gap-2 justify-end">
+                                    <input type="number" name="reminder_24h_hours" value="{{ config.reminder_24h_hours if config.reminder_24h_hours is not none else 24 }}" min="3" class="w-20 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-center text-white focus:border-brand-500 outline-none transition-all">
+                                    <span class="text-xs text-slate-400 font-bold">hs</span>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Plantilla del Mensaje</label>
+                                <textarea name="reminder_24h_template" rows="3" placeholder="Hola {nombre}, te recordamos tu turno de mañana a las {hora} hs para {motivo}." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">{{ config.reminder_24h_template or '' }}</textarea>
+                                <p class="text-[9px] text-slate-500">Variables: <code class="text-brand-400">{nombre}</code>, <code class="text-brand-400">{fecha}</code>, <code class="text-brand-400">{hora}</code>, <code class="text-brand-400">{motivo}</code></p>
+                            </div>
+                        </div>
+
+                        <!-- Recordatorio 2 Horas -->
+                        <div class="p-6 bg-slate-900/40 border border-slate-800 rounded-2xl space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h4 class="text-sm font-bold text-white">Recordatorio de Corto Plazo</h4>
+                                    <p class="text-xs text-slate-500">Se envía poco tiempo antes de la cita.</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer font-bold">
+                                    <input type="checkbox" name="reminder_2h_enabled" value="1" class="sr-only peer" {{ 'checked' if config.reminder_2h_enabled == '1' }}>
+                                    <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                                </label>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4 items-center">
+                                <div class="col-span-2">
+                                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Enviar con antelación de</label>
+                                    <span class="text-[10px] text-slate-500">Horas previas al turno</span>
+                                </div>
+                                <div class="flex items-center gap-2 justify-end">
+                                    <input type="number" name="reminder_2h_hours" value="{{ config.reminder_2h_hours if config.reminder_2h_hours is not none else 2 }}" min="1" max="24" class="w-20 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-center text-white focus:border-brand-500 outline-none transition-all">
+                                    <span class="text-xs text-slate-400 font-bold">hs</span>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Plantilla del Mensaje</label>
+                                <textarea name="reminder_2h_template" rows="3" placeholder="Hola {nombre}, te recordamos tu turno de hoy a las {hora} hs para {motivo}." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">{{ config.reminder_2h_template or '' }}</textarea>
+                                <p class="text-[9px] text-slate-500">Variables: <code class="text-brand-400">{nombre}</code>, <code class="text-brand-400">{fecha}</code>, <code class="text-brand-400">{hora}</code>, <code class="text-brand-400">{motivo}</code></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECCIÓN: EXCEPCIONES Y DÍAS NO LABORALES -->
+                <div class="p-8 bg-slate-900/20 border border-slate-800 rounded-[2.5rem] space-y-6">
+                    <div class="flex items-center justify-between flex-wrap gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-500">
+                                <i data-lucide="calendar-off" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-white">Feriados y Bloqueos de Agenda</h3>
+                                <p class="text-sm text-slate-500">Gestioná días cerrados o rangos horarios específicos donde no se darán turnos.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Formulario para agregar excepción -->
+                        <div class="lg:col-span-1 p-6 bg-slate-950 border border-slate-800 rounded-2xl space-y-4 h-fit">
+                            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i data-lucide="plus-circle" class="w-4 h-4 text-amber-500"></i> Bloquear Fecha/Hora
+                            </h4>
+                            <div class="space-y-4">
+                                <div class="space-y-1.5">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Fecha</label>
+                                    <input type="date" id="exc_date" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none">
+                                </div>
+                                <div class="flex items-center gap-2 py-1">
+                                    <input type="checkbox" id="exc_all_day" checked onchange="toggleTimeInputs()" class="w-4 h-4 rounded bg-slate-900 border border-slate-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-slate-950">
+                                    <label for="exc_all_day" class="text-xs text-slate-400 font-bold select-none cursor-pointer">Bloquear día completo (Feriado)</label>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Desde (Hora)</label>
+                                        <input type="time" id="exc_start_time" placeholder="Ej: 10:00" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none opacity-50" disabled>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Hasta (Hora)</label>
+                                        <input type="time" id="exc_end_time" placeholder="Ej: 12:00" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none opacity-50" disabled>
+                                    </div>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Motivo/Descripción</label>
+                                    <input type="text" id="exc_description" placeholder="Ej: Feriado Nacional / Reunión de equipo" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none">
+                                </div>
+                                <button type="button" onclick="submitException()" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+                                    <i data-lucide="lock" class="w-3.5 h-3.5"></i> Aplicar Bloqueo
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Listado de excepciones existentes -->
+                        <div class="lg:col-span-2 space-y-4">
+                            <h4 class="text-sm font-bold text-white">Bloqueos Activos</h4>
+                            <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead class="bg-slate-900/60 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                            <tr>
+                                                <th class="p-4">Fecha</th>
+                                                <th class="p-4">Horario</th>
+                                                <th class="p-4">Descripción</th>
+                                                <th class="p-4 text-right">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-800/50 text-slate-300">
+                                            {% if exceptions %}
+                                                {% for exc in exceptions %}
+                                                <tr class="hover:bg-slate-900/20 transition-colors">
+                                                    <td class="p-4 font-mono font-bold">{{ exc.date }}</td>
+                                                    <td class="p-4">
+                                                        {% if exc.start_time and exc.end_time %}
+                                                            <span class="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-500 font-bold font-mono">{{ exc.start_time }} - {{ exc.end_time }}</span>
+                                                        {% else %}
+                                                            <span class="px-2.5 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-red-500 font-bold">Día Completo</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td class="p-4 text-slate-400 font-medium">{{ exc.description or 'Sin descripción' }}</td>
+                                                    <td class="p-4 text-right">
+                                                        <button type="button" onclick="if(confirm('¿Seguro de remover este bloqueo?')) window.location.href='/admin/config/exceptions/delete/{{ exc.id }}';" class="text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-lg transition-all">
+                                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            {% else %}
+                                            <tr>
+                                                <td colspan="4" class="p-8 text-center text-slate-500">No hay excepciones ni días no laborales bloqueados.</td>
+                                            </tr>
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -252,6 +439,21 @@
                                     <i data-lucide="mouse-pointer-click" class="w-3 h-3"></i> Interactivo
                                 </span>
                                 {% endif %}
+                                {% if item.has_form %}
+                                <span class="flex items-center gap-1 text-[12px] font-bold text-blue-500 uppercase">
+                                    <i data-lucide="clipboard-list" class="w-3 h-3"></i> Trámite
+                                </span>
+                                {% endif %}
+                                {% if item.allow_scheduling %}
+                                <span class="flex items-center gap-1 text-[12px] font-bold text-amber-500 uppercase">
+                                    <i data-lucide="calendar-plus" class="w-3 h-3"></i> Turno
+                                </span>
+                                {% endif %}
+                                {% if item.media_path %}
+                                <span class="flex items-center gap-1 text-[12px] font-bold text-purple-500 uppercase">
+                                    <i data-lucide="paperclip" class="w-3 h-3"></i> Adjunto
+                                </span>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -302,6 +504,55 @@
                     </div>
                 </div>
 
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                    <div class="flex items-center justify-between col-span-1">
+                        <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Es Trámite</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="has_form" id="has_form" value="1" class="sr-only peer" onchange="document.getElementById('form_fields_container').classList.toggle('hidden', !this.checked)">
+                            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="flex items-center justify-between col-span-1">
+                        <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Permite Turnos</label>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="allow_scheduling" id="allow_scheduling" value="1" class="sr-only peer" onchange="document.getElementById('scheduling_fields_container').classList.toggle('hidden', !this.checked)">
+                            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="col-span-1">
+                        <select name="storage_dest" id="storage_dest" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-sm text-slate-400 focus:border-brand-500 outline-none">
+                            <option value="database">Guardar en Base de Datos</option>
+                            <option value="google_sheets">Guardar en Google Sheets</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="form_fields_container" class="space-y-2 hidden">
+                    <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Campos del Formulario</label>
+                    <input type="text" name="form_fields" id="form_fields" placeholder="DNI, Teléfono, Dirección" class="w-full bg-slate-950 border border-brand-500/30 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                    <p class="text-[11px] text-slate-600 ml-1">Separados por coma. Ejemplo: DNI, Edad, Correo Electrónico.</p>
+                </div>
+
+                <div id="scheduling_fields_container" class="grid grid-cols-1 md:grid-cols-3 gap-6 hidden">
+                    <div class="space-y-2">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Horarios para Turnos</label>
+                        <input type="text" name="scheduling_hours" id="scheduling_hours" placeholder="Ej: 09:00-13:00, 16:00-20:00" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Ejemplo: 09:00-13:00, 14:00-18:00</p>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Duración (Minutos)</label>
+                        <input type="number" name="appointment_duration_kb" id="appointment_duration_kb" placeholder="Ej: 30" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Duración en minutos (ej: 30, 45, 60).</p>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Capacidad Simultánea</label>
+                        <input type="number" name="scheduling_capacity" id="scheduling_capacity" placeholder="Ej: 1" value="1" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Atención paralela (ej: 1, 2, 3).</p>
+                    </div>
+                </div>
+
                 <div class="space-y-2">
                     <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Información Detallada (IA)</label>
                     <textarea name="content" id="content" rows="6" required placeholder="Escribí aquí toda la información que el bot debe conocer sobre este tema..." class="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-base text-slate-300 focus:border-brand-500 outline-none transition-all resize-none custom-scrollbar"></textarea>
@@ -316,16 +567,34 @@
                 <div class="space-y-2">
                     <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Archivo Multimedia Adjunto (Opcional)</label>
                     <div class="flex flex-col gap-3">
-                        <input type="file" name="media" id="media" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-400 file:bg-brand-500/10 file:text-brand-500 file:border-0 file:rounded-lg file:px-4 file:py-2 file:mr-4 file:font-bold hover:file:bg-brand-500 hover:file:text-white transition-all">
-                        <div id="currentMedia" class="hidden text-[11px] text-brand-500 font-bold flex items-center justify-between gap-2 p-3 bg-brand-500/5 rounded-xl border border-brand-500/10">
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="file-check" class="w-3.5 h-3.5"></i> 
-                                <span>Tiene archivo adjunto: <span id="currentMediaName" class="text-slate-400"></span></span>
-                            </div>
-                            <button type="button" id="btnRemoveMedia" class="text-rose-500 hover:text-rose-400 p-1 transition-all">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            </button>
+                        <input type="file" name="media" id="media" multiple class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-400 file:bg-brand-500/10 file:text-brand-500 file:border-0 file:rounded-lg file:px-4 file:py-2 file:mr-4 file:font-bold hover:file:bg-brand-500 hover:file:text-white transition-all">
+                        <div id="currentMedia" class="hidden flex-col gap-2">
+                            <!-- Archivos se inyectan acá vía JS -->
                         </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                    <div class="flex items-center justify-between col-span-1">
+                        <div>
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest block">Analizar contenido (RAG)</label>
+                            <span class="text-[11px] text-slate-500">Extrae el texto del PDF para responder preguntas sobre él.</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                            <input type="checkbox" name="analyze_rag" id="analyze_rag" value="1" checked class="sr-only peer">
+                            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                        </label>
+                    </div>
+                    
+                    <div class="flex items-center justify-between col-span-1">
+                        <div>
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest block">Permitir enviar archivo</label>
+                            <span class="text-[11px] text-slate-500">Permite a la IA enviar el archivo físico al usuario por chat.</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                            <input type="checkbox" name="send_as_file" id="send_as_file" value="1" checked class="sr-only peer">
+                            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                        </label>
                     </div>
                 </div>
 
@@ -395,6 +664,9 @@
         const url = new URL(window.location);
         url.searchParams.set('active_tab', tabId);
         window.history.pushState({}, '', url);
+        
+        const formActiveTab = document.getElementById('form_active_tab');
+        if (formActiveTab) formActiveTab.value = tabId;
     }
 
     // Tab por defecto = identidad, override si hay param en URL
@@ -409,7 +681,11 @@
         document.getElementById('knowledgeForm').action = '/admin/knowledge/add';
         document.getElementById('knowledgeForm').reset();
         document.getElementById('item_id').value = '';
+        document.getElementById('analyze_rag').checked = true;
+        document.getElementById('send_as_file').checked = true;
         document.getElementById('currentMedia').classList.add('hidden');
+        document.getElementById('form_fields_container').classList.add('hidden');
+        document.getElementById('scheduling_fields_container').classList.add('hidden');
         document.getElementById('knowledgeModal').classList.remove('hidden');
     }
 
@@ -425,14 +701,55 @@
             document.getElementById('category').value = data.category;
             document.getElementById('content').value = data.content;
             document.getElementById('interactive_options').value = data.interactive_options || '';
+            
+            document.getElementById('has_form').checked = data.has_form;
+            document.getElementById('allow_scheduling').checked = data.allow_scheduling;
+            document.getElementById('analyze_rag').checked = data.analyze_rag !== false;
+            document.getElementById('send_as_file').checked = data.send_as_file !== false;
+            document.getElementById('form_fields').value = data.form_fields || '';
+            document.getElementById('scheduling_hours').value = data.scheduling_hours || '';
+            document.getElementById('appointment_duration_kb').value = data.appointment_duration || '';
+            document.getElementById('scheduling_capacity').value = data.scheduling_capacity || '1';
+            if(data.storage_dest) document.getElementById('storage_dest').value = data.storage_dest;
+            
+            if (data.has_form) {
+                document.getElementById('form_fields_container').classList.remove('hidden');
+            } else {
+                document.getElementById('form_fields_container').classList.add('hidden');
+            }
+
+            if (data.allow_scheduling) {
+                document.getElementById('scheduling_fields_container').classList.remove('hidden');
+            } else {
+                document.getElementById('scheduling_fields_container').classList.add('hidden');
+            }
 
             if (data.media_path) {
-                document.getElementById('currentMedia').classList.remove('hidden');
-                document.getElementById('currentMediaName').innerText = data.media_path.split('/').pop();
-                document.getElementById('btnRemoveMedia').onclick = function() {
-                    if (confirm('¿Quitar archivo adjunto de este concepto?'))
-                        window.location.href = `/admin/knowledge/remove-media/${id}`;
-                };
+                const paths = data.media_path.split(',').filter(p => p.trim() !== '');
+                if (paths.length > 0) {
+                    const container = document.getElementById('currentMedia');
+                    container.classList.remove('hidden');
+                    container.innerHTML = '';
+                    
+                    paths.forEach((p, index) => {
+                        const filename = p.split('/').pop();
+                        const fileRow = document.createElement('div');
+                        fileRow.className = "flex items-center justify-between gap-2 p-3 bg-brand-500/5 rounded-xl border border-brand-500/10 text-[11px] text-brand-500 font-bold";
+                        fileRow.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="file-check" class="w-3.5 h-3.5"></i> 
+                                <span><a href="${p}" target="_blank" class="hover:underline">${filename}</a></span>
+                            </div>
+                            <button type="button" onclick="if(confirm('¿Quitar este archivo adjunto?')) window.location.href='/admin/knowledge/remove-media/${id}?index=${index}';" class="text-rose-500 hover:text-rose-400 p-1 transition-all">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        `;
+                        container.appendChild(fileRow);
+                    });
+                    if (window.lucide) lucide.createIcons();
+                } else {
+                    document.getElementById('currentMedia').classList.add('hidden');
+                }
             } else {
                 document.getElementById('currentMedia').classList.add('hidden');
             }
@@ -456,6 +773,62 @@
     function confirmReset() {
         if (confirm('⚠️ PELIGRO: Vas a borrar toda la base de datos.\nEsta acción no tiene vuelta atrás.\n\n¿Deseas continuar?'))
             document.getElementById('resetForm').submit();
+    }
+
+    function toggleTimeInputs() {
+        const allDay = document.getElementById('exc_all_day').checked;
+        const startInput = document.getElementById('exc_start_time');
+        const endInput = document.getElementById('exc_end_time');
+        
+        if (startInput && endInput) {
+            startInput.disabled = allDay;
+            endInput.disabled = allDay;
+            if (allDay) {
+                startInput.value = '';
+                endInput.value = '';
+                startInput.classList.add('opacity-50');
+                endInput.classList.add('opacity-50');
+            } else {
+                startInput.classList.remove('opacity-50');
+                endInput.classList.remove('opacity-50');
+            }
+        }
+    }
+
+    // Inicializar estado de inputs de horario de excepción
+    toggleTimeInputs();
+
+    async function submitException() {
+        const date = document.getElementById('exc_date').value;
+        const allDay = document.getElementById('exc_all_day').checked;
+        const start_time = allDay ? '' : document.getElementById('exc_start_time').value;
+        const end_time = allDay ? '' : document.getElementById('exc_end_time').value;
+        const description = document.getElementById('exc_description').value;
+        
+        if (!date) {
+            alert('Por favor, selecciona una fecha.');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('date', date);
+        formData.append('start_time', start_time);
+        formData.append('end_time', end_time);
+        formData.append('description', description);
+        
+        try {
+            const response = await fetch('/admin/config/exceptions/add', {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                window.location.href = '/admin/config?active_tab=empresa&success=1';
+            } else {
+                alert('Error al agregar el bloqueo.');
+            }
+        } catch (e) {
+            alert('Error de red al intentar agregar el bloqueo.');
+        }
     }
 </script>
 

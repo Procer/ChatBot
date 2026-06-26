@@ -1,0 +1,678 @@
+{% extends "admin/layout.html" %}
+{% block title %}ZSG-Bot-iA | Contactos y Nómina{% endblock %}
+{% block breadcrumb %}Gestión{% endblock %}
+{% block section_title %}Contactos y Nómina{% endblock %}
+
+{% block extra_head %}
+<style>
+    .badge-role-general { background: linear-gradient(135deg, #64748b, #475569); }
+    .badge-role-chofer  { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+    .badge-role-gerente { background: linear-gradient(135deg, #a855f7, #6b21a8); }
+    .badge-role-admin   { background: linear-gradient(135deg, #f59e0b, #b45309); }
+    
+    .modal-overlay { backdrop-filter: blur(8px); background: rgba(0,0,0,0.7); }
+    .contact-row:hover { background: rgba(99,102,241,0.04); }
+    
+    /* Tags color mapping */
+    .tag-chip-default { background-color: rgba(148, 163, 184, 0.1); border-color: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .tag-chip-nuevo   { background-color: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd; }
+    .tag-chip-turno   { background-color: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+    .tag-chip-cancel  { background-color: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #fca5a5; }
+    .tag-chip-warning { background-color: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.3); color: #fde047; }
+    
+    /* Toggleable Tags Customization */
+    .tag-toggle-btn {
+        transition: all 0.2s ease;
+        user-select: none;
+    }
+    .tag-toggle-btn.active {
+        background-color: rgba(99, 102, 241, 0.2);
+        border-color: rgba(99, 102, 241, 0.5);
+        color: #fff;
+    }
+    .tag-toggle-btn.inactive {
+        background-color: rgba(15, 23, 42, 0.4);
+        border-color: rgba(51, 65, 85, 0.5);
+        color: #94a3b8;
+    }
+    .tag-toggle-btn.inactive:hover {
+        background-color: rgba(51, 65, 85, 0.4);
+        color: #cbd5e1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 lg:p-0 space-y-6">
+
+    <!-- HEADER DE SECCIÓN CON BOTÓN DE AYUDA -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-black text-white tracking-tight">Directorio de Contactos</h1>
+            <p class="text-sm text-slate-400">Gestión de usuarios, roles y segmentación</p>
+        </div>
+        <button onclick="document.getElementById('help-section').classList.toggle('hidden')" 
+            class="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/80 border border-slate-700/50 text-slate-300 text-xs font-bold rounded-lg transition-colors">
+            <i data-lucide="help-circle" class="w-4 h-4 text-brand-400"></i> ¿Cómo funciona?
+        </button>
+    </div>
+
+    <!-- SECCIÓN DE AYUDA (Oculta por defecto) -->
+    <div id="help-section" class="hidden glass p-6 rounded-2xl border border-brand-500/30 bg-brand-900/10 shadow-lg relative overflow-hidden">
+        <!-- Decoración de fondo -->
+        <div class="absolute -top-12 -right-12 w-32 h-32 bg-brand-500/20 rounded-full blur-3xl"></div>
+        
+        <div class="relative z-10">
+            <div class="flex items-start justify-between mb-4">
+                <h3 class="text-brand-400 font-bold text-base flex items-center gap-2">
+                    <i data-lucide="info" class="w-5 h-5"></i> Guía Rápida: Uso Eficiente de las Etiquetas (Tags)
+                </h3>
+                <button onclick="document.getElementById('help-section').classList.add('hidden')" class="text-slate-500 hover:text-white transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <p class="text-sm text-slate-300 leading-relaxed mb-6">
+                Esta sección funciona como el <strong>CRM</strong> de tu negocio. Para mantener tu cartera organizada, usamos un sistema de etiquetas. Etiquetar correctamente a tus contactos te permite filtrarlos al instante y segmentarlos para futuras campañas.
+            </p>
+            
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Columna 1 -->
+                <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-700/50">
+                    <h4 class="font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4 text-emerald-400"></i> Etiquetas Automáticas (Del Bot)</h4>
+                    <p class="text-[11px] text-slate-400 mb-3">El bot monitorea y etiqueta a los usuarios sin que tengas que hacer nada.</p>
+                    <ul class="space-y-2 text-[11px] text-slate-300">
+                        <li class="flex items-start gap-2"><span class="flex-shrink-0 inline-block px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 font-bold">👋 Nuevo Contacto</span> <span class="pt-0.5">Se asigna a la primera interacción.</span></li>
+                        <li class="flex items-start gap-2"><span class="flex-shrink-0 inline-block px-1.5 py-0.5 rounded bg-green-500/15 text-green-300 font-bold">📱 Canal: WhatsApp</span> <span class="pt-0.5">Para identificar el origen del chat.</span></li>
+                        <li class="flex items-start gap-2"><span class="flex-shrink-0 inline-block px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-bold">🗓️ Turno Agendado</span> <span class="pt-0.5">Se aplica cuando el usuario logra reservar un turno.</span></li>
+                    </ul>
+                </div>
+                
+                <!-- Columna 2 -->
+                <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-700/50">
+                    <h4 class="font-bold text-white mb-2 flex items-center gap-2"><i data-lucide="tags" class="w-4 h-4 text-brand-400"></i> Etiquetas Manuales (Estratégicas)</h4>
+                    <p class="text-[11px] text-slate-400 mb-3">Crea tus propias etiquetas para segmentar a tu audiencia a tu medida.</p>
+                    <ul class="space-y-2 text-[11px] text-slate-300">
+                        <li class="flex items-start gap-2"><span class="text-white font-bold">Ejemplo 1 (Comercial):</span> <span class="pt-0.5">Clasificá por tipo de cliente: <em>"Cliente VIP"</em>, <em>"Mayorista"</em>, o <em>"Moroso"</em>.</span></li>
+                        <li class="flex items-start gap-2"><span class="text-white font-bold">Ejemplo 2 (Geográfico):</span> <span class="pt-0.5">Organizá por zonas de envío: <em>"Zona Norte"</em>, <em>"CABA"</em>.</span></li>
+                        <li class="flex items-start gap-2"><span class="text-white font-bold">🎯 Tip Ninja:</span> <span class="pt-0.5">Hacé clic en los botones de colores ("Chips") bajo la barra de búsqueda para ver rápidamente todos los contactos que comparten esa etiqueta.</span></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="mt-4 p-3 bg-brand-500/10 rounded-lg border border-brand-500/20 flex items-center gap-3">
+                <i data-lucide="lightbulb" class="w-5 h-5 text-brand-400 flex-shrink-0"></i>
+                <p class="text-[11px] text-brand-100">
+                    <strong>¿Cómo asignar o crear etiquetas?</strong> Hacé clic en el ícono del lápiz (<i data-lucide="pencil" class="w-3 h-3 inline"></i>) en la fila de cualquier contacto. En el campo de Etiquetas, elegí una de la lista o escribí una nueva y presioná Enter. También podés importar miles de etiquetas usando un archivo CSV.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- MENSAJES DE ALERTA -->
+    {% if success %}
+    <div class="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-3 rounded-xl text-sm font-semibold">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>
+        <span>{{ success }}</span>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="flex items-center gap-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-xl text-sm font-semibold">
+        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+        <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <!-- CARD INDICADORES (BENTO GRID) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Card 1 -->
+        <div class="glass p-4 rounded-2xl flex items-center gap-4">
+            <div class="p-3 bg-brand-500/10 rounded-xl text-brand-400">
+                <i data-lucide="users" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-tight">Total Contactos</p>
+                <h3 class="text-xl font-extrabold text-white mt-0.5">{{ contacts | length }}</h3>
+            </div>
+        </div>
+        <!-- Card 2 -->
+        <div class="glass p-4 rounded-2xl flex items-center gap-4">
+            <div class="p-3 bg-blue-500/10 rounded-xl text-blue-400">
+                <i data-lucide="truck" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-tight">Choferes</p>
+                <h3 class="text-xl font-extrabold text-white mt-0.5">
+                    {{ contacts | selectattr('role', 'equalto', 'Chofer') | list | length }}
+                </h3>
+            </div>
+        </div>
+        <!-- Card 3 -->
+        <div class="glass p-4 rounded-2xl flex items-center gap-4">
+            <div class="p-3 bg-purple-500/10 rounded-xl text-purple-400">
+                <i data-lucide="user-cog" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-tight">Gerentes</p>
+                <h3 class="text-xl font-extrabold text-white mt-0.5">
+                    {{ contacts | selectattr('role', 'equalto', 'Gerente') | list | length }}
+                </h3>
+            </div>
+        </div>
+        <!-- Card 4 -->
+        <div class="glass p-4 rounded-2xl flex items-center gap-4">
+            <div class="p-3 bg-amber-500/10 rounded-xl text-amber-400">
+                <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-tight">Sin Responder</p>
+                <h3 class="text-xl font-extrabold text-white mt-0.5">
+                    {% set count_unresponded = 0 %}
+                    {% for c in contacts %}
+                        {% if '⚠️ Sin Responder' in c.tags %}
+                            {% set count_unresponded = count_unresponded + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                    {{ count_unresponded }}
+                </h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- HEADER / ACCIONES DE BÚSQUEDA Y FILTRADO -->
+    <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        <!-- Búsqueda y Filtro (Agrupados) -->
+        <div class="flex flex-col md:flex-row items-stretch gap-3 flex-1 max-w-3xl">
+            <!-- Búsqueda -->
+            <div class="relative flex-1">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </span>
+                <input type="text" id="search-input" placeholder="Buscar por nombre, teléfono o rol..." oninput="filterContacts()"
+                    class="w-full bg-slate-900/60 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+            </div>
+            
+            <!-- Dropdown Custom -->
+            <div class="relative w-full md:w-64" id="custom-dropdown-wrapper">
+                <button type="button" onclick="toggleFilterDropdown(event)" id="filter-dropdown-btn"
+                    class="w-full flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-300 hover:text-white hover:border-slate-700 transition-colors shadow-sm focus:outline-none focus:border-brand-500">
+                    <div class="flex items-center gap-2 truncate">
+                        <i data-lucide="filter" class="w-4 h-4 text-brand-400 shrink-0"></i>
+                        <span id="filter-dropdown-text" class="truncate">Todas las Etiquetas</span>
+                    </div>
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 shrink-0"></i>
+                </button>
+                
+                <div id="filter-dropdown-menu" class="absolute left-0 top-full mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-40 hidden max-h-72 overflow-y-auto custom-scrollbar py-1">
+                    <button onclick="setCustomTagFilter('', 'Todas las Etiquetas')" class="block w-full shrink-0 text-left px-4 py-2.5 text-sm text-white bg-brand-500/10 hover:bg-slate-800 transition-colors font-bold border-b border-slate-800">
+                        Todas las Etiquetas
+                    </button>
+                    {% for tag in all_tags %}
+                    <button onclick="setCustomTagFilter('{{ tag }}', '{{ tag }}')" class="block w-full shrink-0 text-left px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors border-b border-slate-800/50 last:border-0 truncate">
+                        {{ tag }}
+                    </button>
+                    {% endfor %}
+                </div>
+                <input type="hidden" id="tag-filter" value="">
+            </div>
+        </div>
+        
+        <!-- Botones de Acción -->
+        <div class="flex items-center gap-2 shrink-0">
+            <button id="btn-sync-wa" onclick="syncWhatsAppContacts()"
+                class="flex items-center justify-center flex-1 lg:flex-none gap-2 px-4 py-2.5 bg-emerald-950/30 hover:bg-emerald-900/40 border border-emerald-800/45 text-emerald-300 text-sm font-bold rounded-xl transition-all">
+                <svg class="w-4 h-4 fill-current text-emerald-400 shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12.004 2c-5.51 0-9.996 4.486-9.996 9.998 0 1.761.459 3.472 1.332 4.982L2 22l5.163-1.355c1.45.79 3.087 1.205 4.841 1.205 5.51 0 9.996-4.486 9.996-9.998C22 6.486 17.514 2 12.004 2zm0 1.637c4.61 0 8.358 3.75 8.358 8.36 0 4.612-3.75 8.362-8.358 8.362-1.572 0-3.09-.438-4.408-1.265l-.317-.187-3.09.81.824-2.99-.206-.328c-.9-1.428-1.378-3.076-1.378-4.764 0-4.61 3.75-8.36 8.358-8.362zM9.13 7.828c-.164 0-.328.032-.47.1-.226.108-.432.27-.585.474-.467.625-.71 1.4-.66 2.19.1 1.58.85 3.09 2.032 4.27 1.18 1.18 2.69 1.93 4.27 2.03.79.05 1.565-.193 2.19-.66.204-.153.366-.36.474-.585.068-.142.1-.306.1-.47v-.312c0-.184-.108-.344-.27-.424l-1.875-.938c-.135-.067-.294-.055-.42.03l-.78.58c-.1.077-.23.092-.346.04-.613-.275-1.196-.653-1.716-1.12-.467-.52-.845-1.103-1.12-1.716-.052-.116-.037-.246.04-.346l.58-.78c.085-.126.097-.285.03-.42l-.938-1.875c-.08-.162-.24-.27-.424-.27H9.13z"/>
+                </svg>
+                <span>Sincronizar WhatsApp</span>
+            </button>
+            <button onclick="openModal('modal-import')"
+                class="flex items-center justify-center flex-1 lg:flex-none gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-750 text-slate-200 text-sm font-bold rounded-xl transition-all">
+                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-500 shrink-0"></i> Importar Roster (CSV)
+            </button>
+        </div>
+    </div>
+
+    <!-- TABLA DE CONTACTOS -->
+    <div class="glass rounded-2xl overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800/60 text-slate-500">
+                        <th class="px-5 py-4 text-left text-[11px] font-bold uppercase tracking-wider">Teléfono / WhatsApp</th>
+                        <th class="px-5 py-4 text-left text-[11px] font-bold uppercase tracking-wider">Nombre Completo</th>
+                        <th class="px-5 py-4 text-left text-[11px] font-bold uppercase tracking-wider">Rol de Acceso</th>
+                        <th class="px-5 py-4 text-left text-[11px] font-bold uppercase tracking-wider">Etiquetas activas</th>
+                        <th class="px-5 py-4 text-right text-[11px] font-bold uppercase tracking-wider">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="contacts-table-body" class="divide-y divide-slate-800/40">
+                    {% for c in contacts %}
+                    <tr class="contact-row transition-colors" data-phone="{{ c.user_phone }}" data-name="{{ c.full_name }}" data-role="{{ c.role }}" data-tags="{{ c.tags | join(',') }}">
+                        <!-- Teléfono -->
+                        <td class="px-5 py-4">
+                            <span class="font-bold text-white font-mono">{{ c.user_phone }}</span>
+                        </td>
+                        <!-- Nombre -->
+                        <td class="px-5 py-4">
+                            <span class="text-slate-300 font-semibold">{{ c.full_name }}</span>
+                        </td>
+                        <!-- Rol -->
+                        <td class="px-5 py-4">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold text-white uppercase tracking-wider
+                                {% if c.role == 'Chofer' %}badge-role-chofer
+                                {% elif c.role == 'Gerente' %}badge-role-gerente
+                                {% elif c.role == 'Administrador' %}badge-role-admin
+                                {% else %}badge-role-general{% endif %}">
+                                <i data-lucide="{% if c.role == 'Chofer' %}truck{% elif c.role == 'Gerente' %}user-cog{% else %}user{% endif %}" class="w-3 h-3"></i>
+                                {{ c.role }}
+                            </span>
+                        </td>
+                        <!-- Etiquetas -->
+                        <td class="px-5 py-4">
+                            <div class="flex flex-wrap gap-1">
+                                {% for tag in c.tags %}
+                                <span class="px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wide
+                                    {% if 'Nuevo' in tag or '👋' in tag %}tag-chip-nuevo
+                                    {% elif 'Turno' in tag or '🗓️' in tag %}tag-chip-turno
+                                    {% elif 'Cancel' in tag or '❌' in tag %}tag-chip-cancel
+                                    {% elif 'Responder' in tag or '⚠️' in tag %}tag-chip-warning
+                                    {% else %}tag-chip-default{% endif %}">
+                                    {{ tag }}
+                                </span>
+                                {% else %}
+                                <span class="text-[11px] text-slate-600 font-medium">Ninguna</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <!-- Acciones -->
+                        <td class="px-5 py-4 text-right">
+                            <button onclick="openEditModal('{{ c.user_phone }}', '{{ c.full_name }}', '{{ c.role }}', '{{ c.tags | join(',') }}')"
+                                title="Editar Rol y Etiquetas"
+                                class="p-2 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-all">
+                                <i data-lucide="pencil" class="w-4.5 h-4.5"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-5 py-16 text-center text-slate-650">
+                            <div class="flex flex-col items-center gap-3">
+                                <i data-lucide="users" class="w-12 h-12 text-slate-700"></i>
+                                <h3 class="font-bold text-white">Nómina de Contactos vacía</h3>
+                                <p class="text-xs text-slate-500 max-w-sm">Los contactos se crean de forma automática cuando interactúan con el chatbot, o bien podés importarlos usando un archivo CSV.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: EDITAR CONTACTO -->
+<!-- ========================================== -->
+<div id="modal-edit" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-edit')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-3xl mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-xl font-black text-white tracking-tight">Editar Contacto</h2>
+                <p class="text-sm text-slate-500">Asignar roles y etiquetas específicas</p>
+            </div>
+            <button type="button" onclick="closeModal('modal-edit')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <form action="/admin/contacts/update" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- Columna Izquierda (Datos Básicos) -->
+            <div class="space-y-4">
+                <!-- Teléfono (Oculto pero visible como texto o disabled) -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">WhatsApp / Celular</label>
+                    <input type="text" id="edit-phone" name="user_phone" readonly
+                        class="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-500 cursor-not-allowed font-mono">
+                </div>
+
+                <!-- Nombre -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Nombre Completo</label>
+                    <input type="text" id="edit-name" name="name"
+                        class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none transition-colors">
+                </div>
+
+                <!-- Rol -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Rol de Acceso (RBAC)</label>
+                    <div class="relative">
+                        <select id="edit-role" name="role"
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:border-brand-500 focus:outline-none transition-colors appearance-none">
+                            <option value="General">General</option>
+                            <option value="Chofer">Chofer</option>
+                            <option value="Gerente">Gerente</option>
+                            <option value="Coordinador">Coordinador</option>
+                            <option value="Administrador">Administrador</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
+                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columna Derecha (Etiquetas Visuales) -->
+            <div class="space-y-4">
+                <label class="block text-xs font-bold text-slate-400 mb-1.5 uppercase tracking-wider">Etiquetas del Contacto</label>
+                
+                <!-- Input oculto para enviar al backend -->
+                <input type="hidden" id="edit-tags-hidden" name="tags_csv" value="">
+                
+                <!-- Contenedor de Tags visuales -->
+                <div class="bg-slate-900/40 border border-slate-700/50 rounded-xl p-3 min-h-[220px]">
+                    <div id="quick-tags-container" class="flex flex-wrap gap-2 mb-3 max-h-[150px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
+                        <!-- Los tags se renderizan por JS -->
+                    </div>
+                    
+                    <div class="flex items-center gap-2 border-t border-slate-800 pt-3 mt-1">
+                        <input type="text" id="new-tag-input" placeholder="Crear etiqueta nueva..."
+                            class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:border-brand-500 focus:outline-none">
+                        <button type="button" onclick="addNewTag()" class="p-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <span class="text-[10px] text-slate-500 block mt-1"><i data-lucide="mouse-pointer-click" class="w-3 h-3 inline"></i> Hacé clic en las etiquetas para asignarlas o quitarlas.</span>
+            </div>
+
+            <!-- Acciones -->
+            <div class="col-span-1 md:col-span-2 flex gap-3 pt-4 border-t border-slate-800/80 mt-2">
+                <button type="button" onclick="closeModal('modal-edit')"
+                    class="flex-1 py-3 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all">Cancelar</button>
+                <button type="submit"
+                    class="flex-1 py-3 bg-brand-500 hover:bg-brand-600 rounded-xl text-sm font-bold text-white transition-all">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: IMPORTAR CSV -->
+<!-- ========================================== -->
+<div id="modal-import" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="modal-overlay absolute inset-0" onclick="closeModal('modal-import')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-md mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-black text-white">Importar Nómina</h2>
+                <p class="text-xs text-slate-500">Cargar contactos en lote desde un archivo CSV</p>
+            </div>
+            <button onclick="closeModal('modal-import')" class="text-slate-500 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <form action="/admin/contacts/import" method="POST" enctype="multipart/form-data" class="space-y-4">
+            <div class="bg-slate-950/40 border border-slate-800 rounded-xl p-4 space-y-2.5 text-xs text-slate-400">
+                <p class="font-bold text-white flex items-center gap-1.5"><i data-lucide="info" class="w-3.5 h-3.5 text-brand-400"></i> Formato de Columnas Requerido:</p>
+                <ul class="list-disc pl-4 space-y-1 font-mono text-[10px]">
+                    <li><strong>Telefono</strong>: Con código de país sin espacios (Ej: 5493489112233)</li>
+                    <li><strong>Nombre</strong>: Nombre y apellido del contacto</li>
+                    <li><strong>Rol</strong>: Chofer, Gerente, General, etc.</li>
+                    <li><strong>Etiquetas</strong>: Separadas por comas (Ej: Chofer Propio, Activo)</li>
+                </ul>
+                <div class="pt-2">
+                    <button type="button" onclick="downloadTemplateCsv()"
+                        class="text-[10px] text-brand-400 hover:underline flex items-center gap-1">
+                        <i data-lucide="download" class="w-3 h-3"></i> Descargar plantilla modelo (CSV)
+                    </button>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Seleccionar Archivo CSV</label>
+                <div class="relative flex items-center justify-center border-2 border-dashed border-slate-700 hover:border-brand-500/50 rounded-xl px-6 py-8 transition-colors bg-slate-900/20 group">
+                    <input type="file" name="file" accept=".csv" required onchange="showFileName(this)"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                    <div class="text-center">
+                        <i data-lucide="upload" class="w-8 h-8 mx-auto text-slate-500 group-hover:text-brand-400 transition-colors mb-2"></i>
+                        <p class="text-sm font-semibold text-white" id="file-label-text">Hacé clic o arrastrá el CSV aquí</p>
+                        <p class="text-xs text-slate-500 mt-1">Solo archivos con formato .csv</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button type="button" onclick="closeModal('modal-import')"
+                    class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white transition-all">Cancelar</button>
+                <button type="submit"
+                    class="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 rounded-xl text-sm font-bold text-white transition-all">Comenzar Importación</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function openModal(id) {
+        document.getElementById(id).classList.remove('hidden');
+        lucide.createIcons();
+    }
+    
+    function closeModal(id) {
+        document.getElementById(id).classList.add('hidden');
+    }
+    
+    function showFileName(input) {
+        const textEl = document.getElementById('file-label-text');
+        if (input.files && input.files.length > 0) {
+            textEl.textContent = input.files[0].name;
+            textEl.className = "text-sm font-semibold text-emerald-400";
+        }
+    }
+    
+    // Sistema de Etiquetas Visuales (Pill Toggles)
+    let currentContactTags = new Set();
+    const allSystemTags = {{ all_tags | tojson | safe }};
+    let localAllTags = [...allSystemTags];
+
+    function renderTagPills() {
+        const container = document.getElementById('quick-tags-container');
+        container.innerHTML = '';
+        
+        // Primero asegurarnos de que localAllTags contiene todos los tags del contacto actual
+        currentContactTags.forEach(tag => {
+            if (!localAllTags.includes(tag) && tag.trim() !== '') {
+                localAllTags.push(tag);
+            }
+        });
+
+        if (localAllTags.length === 0) {
+            container.innerHTML = '<span class="text-xs text-slate-600 italic">No hay etiquetas disponibles. Crea una nueva.</span>';
+            return;
+        }
+
+        localAllTags.forEach(tag => {
+            if (!tag || tag.trim() === '') return;
+            const isActive = currentContactTags.has(tag);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `tag-toggle-btn px-2.5 py-1 text-[11px] font-bold rounded-lg border flex items-center gap-1.5 ${isActive ? 'active' : 'inactive'}`;
+            
+            // Icon check for active
+            const icon = isActive ? '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>' : '';
+            
+            btn.innerHTML = `${icon} ${tag}`;
+            btn.onclick = () => toggleTag(tag);
+            container.appendChild(btn);
+        });
+        
+        // Update hidden input
+        document.getElementById('edit-tags-hidden').value = Array.from(currentContactTags).join(',');
+    }
+
+    function toggleTag(tag) {
+        if (currentContactTags.has(tag)) {
+            currentContactTags.delete(tag);
+        } else {
+            currentContactTags.add(tag);
+        }
+        renderTagPills();
+    }
+
+    function addNewTag() {
+        const input = document.getElementById('new-tag-input');
+        const val = input.value.trim();
+        if (val) {
+            if (!localAllTags.includes(val)) {
+                localAllTags.push(val);
+            }
+            currentContactTags.add(val);
+            input.value = '';
+            renderTagPills();
+        }
+    }
+
+    // Permitir enter en el input nuevo
+    document.getElementById('new-tag-input')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addNewTag();
+        }
+    });
+
+    function openEditModal(phone, name, role, tags) {
+        document.getElementById('edit-phone').value = phone;
+        document.getElementById('edit-name').value = name;
+        document.getElementById('edit-role').value = role;
+        
+        // Reset and load contact tags
+        currentContactTags.clear();
+        if (tags && tags.trim() !== '') {
+            tags.split(',').forEach(t => currentContactTags.add(t.trim()));
+        }
+        
+        // Refresh grid
+        renderTagPills();
+        
+        openModal('modal-edit');
+    }
+    
+    // Manejo del Custom Dropdown Filter
+    function toggleFilterDropdown(event) {
+        if(event) {
+            event.stopPropagation();
+        }
+        const menu = document.getElementById('filter-dropdown-menu');
+        menu.classList.toggle('hidden');
+        menu.classList.toggle('block');
+    }
+
+    // Cerrar si se hace click fuera
+    document.addEventListener('click', function(event) {
+        const wrapper = document.getElementById('custom-dropdown-wrapper');
+        const menu = document.getElementById('filter-dropdown-menu');
+        
+        if (wrapper && !wrapper.contains(event.target)) {
+            if (!menu.classList.contains('hidden')) {
+                menu.classList.add('hidden');
+                menu.classList.remove('block');
+            }
+        }
+    });
+
+    function setCustomTagFilter(tagValue, labelText) {
+        // Actualizar el input oculto
+        document.getElementById('tag-filter').value = tagValue;
+        
+        // Actualizar el texto del boton
+        document.getElementById('filter-dropdown-text').innerText = labelText;
+        
+        // Cerrar menú
+        const menu = document.getElementById('filter-dropdown-menu');
+        menu.classList.add('hidden');
+        menu.classList.remove('block');
+        
+        // Ejecutar el filtro de la tabla
+        filterContacts();
+    }
+
+    function filterContacts() {
+        const query = document.getElementById('search-input').value.toLowerCase().trim();
+        const selectedTag = document.getElementById('tag-filter').value.toLowerCase();
+        const rows = document.querySelectorAll('#contacts-table-body tr');
+        
+        rows.forEach(row => {
+            if (row.cells.length === 1) return; // Mensaje de tabla vacía
+            
+            const phone = row.getAttribute('data-phone').toLowerCase();
+            const name = row.getAttribute('data-name').toLowerCase();
+            const role = row.getAttribute('data-role').toLowerCase();
+            const tags = row.getAttribute('data-tags').toLowerCase();
+            
+            const matchesSearch = phone.includes(query) || name.includes(query) || role.includes(query) || tags.includes(query);
+            const matchesTag = selectedTag === "" || tags.includes(selectedTag);
+            
+            if (matchesSearch && matchesTag) {
+                row.classList.remove('hidden');
+            } else {
+                row.classList.add('hidden');
+            }
+        });
+    }
+    
+    function downloadTemplateCsv() {
+        const csvContent = "data:text/csv;charset=utf-8,Telefono;Nombre;Rol;Etiquetas\n5493489112233;Juan Perez;Chofer;Chofer Propio,Activo\n5493489445566;Maria Lopez;Gerente;Administracion,Vip\n5493489778899;Pedro Ramirez;General;👋 Nuevo Contacto\n";
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "plantilla_contactos.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    async function syncWhatsAppContacts() {
+        const btn = document.getElementById('btn-sync-wa');
+        const icon = btn.querySelector('svg');
+        const textSpan = btn.querySelector('span');
+        
+        // Deshabilitar botón e iniciar spinner
+        btn.disabled = true;
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+        textSpan.textContent = 'Sincronizando...';
+        icon.classList.add('animate-spin');
+        
+        try {
+            const response = await fetch('/admin/contacts/sync-whatsapp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'success') {
+                alert(data.message);
+                window.location.reload();
+            } else {
+                alert('Error al sincronizar: ' + (data.message || 'Error desconocido'));
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error de conexión al sincronizar contactos.');
+        } finally {
+            // Restaurar botón
+            btn.disabled = false;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+            textSpan.textContent = 'Sincronizar WhatsApp';
+            icon.classList.remove('animate-spin');
+        }
+    }
+</script>
+{% endblock %}

@@ -31,9 +31,59 @@ class ClientSettings(Base):
     google_sheet_id = Column(String(255))
     working_hours = Column(Text)
     
+    company_address = Column(String(255))
+    company_phone = Column(String(50))
+    bot_name = Column(String(100))
+    bot_tone = Column(String(50))
+    out_of_office_enabled = Column(Boolean, default=False)
+    out_of_office_message = Column(Text)
+    welcome_message_enabled = Column(Boolean, default=False)
+    welcome_message_text = Column(Text)
+    welcome_threshold_days = Column(Integer, default=7)
+    welcome_media_path = Column(String(255))
+    
+    test_mode_enabled = Column(Boolean, default=False)
+    test_numbers = Column(String(255))
+    
+    webhook_base_url = Column(String(255))
+    whatsapp_enabled = Column(Boolean, default=True)
+    telegram_enabled = Column(Boolean, default=False)
+    telegram_token = Column(String(255))
+    
     feat_rag_enabled = Column(Boolean, default=False)
     feat_pdf_export = Column(Boolean, default=False)
     feat_human_handoff = Column(Boolean, default=False)
+    
+    # --- FEATURE FLAGS DE PANELES ---
+    feat_dashboard = Column(Boolean, default=True)
+    feat_history = Column(Boolean, default=True)
+    feat_contacts = Column(Boolean, default=True)
+    feat_submissions = Column(Boolean, default=True)
+    feat_appointments = Column(Boolean, default=True)
+    feat_gaps = Column(Boolean, default=True)
+    feat_channels = Column(Boolean, default=True)
+    feat_config = Column(Boolean, default=True)
+    feat_audit = Column(Boolean, default=True)
+    
+    # --- FEATURE FLAGS DE CATÁLOGO ---
+    feat_catalog = Column(Boolean, default=False)
+    feat_catalog_dynamic_fields = Column(Boolean, default=False)
+    
+    # --- NUEVAS COLUMNAS DE TURNOS (SAAS) ---
+    scheduling_provider = Column(String(50), default="local")
+    scheduling_days = Column(String(255), default="mon,tue,wed,thu,fri")
+    scheduling_capacity = Column(Integer, default=1)
+    appointment_duration = Column(Integer, default=30)
+    google_calendar_id = Column(String(255), default="primary")
+    enable_working_hours_for_scheduling = Column(Boolean, default=False)
+    
+    # --- AJUSTES DE RECORDATORIOS AUTOMÁTICOS ---
+    reminder_24h_enabled = Column(Boolean, default=False)
+    reminder_24h_template = Column(Text, nullable=True)
+    reminder_24h_hours = Column(Integer, default=24, server_default='24')
+    reminder_2h_enabled = Column(Boolean, default=False)
+    reminder_2h_template = Column(Text, nullable=True)
+    reminder_2h_hours = Column(Integer, default=2, server_default='2')
     
     client = relationship("Client", back_populates="settings")
 
@@ -103,6 +153,7 @@ class UserProfile(Base):
     client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
     user_phone = Column(String(100), nullable=False)
     full_name = Column(String(255))
+    role = Column(String(50), default="General", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Message(Base):
@@ -187,8 +238,15 @@ class Knowledge(Base):
     form_fields = Column(Text)
     storage_dest = Column(String(50), default="database")
     allow_scheduling = Column(Boolean, default=False)
+    scheduling_hours = Column(Text, nullable=True)
+    appointment_duration = Column(Integer, nullable=True)
+    scheduling_capacity = Column(Integer, default=1, nullable=True)
     interactive_options = Column(Text)
     media_path = Column(String(255))
+    analyze_rag = Column(Boolean, default=True)
+    send_as_file = Column(Boolean, default=True)
+    required_role = Column(String(50), default="General", nullable=False)
+    tags_to_apply = Column(String(512), nullable=True)
     
 class KnowledgeGap(Base):
     __tablename__ = "data_knowledge_gaps"
@@ -221,3 +279,58 @@ class Proceeding(Base):
     status = Column(String(50))
     notes = Column(Text)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+class SchedulingException(Base):
+    __tablename__ = "data_scheduling_exceptions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    date = Column(String(20), nullable=False) # YYYY-MM-DD
+    start_time = Column(String(20), nullable=True) # HH:MM (None if all day)
+    end_time = Column(String(20), nullable=True) # HH:MM (None if all day)
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Tag(Base):
+    __tablename__ = "bot_tags"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    color = Column(String(10), default="#6B7280", nullable=False)
+    is_system = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class UserTag(Base):
+    __tablename__ = "bot_user_tags"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    tag_id = Column(Integer, ForeignKey("bot_tags.id", ondelete="CASCADE"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    assigned_by = Column(String(100), default="system", nullable=False)
+
+class CatalogProduct(Base):
+    __tablename__ = "data_catalog_products"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    sku = Column(String(100), nullable=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    price = Column(Float, default=0.0)
+    price_rules = Column(Text, nullable=True) # JSON para rangos de precios
+    min_quantity = Column(Integer, default=1)
+    image_path = Column(String(255), nullable=True)
+    custom_attributes = Column(Text, nullable=True) # JSON para atributos dinámicos (Talle, Color, etc.)
+    manage_stock = Column(Boolean, default=False)
+    stock = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CatalogPriceHistory(Base):
+    __tablename__ = "data_catalog_price_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("data_catalog_products.id", ondelete="CASCADE"), nullable=False)
+    old_price = Column(Float, nullable=False)
+    new_price = Column(Float, nullable=False)
+    reason = Column(String(255), nullable=True) # ej: 'Ajuste Masivo +15%'
+    created_at = Column(DateTime, default=datetime.utcnow)

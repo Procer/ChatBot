@@ -184,6 +184,45 @@
     </div>
 </div>
 
+<!-- Modal de Previsualización de Adjuntos (Glassmorphism Premium) -->
+<div id="previewModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/80 backdrop-blur-md transition-opacity duration-300">
+    <div class="relative w-full max-w-4xl max-h-[85vh] bg-slate-900/90 border border-slate-800/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden m-4">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-slate-800/60 flex items-center justify-between">
+            <div>
+                <h3 id="modalTitle" class="text-sm font-bold text-white uppercase tracking-wider">Previsualización de Documento</h3>
+                <p id="modalSub" class="text-[11px] text-slate-500 font-medium truncate mt-0.5 max-w-md">---</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <a id="modalDownload" href="#" download class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-all" title="Descargar archivo">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                </a>
+                <button onclick="closePreviewModal()" class="p-2 bg-slate-800 hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 rounded-lg transition-all border border-slate-700/50">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Contenedor de visualización -->
+        <div class="flex-1 bg-slate-950/50 overflow-auto flex items-center justify-center p-6 min-h-0">
+            <!-- Imagen -->
+            <img id="modalImg" src="" alt="Vista previa" class="hidden max-w-full max-h-[60vh] object-contain rounded-lg shadow-md border border-white/5">
+            <!-- PDF / Iframe -->
+            <iframe id="modalIframe" src="" class="hidden w-full h-[60vh] rounded-lg border border-white/5" frameborder="0"></iframe>
+            <!-- Video -->
+            <video id="modalVideo" src="" controls class="hidden max-w-full max-h-[60vh] rounded-lg shadow-md border border-white/5"></video>
+            <!-- Archivo No Previsualizable -->
+            <div id="modalFallback" class="hidden text-center py-12">
+                <div class="w-16 h-16 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-500">
+                    <i data-lucide="file" class="w-8 h-8"></i>
+                </div>
+                <h4 class="text-sm font-bold text-slate-300">Este tipo de archivo no se puede previsualizar</h4>
+                <p id="modalFileInfo" class="text-xs text-indigo-400 mt-2 font-mono">---</p>
+                <p class="text-xs text-slate-500 mt-2">Hacé clic en el botón de descarga superior para guardarlo en tu dispositivo.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script id="submissions-data" type="application/json">{{ submissions|tojson|safe }}</script>
 
 <script>
@@ -264,9 +303,13 @@
             fileSec.classList.remove('hidden');
             sub.attachments.forEach(file => {
                 const a = document.createElement('a');
-                a.href = file.file_path;
-                a.target = '_blank';
-                a.className = 'flex items-center gap-3 px-4 py-2.5 bg-slate-900/60 border border-slate-800/80 hover:border-brand-500/40 rounded-xl transition-all group max-w-xs';
+                a.href = '#';
+                a.className = 'flex items-center gap-3 px-4 py-2.5 bg-slate-900/60 border border-slate-800/80 hover:border-brand-500/40 rounded-xl transition-all group max-w-xs cursor-pointer';
+                a.onclick = (e) => {
+                    e.preventDefault();
+                    const viewUrl = file.id ? `/admin/files/view/${file.id}` : file.file_path;
+                    openPreviewModal(viewUrl, file.file_name, file.context, file.file_type, file.file_path);
+                };
                 a.innerHTML = `
                     <div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-brand-400 transition-colors shrink-0">
                         <i data-lucide="paperclip" class="w-4 h-4"></i>
@@ -332,6 +375,96 @@
         a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(content);
         a.download = filename;
         a.click();
+    }
+
+    // ── CONTROLES DEL MODAL DE PREVISUALIZACIÓN ────────────────────
+    function openPreviewModal(url, name, context, mimeType, originalPath) {
+        const modal = document.getElementById('previewModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalSub = document.getElementById('modalSub');
+        const modalDownload = document.getElementById('modalDownload');
+        const modalImg = document.getElementById('modalImg');
+        const modalIframe = document.getElementById('modalIframe');
+        const modalVideo = document.getElementById('modalVideo');
+        const modalFallback = document.getElementById('modalFallback');
+        const modalFileInfo = document.getElementById('modalFileInfo');
+        
+        // Resetear
+        modalImg.classList.add('hidden');
+        modalIframe.classList.add('hidden');
+        modalVideo.classList.add('hidden');
+        modalFallback.classList.add('hidden');
+        
+        // Detener reproducciones anteriores
+        modalVideo.src = '';
+        modalVideo.load();
+        
+        modalTitle.textContent = context || 'Documento';
+        modalSub.textContent = name || 'Archivo';
+        modalDownload.href = url;
+        
+        // Detectar tipo
+        let type = 'unknown';
+        let ext = '';
+        const detectPath = originalPath || name || '';
+        if (detectPath.includes('.')) {
+            ext = detectPath.toLowerCase().split('.').pop().split('?')[0];
+        }
+        
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        const pdfExts = ['pdf'];
+        const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'm4v'];
+        
+        if (imageExts.includes(ext)) {
+            type = 'image';
+        } else if (pdfExts.includes(ext)) {
+            type = 'pdf';
+        } else if (videoExts.includes(ext)) {
+            type = 'video';
+        }
+        
+        if (mimeType) {
+            const mime = mimeType.toLowerCase();
+            if (mime.startsWith('image/')) {
+                type = 'image';
+            } else if (mime === 'application/pdf') {
+                type = 'pdf';
+            } else if (mime.startsWith('video/')) {
+                type = 'video';
+            }
+        }
+        
+        // Mostrar vista según el tipo
+        if (type === 'image') {
+            modalImg.src = url;
+            modalImg.classList.remove('hidden');
+        } else if (type === 'pdf') {
+            modalIframe.src = url;
+            modalIframe.classList.remove('hidden');
+        } else if (type === 'video') {
+            modalVideo.src = url;
+            modalVideo.classList.remove('hidden');
+            modalVideo.play().catch(e => console.log("Auto-play prevenido:", e));
+        } else {
+            const infoText = mimeType ? `Tipo MIME: ${mimeType}` : (ext ? `Extensión de archivo: .${ext}` : 'Formato de archivo desconocido');
+            modalFileInfo.textContent = infoText;
+            modalFallback.classList.remove('hidden');
+        }
+        
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function closePreviewModal() {
+        const modal = document.getElementById('previewModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.getElementById('modalImg').src = '';
+        document.getElementById('modalIframe').src = '';
+        const modalVideo = document.getElementById('modalVideo');
+        modalVideo.pause();
+        modalVideo.src = '';
     }
 </script>
 {% endblock %}

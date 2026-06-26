@@ -3,7 +3,7 @@ import os
 import json
 import sys
 from typing import TypedDict, Annotated, List, Union
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # src/agents
@@ -27,7 +27,7 @@ from langgraph.prebuilt import ToolNode
 # --- SQLAlchemy ---
 from sqlalchemy.orm import Session
 from src.database.session import SessionLocal
-from src.database.models import Client, ClientSettings, UserProfile, KnowledgeGap, Alert, Knowledge, Submission
+from src.database.models import Client, ClientSettings, UserProfile, KnowledgeGap, Alert, Knowledge, Submission, Appointment, Proceeding
 from src.database.forms_saas import process_form_completion
 
 load_dotenv()
@@ -80,7 +80,7 @@ def save_user_profile(client_id: int, user_id: str, full_name: str):
     finally:
         db.close()
 
-def registrar_vacio_conocimiento(client_id: int, query: str):
+def registrar_vacio_conocimiento(client_id: int, query: str, thread_id: str = None):
     try:
         db = SessionLocal()
         gap = db.query(KnowledgeGap).filter_by(client_id=client_id, topic=query.strip()).first()
@@ -90,6 +90,10 @@ def registrar_vacio_conocimiento(client_id: int, query: str):
         else:
             db.add(KnowledgeGap(client_id=client_id, topic=query.strip()))
         db.commit()
+        
+        if thread_id:
+            from src.database.tagging_manager import assign_tag_by_name
+            assign_tag_by_name(client_id, thread_id, "⚠️ Sin Responder")
     except Exception as e:
         logging.warning(f"Error registrando gap en SaaS: {e}")
     finally:
@@ -99,22 +103,48 @@ def registrar_vacio_conocimiento(client_id: int, query: str):
 
 @tool
 def buscar_info_empresa(query: str, config: RunnableConfig):
-    """Busca información oficial en el RAG."""
+    """Busca información oficial detallada en el RAG / base de datos vectorial.
+    Úsala para responder preguntas del usuario sobre requisitos de trámites, detalles de PDF/archivos adjuntos,
+    información corporativa detallada, informes de sostenibilidad y cualquier duda técnica sobre la que no tengas información completa en tu contexto."""
     client_id = config.get("configurable", {}).get("client_id")
     if not client_id: return json.dumps({"error": "No client ID in config"})
+    thread_id = config.get("configurable", {}).get("thread_id")
     
     try:
-        vector_db = Chroma(persist_directory="chroma_db", embedding_function=embeddings)
-        # ⚠️ CRITICO: Chroma no es SQL, requiere que filtremos por metadata
-        results = vector_db.similarity_search(query, k=3, filter={"client_id": client_id})
-        if not results: 
-            registrar_vacio_conocimiento(client_id, query)
-            return json.dumps({"error": "No results found", "content": "No encontré información."})
+        from src.database.tagging_manager import get_user_role, assign_tag_by_name
+        user_role = get_user_role(client_id, thread_id)
         
-        chunks = [{"content": doc.page_content, "metadata": doc.metadata} for doc in results]
+        vector_db = Chroma(persist_directory="chroma_db", embedding_function=embeddings)
+        results = vector_db.similarity_search(query, k=3, filter={"client_id": client_id})
+        
+        def user_has_permission(u_role: str, req_role: str) -> bool:
+            if not req_role or req_role.lower() in ["general", "publico", "público"]:
+                return True
+            if u_role.lower() == "gerente":
+                return True
+            return u_role.lower() == req_role.lower()
+            
+        filtered_results = []
+        for doc in results:
+            req_role = doc.metadata.get("required_role", "General")
+            if user_has_permission(user_role, req_role):
+                filtered_results.append(doc)
+                tags_str = doc.metadata.get("tags_to_apply", "")
+                if tags_str and thread_id:
+                    for tag_name in [t.strip() for t in tags_str.split(",") if t.strip()]:
+                        try:
+                            assign_tag_by_name(client_id, thread_id, tag_name, assigned_by="knowledge_trigger")
+                        except Exception as te:
+                            logging.error(f"[Tagging] Error applying knowledge tag '{tag_name}': {te}")
+                            
+        if not filtered_results: 
+            registrar_vacio_conocimiento(client_id, query, thread_id=thread_id)
+            return json.dumps({"error": "No results found", "content": "No encontré información."})
+            
+        chunks = [{"content": doc.page_content, "metadata": doc.metadata} for doc in filtered_results]
         return json.dumps({
             "status": "success",
-            "full_context": "\n---\n".join([d.page_content for d in results]),
+            "full_context": "\n---\n".join([d.page_content for d in filtered_results]),
             "debug_chunks": chunks
         })
     except Exception as e: 
@@ -124,10 +154,19 @@ def buscar_info_empresa(query: str, config: RunnableConfig):
 def solicitar_asistencia_humana(motivo: str, config: RunnableConfig):
     """Notifica a un humano."""
     client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
     try:
         db = SessionLocal()
         db.add(Alert(client_id=client_id, motivo=motivo))
         db.commit()
+        
+        if thread_id:
+            try:
+                from src.database.tagging_manager import assign_tag_by_name
+                assign_tag_by_name(client_id, thread_id, "👤 Humano Requerido")
+            except Exception as te:
+                logging.error(f"[Tagging] Error applying tag in solicitar_asistencia_humana: {te}")
+                
         return "Asesor notificado."
     except Exception as e:
         return "Error al notificar."
@@ -135,9 +174,10 @@ def solicitar_asistencia_humana(motivo: str, config: RunnableConfig):
         db.close()
 
 @tool
-def iniciar_onboarding_tramite(topic: str, thread_id: str, config: RunnableConfig):
-    """Activa la recolección de datos para un trámite."""
+def iniciar_onboarding_tramite(topic: str, config: RunnableConfig):
+    """Activa la recolección de datos para un trámite. Debe usarse si el usuario quiere iniciar un tema con [TIENE_FORMULARIO]."""
     client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
     try:
         db = SessionLocal()
         search_topic = topic.lower().strip()
@@ -153,6 +193,15 @@ def iniciar_onboarding_tramite(topic: str, thread_id: str, config: RunnableConfi
                 
         if not match:
             return json.dumps({"status": "error", "message": f"No encontré el trámite '{topic}'."})
+            
+        # --- Aplicar etiqueta ---
+        if thread_id:
+            try:
+                from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
+                assign_tag_by_name(client_id, thread_id, "📝 Trámite Iniciado")
+                remove_tag_by_name(client_id, thread_id, "🎓 Trámite Completado")
+            except Exception as te:
+                logging.error(f"[Tagging] Error applying tag in iniciar_onboarding_tramite: {te}")
             
         real_topic = match.topic
         fields_str = match.form_fields
@@ -198,32 +247,663 @@ def registrar_dato_tramite(campo: str, valor: str):
     return json.dumps({"status": "recorded", "campo": campo.strip(" .*"), "valor": valor})
 
 @tool
-def registrar_nombre_usuario(nombre_completo: str):
+def registrar_nombre_usuario(nombre_completo: str, config: RunnableConfig = None):
     """Registra el nombre y apellido real del usuario."""
+    client_id = config.get("configurable", {}).get("client_id") if config else None
+    thread_id = config.get("configurable", {}).get("thread_id") if config else None
+    if client_id and thread_id:
+        save_user_profile(client_id, thread_id, nombre_completo)
     return json.dumps({"status": "profile_update", "full_name": nombre_completo})
 
-# (Tools temporales para scheduling hasta migrar scheduling.py)
-@tool
-def consultar_estado_tramite(numero_seguimiento: str):
-    """Consulta estado del trámite."""
-    return "Módulo de turnos en migración."
+# --- Lógica de Negocio de Turnos y Expedientes (SaaS SQL Server) ---
+
+def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: str = None):
+    from datetime import datetime, timedelta
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings:
+            return []
+            
+        working_hours = None
+        duration = None
+        
+        if tramite_nombre:
+            from src.database.models import Knowledge
+            search_topic = tramite_nombre.lower().strip()
+            all_kb = db.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()
+            match = None
+            for k in all_kb:
+                kb_topic = k.topic.lower()
+                if search_topic in kb_topic or kb_topic in search_topic:
+                    match = k
+                    break
+            if match and match.scheduling_hours:
+                working_hours = match.scheduling_hours
+                duration = match.appointment_duration or settings.appointment_duration or 30
+        
+        if not working_hours:
+            if settings and settings.enable_working_hours_for_scheduling:
+                working_hours = settings.working_hours or "09:00-13:00, 16:00-20:00"
+                duration = settings.appointment_duration or 30
+            else:
+                return []
+                
+        provider = settings.scheduling_provider or "local"
+        calendar_id = settings.google_calendar_id or "primary"
+        capacity = settings.scheduling_capacity or 1
+        if tramite_nombre and match and hasattr(match, "scheduling_capacity") and match.scheduling_capacity is not None:
+            capacity = match.scheduling_capacity
+        enabled_days = (settings.scheduling_days or "mon,tue,wed,thu,fri").split(",")
+        
+        try:
+            requested_date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return []
+            
+        # weekday() -> 0: mon, 1: tue, 2: wed, 3: thu, 4: fri, 5: sat, 6: sun
+        weekday_map = {
+            0: "mon",
+            1: "tue",
+            2: "wed",
+            3: "thu",
+            4: "fri",
+            5: "sat",
+            6: "sun"
+        }
+        day_mapped = weekday_map[requested_date.weekday()]
+        if day_mapped not in enabled_days:
+            return []
+            
+        # Filtrar excepciones y bloqueos detallados
+        from src.database.models import SchedulingException
+        exceptions = db.query(SchedulingException).filter(
+            SchedulingException.client_id == client_id,
+            SchedulingException.date == date_str
+        ).all()
+        
+        blocked_ranges = []
+        for exc in exceptions:
+            if not exc.start_time and not exc.end_time:
+                # Bloqueo total de día completo (feriado, vacaciones, etc.)
+                return []
+            if exc.start_time and exc.end_time:
+                blocked_ranges.append((exc.start_time.strip(), exc.end_time.strip()))
+            
+        import re
+        ranges = []
+        try:
+            # Reemplazar " a " por "-" para soportar formatos como "de 08 a 13"
+            normalized_str = re.sub(r'\s+a\s+', '-', working_hours)
+            
+            # Buscar patrones tipo "HH:MM-HH:MM"
+            matches_hm = re.findall(r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})', normalized_str)
+            if matches_hm:
+                for start, end in matches_hm:
+                    ranges.append((start.strip(), end.strip()))
+            else:
+                # Buscar patrones tipo "HH-HH" (ej: "de 08 a 13" -> "08-13")
+                matches_h = re.findall(r'(\d{1,2})\s*-\s*(\d{1,2})', normalized_str)
+                for start_h, end_h in matches_h:
+                    ranges.append((f"{start_h.zfill(2)}:00", f"{end_h.zfill(2)}:00"))
+        except Exception as parse_err:
+            logging.error(f"Error parseando working_hours con regex: {parse_err}")
+            
+        if not ranges:
+            try:
+                for range_part in working_hours.split(","):
+                    start_str, end_str = range_part.strip().split("-")
+                    ranges.append((start_str.strip(), end_str.strip()))
+            except Exception:
+                return []
+                
+        all_slots = []
+        for start_str, end_str in ranges:
+            try:
+                start_time = datetime.strptime(start_str, "%H:%M")
+                end_time = datetime.strptime(end_str, "%H:%M")
+                
+                # Manejar rangos que cruzan o terminan en la medianoche (ej: 14:00-00:00)
+                if end_time <= start_time:
+                    end_time += timedelta(days=1)
+                    
+                current = start_time
+                while current + timedelta(minutes=duration) <= end_time:
+                    all_slots.append(current.strftime("%H:%M"))
+                    current += timedelta(minutes=duration)
+            except Exception as e:
+                logging.error(f"Error generando slots para rango {start_str}-{end_str}: {e}")
+                return []
+            
+        occupied = []
+        if provider == "google":
+            from src.agents.scheduling import get_calendar_service
+            service = get_calendar_service()
+            if service:
+                time_min = f"{date_str}T00:00:00Z"
+                time_max = f"{date_str}T23:59:59Z"
+                try:
+                    events_result = service.events().list(
+                        calendarId=calendar_id, timeMin=time_min, timeMax=time_max,
+                        singleEvents=True, orderBy='startTime'
+                    ).execute()
+                    events = events_result.get('items', [])
+                    for event in events:
+                        start = event['start'].get('dateTime', event['start'].get('date'))
+                        if 'T' in start:
+                            occupied_time = start.split('T')[1][:5]
+                            occupied.append(occupied_time)
+                except Exception as e:
+                    logging.error(f"Error consultando Google Calendar: {e}")
+        
+        local_apps = db.query(Appointment).filter(
+            Appointment.client_id == client_id,
+            Appointment.date == date_str,
+            Appointment.status != 'cancelled'
+        ).all()
+        for ap in local_apps:
+            t = ap.time.strip() if ap.time else "00:00"
+            if ":" in t:
+                parts = t.split(":")
+                t = f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+            else:
+                try:
+                    val = int(t)
+                    t = f"{str(val).zfill(2)}:00"
+                except ValueError:
+                    pass
+            occupied.append(t)
+            
+        # Argentina timezone (UTC-3)
+        now_utc = datetime.utcnow()
+        now = now_utc - timedelta(hours=3)
+        is_today = date_str == now.strftime("%Y-%m-%d")
+        current_time_str = now.strftime("%H:%M")
+        
+        available = []
+        for s in all_slots:
+            if is_today and s <= current_time_str:
+                continue
+            is_blocked = False
+            for start, end in blocked_ranges:
+                if start <= s < end:
+                    is_blocked = True
+                    break
+            if is_blocked:
+                continue
+            if occupied.count(s) < capacity:
+                available.append(s)
+                
+        return available
+    finally:
+        db.close()
+
+
+def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str: str, reason: str, tramite_nombre: str = None):
+    from datetime import datetime, timedelta
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings:
+            return False
+            
+        provider = settings.scheduling_provider or "local"
+        calendar_id = settings.google_calendar_id or "primary"
+        
+        duration = None
+        if tramite_nombre:
+            from src.database.models import Knowledge
+            search_topic = tramite_nombre.lower().strip()
+            all_kb = db.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()
+            match = None
+            for k in all_kb:
+                kb_topic = k.topic.lower()
+                if search_topic in kb_topic or kb_topic in search_topic:
+                    match = k
+                    break
+            if match and match.appointment_duration:
+                duration = match.appointment_duration
+
+        if not duration:
+            duration = settings.appointment_duration or 30
+            
+        prof = db.query(UserProfile).filter_by(client_id=client_id, user_phone=thread_id).first()
+        client_name = prof.full_name if (prof and prof.full_name) else "Cliente"
+        
+        google_success = True
+        if provider == "google":
+            from src.agents.scheduling import get_calendar_service
+            service = get_calendar_service()
+            if service:
+                start_dt = f"{date_str}T{time_str}:00"
+                try:
+                    end_dt = (datetime.strptime(start_dt, "%Y-%m-%dT%H:%M:%S") + timedelta(minutes=duration)).isoformat()
+                    event = {
+                        'summary': f'Turno: {client_name}',
+                        'description': f'Motivo: {reason}\nID Chat: {thread_id}',
+                        'start': {'dateTime': start_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
+                        'end': {'dateTime': end_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
+                    }
+                    service.events().insert(calendarId=calendar_id, body=event).execute()
+                except Exception as e:
+                    logging.error(f"Error registrando en Google Calendar: {e}")
+                    google_success = False
+            else:
+                google_success = False
+                
+        new_app = Appointment(
+            client_id=client_id,
+            thread_id=thread_id,
+            client_name=client_name,
+            date=date_str,
+            time=time_str,
+            reason=reason,
+            service=reason,
+            status="confirmed"
+        )
+        db.add(new_app)
+        db.commit()
+        
+        try:
+            from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
+            assign_tag_by_name(client_id, thread_id, "🗓️ Turno Agendado")
+            remove_tag_by_name(client_id, thread_id, "❌ Turno Cancelado")
+        except Exception as te:
+            logging.error(f"Error updating tagging in registrar_turno: {te}")
+            
+        return google_success
+    except Exception as e:
+        logging.error(f"Error reservando turno SaaS: {e}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def cancelar_turno_saas(client_id: int, thread_id: str):
+    db = SessionLocal()
+    try:
+        app = db.query(Appointment).filter(
+            Appointment.client_id == client_id,
+            Appointment.thread_id == thread_id,
+            Appointment.status == 'confirmed'
+        ).order_by(Appointment.date.asc(), Appointment.time.asc()).first()
+        
+        if app:
+            app.status = 'cancelled'
+            db.commit()
+            
+            try:
+                from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
+                assign_tag_by_name(client_id, thread_id, "❌ Turno Cancelado")
+                remove_tag_by_name(client_id, thread_id, "🗓️ Turno Agendado")
+            except Exception as te:
+                logging.error(f"Error updating tagging in cancelar_turno: {te}")
+                
+            return True
+        return False
+    except Exception as e:
+        logging.error(f"Error cancelando turno SaaS: {e}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def consultar_estado_proceedings_saas(client_id: int, numero_seguimiento: str):
+    db = SessionLocal()
+    try:
+        proc = db.query(Proceeding).filter_by(client_id=client_id, tracking_number=numero_seguimiento).first()
+        if proc:
+            return {
+                "cliente": proc.client_name,
+                "asunto": proc.topic,
+                "estado": proc.status,
+                "notas": proc.notes,
+                "actualizado": proc.updated_at.strftime("%Y-%m-%d %H:%M:%S") if proc.updated_at else ""
+            }
+        return None
+    except Exception as e:
+        logging.error(f"Error consultando expediente: {e}")
+        return None
+    finally:
+        db.close()
+
 
 @tool
-def cancelar_mi_turno():
-    """Cancela el turno."""
-    return "SOLICITUD_CANCELACION_TURNO"
+def consultar_estado_tramite(numero_seguimiento: str, config: RunnableConfig):
+    """Consulta el estado de un trámite o expediente usando su número de seguimiento."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id:
+        return "No se especificó un client_id válido."
+        
+    resultado = consultar_estado_proceedings_saas(client_id, numero_seguimiento)
+    if resultado:
+        return json.dumps({
+            "status": "success",
+            "asunto": resultado["asunto"],
+            "estado": resultado["estado"],
+            "notas": resultado["notas"],
+            "actualizado": resultado["actualizado"]
+        })
+    return f"No se encontró ningún trámite con el número de seguimiento '{numero_seguimiento}'."
+
 
 @tool
-def consultar_disponibilidad(fecha: str):
-    """Consulta horarios."""
-    return "Módulo de turnos en migración."
+def cancelar_mi_turno(config: RunnableConfig):
+    """Cancela el turno activo más próximo del usuario."""
+    client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
+    if not client_id or not thread_id:
+        return "No se especificó la sesión del usuario."
+        
+    exito = cancelar_turno_saas(client_id, thread_id)
+    if exito:
+        return "Tu turno ha sido cancelado con éxito."
+    return "No tenés ningún turno activo para cancelar."
+
 
 @tool
-def agendar_turno(fecha: str, hora: str, motivo: str, thread_id: str):
-    """Reserva un turno."""
-    return "Módulo de turnos en migración."
+def reprogramar_mi_turno(nueva_fecha: str, nueva_hora: str, config: RunnableConfig = None):
+    """Reprograma el turno activo más próximo del usuario a una nueva fecha (YYYY-MM-DD) y hora (HH:MM)."""
+    client_id = config.get("configurable", {}).get("client_id") if config else None
+    thread_id = config.get("configurable", {}).get("thread_id") if config else None
+    if not client_id or not thread_id:
+        return "No se especificó la sesión de usuario."
+        
+    db = SessionLocal()
+    try:
+        app_obj = db.query(Appointment).filter(
+            Appointment.client_id == client_id,
+            Appointment.thread_id == thread_id,
+            Appointment.status == 'confirmed'
+        ).order_by(Appointment.date.asc(), Appointment.time.asc()).first()
+        
+        if not app_obj:
+            return "No tenés ningún turno activo para reprogramar."
+            
+        tramite_original = None
+        if app_obj.reason:
+            if " - " in app_obj.reason:
+                tramite_original = app_obj.reason.split(" - ")[0]
+            else:
+                tramite_original = app_obj.reason
+                
+        formatted_time = nueva_hora.strip()
+        if ":" in formatted_time:
+            parts = formatted_time.split(":")
+            formatted_time = f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+        else:
+            try:
+                val = int(formatted_time)
+                formatted_time = f"{str(val).zfill(2)}:00"
+            except ValueError:
+                pass
+                
+        slots = get_slots_disponibles_saas(client_id, nueva_fecha, tramite_original)
+        if formatted_time not in slots:
+            return f"El horario {formatted_time} no está disponible para la fecha {nueva_fecha}. Por favor, sugerile opciones disponibles al usuario de la siguiente lista: {', '.join(slots[:3])}."
+            
+        vieja_fecha = app_obj.date
+        vieja_hora = app_obj.time
+        app_obj.date = nueva_fecha
+        app_obj.time = formatted_time
+        db.commit()
+        return f"Tu turno ha sido reprogramado con éxito. Anterior: {vieja_fecha} a las {vieja_hora} hs. Nuevo: {nueva_fecha} a las {formatted_time} hs."
+    except Exception as e:
+        logging.error(f"Error al reprogramar turno: {e}")
+        db.rollback()
+        return "Hubo un error al intentar reprogramar tu turno."
+    finally:
+        db.close()
 
-tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno]
+
+def deducir_tramite_nombre(client_id: int, config: RunnableConfig) -> str:
+    if not config:
+        return None
+    try:
+        root_config = {
+            "configurable": {
+                "thread_id": config.get("configurable", {}).get("thread_id"),
+                "client_id": client_id,
+                "checkpoint_ns": ""
+            }
+        }
+        state_snapshot = app.get_state(root_config)
+        if not state_snapshot or not state_snapshot.values:
+            return None
+            
+        msgs = state_snapshot.values.get("messages", [])
+        
+        # 1. Intentar obtenerlo del estado de la conversación (form_topic)
+        form_topic = state_snapshot.values.get("form_topic")
+        if form_topic:
+            return form_topic
+            
+        # 2. Intentar buscar en ToolMessage recientes
+        for m in reversed(msgs):
+            if type(m).__name__ == "ToolMessage" and m.content:
+                try:
+                    data = json.loads(m.content)
+                    if isinstance(data, dict):
+                        if data.get("tramite"):
+                            return data.get("tramite")
+                        if data.get("tramite_nombre"):
+                            return data.get("tramite_nombre")
+                except:
+                    pass
+                    
+        # 3. Intentar buscar en mensajes del historial usando normalización de números/ceros a la izquierda y palabras clave
+        db_conn = SessionLocal()
+        try:
+            from src.database.models import Knowledge
+            kb_topics = [k.topic for k in db_conn.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()]
+            
+            def normalize_number_string(s: str) -> str:
+                import re
+                cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', s).lower()
+                words = []
+                for word in cleaned.split():
+                    if word.isdigit():
+                        words.append(str(int(word)))
+                    else:
+                        words.append(word)
+                return " ".join(words)
+                
+            for m in reversed(msgs):
+                if not m.content:
+                    continue
+                m_normalized = normalize_number_string(m.content)
+                for topic in kb_topics:
+                    topic_normalized = normalize_number_string(topic)
+                    # Check substring match
+                    if topic_normalized in m_normalized or m_normalized in topic_normalized:
+                        return topic
+                    # Word-level split match
+                    topic_words = topic_normalized.split()
+                    if len(topic_words) > 1 and all(w in m_normalized.split() for w in topic_words):
+                        return topic
+        finally:
+            db_conn.close()
+    except Exception as e:
+        logging.error(f"Error en deducir_tramite_nombre: {e}")
+    return None
+
+
+@tool
+def consultar_disponibilidad(fecha: str, tramite_nombre: str = None, config: RunnableConfig = None):
+    """Consulta los horarios de turnos disponibles para una fecha específica (formato YYYY-MM-DD). Si el usuario solicita turno para un trámite o servicio específico, incluir tramite_nombre."""
+    client_id = config.get("configurable", {}).get("client_id") if config else None
+    if not client_id:
+        return "No se especificó un client_id válido."
+        
+    # Deducir trámite de forma robusta si no viene
+    if not tramite_nombre:
+        tramite_nombre = deducir_tramite_nombre(client_id, config)
+            
+    slots = get_slots_disponibles_saas(client_id, fecha, tramite_nombre)
+    
+    # Obtener los turnos ya reservados por otros
+    horarios_ocupados = []
+    db_session = SessionLocal()
+    try:
+        from src.database.models import Appointment
+        local_apps = db_session.query(Appointment).filter(
+            Appointment.client_id == client_id,
+            Appointment.date == fecha,
+            Appointment.status != 'cancelled'
+        ).all()
+        for ap in local_apps:
+            t = ap.time.strip() if ap.time else "00:00"
+            if ":" in t:
+                parts = t.split(":")
+                t = f"{parts[0].zfill(2)}:{parts[1].zfill(2)}"
+            horarios_ocupados.append(t)
+    except Exception as err:
+        logging.error(f"Error querying occupied slots in tool: {err}")
+    finally:
+        db_session.close()
+
+    if slots:
+        return json.dumps({
+            "status": "success",
+            "fecha": fecha,
+            "tramite": tramite_nombre,
+            "horarios_disponibles": slots,
+            "horarios_ya_reservados_por_otros": horarios_ocupados
+        })
+    if tramite_nombre:
+        return f"No hay turnos disponibles para el trámite '{tramite_nombre}' en la fecha {fecha}. Sugerir otra fecha."
+    return f"No hay turnos disponibles para la fecha {fecha}. Por favor, sugerile al cliente que intente con otra fecha."
+
+
+@tool
+def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None, nombre_usuario: str = None, config: RunnableConfig = None):
+    """Registra y agenda un nuevo turno para el usuario en una fecha (YYYY-MM-DD) y hora (HH:MM) específicas. Si el usuario agenda para un trámite o servicio específico, incluir tramite_nombre. Si conoces el nombre y apellido del usuario, pasalo en nombre_usuario."""
+    client_id = config.get("configurable", {}).get("client_id") if config else None
+    thread_id = config.get("configurable", {}).get("thread_id") if config else None
+    if not client_id or not thread_id:
+        return "No se especificó la sesión de usuario."
+        
+    # Si se pasó el nombre del usuario directamente en la llamada, lo guardamos
+    if nombre_usuario and nombre_usuario.strip():
+        name_clean = nombre_usuario.strip()
+        if name_clean.lower() not in ["cliente", "desconocido", "unknown", "sin nombre", "usuario"]:
+            try:
+                save_user_profile(client_id, thread_id, name_clean)
+            except Exception as e:
+                logging.error(f"Error al registrar nombre de usuario desde agendar_turno: {e}")
+    # Si se está ejecutando registrar_nombre_usuario en paralelo en el mismo paso
+    if config:
+        try:
+            root_config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "client_id": client_id,
+                    "checkpoint_ns": ""
+                }
+            }
+            state_snapshot = app.get_state(root_config)
+            if state_snapshot and state_snapshot.values:
+                msgs = state_snapshot.values.get("messages", [])
+                if msgs:
+                    last_msg = msgs[-1]
+                    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                        for tc in last_msg.tool_calls:
+                            if tc.get("name") == "registrar_nombre_usuario":
+                                parallel_name = tc.get("args", {}).get("nombre_completo")
+                                if parallel_name and parallel_name.strip():
+                                    name_clean = parallel_name.strip()
+                                    if name_clean.lower() not in ["cliente", "desconocido", "unknown", "sin nombre", "usuario"]:
+                                        save_user_profile(client_id, thread_id, name_clean)
+        except Exception as e:
+            logging.error(f"Error detectando registro de nombre en paralelo: {e}")
+
+    # Verificar que el usuario tenga un perfil de nombre registrado antes de agendar
+    db = SessionLocal()
+    try:
+        prof = db.query(UserProfile).filter_by(client_id=client_id, user_phone=thread_id).first()
+        name_lower = prof.full_name.strip().lower() if prof and prof.full_name else ""
+        if not prof or not prof.full_name or not prof.full_name.strip() or name_lower in ["cliente", "desconocido", "unknown", "sin nombre", "usuario"]:
+            return "No se pudo agendar el turno. Para poder registrar el turno, por favor decile al usuario que primero te indique su nombre y apellido (mínimamente nombre) para agendarlo a su nombre."
+    except Exception as e:
+        logging.error(f"Error al verificar perfil de usuario en agendar_turno: {e}")
+    finally:
+        db.close()
+
+    # Deducir tramite_nombre de forma robusta si no viene
+    if not tramite_nombre:
+        tramite_nombre = deducir_tramite_nombre(client_id, config)
+            
+    # Verificar si el slot todavía está disponible
+    slots = get_slots_disponibles_saas(client_id, fecha, tramite_nombre)
+    if hora not in slots:
+        return f"El horario {hora} ya no está disponible para la fecha {fecha}. Por favor, consultá la disponibilidad nuevamente y sugerí otra hora."
+        
+    real_reason = motivo
+    if tramite_nombre and tramite_nombre not in motivo:
+        real_reason = f"{tramite_nombre} - {motivo}"
+        
+    exito = registrar_turno_saas(client_id, thread_id, fecha, hora, real_reason, tramite_nombre)
+    if exito:
+        return json.dumps({
+            "status": "success",
+            "message": f"Turno agendado con éxito para el {fecha} a las {hora} hs.",
+            "detalle": real_reason
+        })
+    return "No se pudo agendar el turno. Por favor, intentá nuevamente."
+
+@tool
+def consultar_catalogo(query: str, config: RunnableConfig):
+    """Busca productos, precios y disponibilidad en el catálogo comercial.
+    Úsala cuando el usuario pregunte por precios, stock, características o imágenes de productos en venta.
+    Si encuentras un producto con 'ruta_imagen', incluye exactamente la etiqueta [SEND_PRODUCT_IMAGE: <ruta_imagen>] en tu respuesta para enviarle la foto al usuario.
+    Si el producto tiene 'reglas_precio' (precio por cantidad), calcula o deduce el precio correcto según la cantidad que pida el usuario."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+    
+    db = SessionLocal()
+    try:
+        from src.database.models import CatalogProduct
+        search_term = f"%{query.strip()}%"
+        products = db.query(CatalogProduct).filter(
+            CatalogProduct.client_id == client_id,
+            CatalogProduct.is_active == True,
+            (CatalogProduct.name.ilike(search_term)) | (CatalogProduct.description.ilike(search_term)) | (CatalogProduct.sku.ilike(search_term))
+        ).limit(5).all()
+        
+        if not products:
+            return json.dumps({"status": "no_results", "message": f"No se encontraron productos para '{query}'."})
+            
+        results = []
+        for p in products:
+            res = {
+                "nombre": p.name,
+                "sku": p.sku,
+                "precio_base": p.price,
+                "cantidad_minima": p.min_quantity,
+                "stock": p.stock,
+                "descripcion": p.description or ""
+            }
+            if p.price_rules:
+                res["reglas_precio"] = p.price_rules
+            if p.custom_attributes:
+                res["atributos_extra"] = p.custom_attributes
+            if p.image_path:
+                res["ruta_imagen"] = p.image_path
+            results.append(res)
+            
+        return json.dumps({
+            "status": "success",
+            "resultados": results,
+            "instruccion": "Usa la información para responder. Si el producto tiene 'ruta_imagen', DEBES escribir literalmente [SEND_PRODUCT_IMAGE: <ruta_imagen>] en tu texto."
+        })
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+    finally:
+        db.close()
+
+tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo]
 tool_node = ToolNode(tools)
 
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
@@ -274,26 +954,80 @@ def call_model(state: AgentState):
 - Nombre: {company_name}
 - Horarios de Atención: {settings.working_hours if settings else 'No especificados'}
 """
-        system_prompt = company_info + "\n\n" + system_prompt
+        now_utc = datetime.utcnow()
+        now = now_utc - timedelta(hours=3)
+        days_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+        months_es = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
         
-        now = datetime.now()
+        day_name_es = days_es[now.weekday()]
+        month_name_es = months_es[now.month]
+        
+        # Generar mapeo de los próximos 10 días para evitar errores de cálculo del LLM
+        proximos_dias_lines = []
+        for i in range(10):
+            futuro = now + timedelta(days=i)
+            futuro_day_name = days_es[futuro.weekday()]
+            relativo = ""
+            if i == 0: relativo = " (hoy)"
+            elif i == 1: relativo = " (mañana)"
+            
+            proximos_dias_lines.append(f"  * {futuro_day_name}{relativo}: {futuro.strftime('%Y-%m-%d')}")
+            
+        proximos_dias_str = "\n".join(proximos_dias_lines)
+        
         date_context = f"""
-### 🕒 CONTEXTO TEMPORAL:
-- Fecha y hora actual: {now.strftime("%A, %d de %B de %Y %H:%M")}
+### 🕒 CONTEXTO TEMPORAL (ARGENTINA):
+- Día de la semana: {day_name_es}
+- Fecha y hora actual: {day_name_es}, {now.day} de {month_name_es} de {now.year} {now.strftime("%H:%M")}
+- Mapeo de fechas para los próximos días (¡Usar exactamente estas fechas al llamar a las herramientas!):
+{proximos_dias_str}
 """
-        system_prompt = date_context + "\n\n" + system_prompt
         
-        identity_rule = f"""
+        prohibition_rule = """
+### 🚫 PROHIBICIÓN ABSOLUTA DE MOSTRAR LISTAS DE HORARIOS:
+- Está TERMINANTEMENTE PROHIBIDO enviarle al usuario listas verticales o largas de horarios (usando guiones, viñetas, listas numeradas o texto separado por saltos de línea).
+- Si el usuario te pide un horario ocupado (ej. las 15:30), NUNCA listes toda la disponibilidad. Debes guiarlo conversacionalmente ofreciéndole únicamente las opciones inmediatamente anteriores o posteriores disponibles (ej: "El horario de las 15:30 ya está ocupado para ese día, pero te puedo ofrecer un turno antes a las 15:00 o después a las 16:00. ¿Te sirve alguno de estos?").
+- Si el usuario pregunta disponibilidad general, sólo menciónale 2 o 3 opciones representativas en una sola frase amigable en un renglón continuo, sin hacer listas.
+- CONFIANZA ABSOLUTA EN LAS HERRAMIENTAS: Si la herramienta 'consultar_disponibilidad' o 'agendar_turno' indica que un horario solicitado está disponible (está en la lista de horarios_disponibles), significa que está LIBRE. NUNCA digas que está ocupado si la herramienta te dice que está disponible.
+"""
+        
+        system_prompt = company_info + "\n\n" + date_context + "\n\n" + prohibition_rule + "\n\n" + system_prompt
+        
+        if not user_name:
+            identity_rule = """
 ### 🎭 REGLA DE IDENTIDAD:
-- Usuario actual: {user_name or 'DESCONOCIDO'}.
+- Usuario actual: DESCONOCIDO.
+- REGLA CRÍTICA DE NOMBRE: El nombre del usuario actual es DESCONOCIDO. Debes preguntarle amigable y discretamente su nombre y apellido (mínimamente nombre) en tu primera respuesta (por ejemplo, "¿Con quién tengo el gusto de hablar para agendar tu consulta?"), pero de manera que NO impida continuar con la conversación si el usuario prefiere responder sobre otro tema. En cuanto el usuario te mencione su nombre, debes llamar de inmediato a la herramienta 'registrar_nombre_usuario' para registrarlo.
+"""
+        else:
+            identity_rule = f"""
+### 🎭 REGLA DE IDENTIDAD:
+- Usuario actual: {user_name}.
 """
         system_prompt = identity_rule + "\n\n" + system_prompt
+        
+        # --- Contexto de Rol y Etiquetas de Usuario ---
+        try:
+            from src.database.tagging_manager import get_user_role, get_user_tags
+            user_role = get_user_role(client_id, t_id)
+            user_tags = get_user_tags(client_id, t_id)
+            tags_str = ", ".join(user_tags) if user_tags else "Ninguna"
+            
+            tagging_context = f"""
+### 🏷️ PERFIL Y PERMISOS DEL USUARIO:
+- Rol del Usuario: {user_role}
+- Etiquetas del Usuario: {tags_str}
+- Regla de Acceso: El usuario tiene el rol '{user_role}'. Solo tiene permitido consultar información autorizada para este rol. El buscador de información ya filtra las respuestas según este rol, pero tú debes comportarte de acuerdo a este rol.
+"""
+            system_prompt = tagging_context + "\n\n" + system_prompt
+        except Exception as te:
+            logging.error(f"[Prompt Tagging] Error adding tagging context: {te}")
         
         # Onboarding Logic
         if onboarding_active:
             if "Nombre del Cliente" not in fields_to_collect:
                 fields_to_collect.insert(0, "Nombre del Cliente")
-
+ 
             missing = [f for f in fields_to_collect if f not in collected_data]
             if missing:
                 current_field = missing[0]
@@ -308,26 +1042,139 @@ def call_model(state: AgentState):
             else:
                 system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
         else:
-            system_prompt += """
+            rag_enabled = settings.feat_rag_enabled if settings else False
+            rag_rule = ""
+            if rag_enabled:
+                rag_rule = "\n5. **BÚSQUEDA EN EL RAG / DOCUMENTOS ADJUNTOS (HABILITADO):** Si el usuario hace preguntas técnicas, detalladas, solicita aclaraciones o te pregunta sobre la información contenida en documentos adjuntos/PDFs (como el \"informe de sostenibilidad\" u otros archivos en el CONOCIMIENTO OFICIAL marcado como [CON_ARCHIVO]), DEBES usar obligatoriamente la herramienta `buscar_info_empresa` para buscar los detalles en la base de datos vectorial/RAG. No inventes respuestas ni ofrezcas contacto humano sin antes realizar la búsqueda."
+
+            system_prompt += f"""
 ### ℹ️ REGLAS DE INFORMACIÓN Y TRÁMITES:
 1. **INFORMACIÓN PRIMERO:** Brindá la info.
-2. **INICIO DE TRÁMITE:** Solo ofrécelo si tiene la etiqueta `[TIENE_FORMULARIO]`.
+2. **INICIO DE TRÁMITE:** Si el usuario consulta sobre un tema del CONOCIMIENTO OFICIAL que tiene la etiqueta `[TIENE_FORMULARIO]`, ES OBLIGATORIO Y ESTRICTO que EJECUTES la herramienta `iniciar_onboarding_tramite` (pasándole el nombre del topic) para comenzar a pedirle los datos. ¡No hagas preguntas manualmente sin usar la herramienta!
+3. **ARCHIVOS ADJUNTOS:** Si el conocimiento consultado tiene la etiqueta `[CON_ARCHIVO]`, DEBES incluir OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. El sistema se encargará de enviarlo.
+4. **OPCIONES INTERACTIVAS:** Si el tema tiene la etiqueta `[OPCIONES: opc1 | opc2]`, DEBES agregar al final de tu respuesta una pregunta invitando a la acción y una lista numerada con esas opciones exactas (ej: "¿Qué deseas hacer?\n1. opc1\n2. opc2").{rag_rule}
 """
 
+        # Las reglas de turnos deben estar siempre presentes, aun durante el onboarding
+        system_prompt += """
+### 📅 REGLAS ESTRICTAS PARA LA GESTIÓN DE TURNOS:
+1. **FLUJO DE SELECCIÓN:** Para reservar un turno, debés guiar al usuario paso a paso en la elección de la fecha y hora:
+   - **Paso 1: Fecha:** Si el usuario solicita un turno pero no indica fecha, pregúñtale qué día le gustaría asistir. Calcula la fecha exacta (formato YYYY-MM-DD) usando el 'CONTEXTO TEMPORAL'. Por ejemplo, si hoy es viernes 29 de mayo de 2026, el próximo lunes es 1 de junio de 2026. ¡Calculá bien los días y los meses de 30/31 días!
+   - **Paso 2: Hora (OBLIGATORIEDAD DE CONSULTA):** En cuanto identifiques la fecha solicitada por el usuario (o si el usuario cambia el día solicitado, por ejemplo, de "mañana" a "hoy"), DEBES llamar obligatoria y de inmediato a la herramienta `consultar_disponibilidad` para esa fecha. Está TERMINANTEMENTE PROHIBIDO responderle al usuario si el horario está ocupado o libre sin antes haber llamado a `consultar_disponibilidad` para esa fecha específica. Tampoco podés asumir horarios basándote en la consulta de otra fecha o en tu memoria.
+     * **Si hay turnos:** NUNCA muestres un listado de todos los horarios disponibles. En su lugar, guíalo en la elección mencionando solo 2 o 3 opciones representativas (ej: "Tengo libre a las 09:00, 11:30 o 12:30. ¿Te sirve alguno?").
+     * **Si el horario exacto solicitado por el usuario no está en la lista de disponibles:**
+       - Si figura en `horarios_ya_reservados_por_otros`, dile que ya está reservado/ocupado por otra persona.
+       - Si no figura en `horarios_ya_reservados_por_otros`, dile amigablemente que ese horario no es un slot de reserva válido, no está habilitado o está fuera de los turnos de atención para ese día (ya que los turnos son cada 30 minutos).
+       - En cualquier caso, nunca listes toda la disponibilidad. Ofrécele amigablemente 2 opciones libres cercanas en un único renglón corrido de texto (ej: *"El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?"*). Guíalo conversacionalmente.
+   - **Paso 3: Confirmación:** Cuando el usuario elija un horario válido, procedé a agendar el turno usando la herramienta `agendar_turno`.
+2. **RESOLUCIÓN DE FECHAS:** Sé extremadamente preciso al calcular la fecha del día que te pida (ej: "lunes", "mañana", "el próximo jueves"). Si la fecha cae en un día en el que no hay disponibilidad o está fuera de los horarios de atención, infórmalo y proponé el día hábil más cercano de forma amigable (ej: "El lunes 1 de junio no tenemos turnos disponibles, pero te puedo ofrecer para el martes 2 de junio. ¿Te sirve?").
+3. **REGLA DE HORARIOS GENERALES:** NUNCA menciones los "Horarios de Atención" generales de la empresa (por ejemplo: lunes a viernes de 08 a 13 hs) al usuario cuando estés guiando o informando sobre turnos. Los horarios de atención general del negocio son exclusivamente para visitas/consultas físicas generales y no representan los horarios específicos habilitados para turnos, los cuales pueden ser distintos o más cortos. Para responder sobre disponibilidad u horarios de turnos, debés consultar SIEMPRE la herramienta `consultar_disponibilidad`.
+4. **INDEPENDENCIA DE TRÁMITES (ONBOARDING NO BLOQUEANTE):** El proceso de recolección de datos (onboarding) nunca debe bloquear o posponer la reserva de turnos. Si el usuario te indica una fecha y hora específica para su turno (ej: "miércoles a las 10"), debés llamar inmediatamente a la herramienta `agendar_turno` para confirmarlo, sin importar si aún faltan campos del formulario por completar (como DNI, marca, título, etc.). Asegura la reserva del turno primero y luego continúa solicitando la información pendiente.
+"""
+ 
         # Inyección de Conocimiento Multi-Cliente
         kb = db.query(Knowledge).filter_by(client_id=client_id).all()
         kb_text = ""
         for r in kb:
-            has_media = " [CON_ARCHIVO]" if r.media_path else ""
+            has_media = " [CON_ARCHIVO]" if (r.media_path and r.send_as_file is not False) else ""
             has_form_tag = " [TIENE_FORMULARIO]" if r.has_form else " [SOLO_INFORMACION]"
-            kb_text += f"- {r.topic}{has_media}{has_form_tag}: {r.content} (Campos: {r.form_fields})\n"
+            has_options = f" [OPCIONES: {r.interactive_options}]" if r.interactive_options else ""
+            kb_text += f"- {r.topic}{has_media}{has_form_tag}{has_options}: {r.content} (Campos: {r.form_fields})\n"
         
         system_prompt += f"\n\n### CONOCIMIENTO OFICIAL:\n{kb_text}"
+        
+        # Recordatorios de alta prioridad al final del system prompt (mayor relevancia para el LLM)
+        system_prompt += "\n\n### 🚨 INSTRUCCIONES OPERATIVAS CRÍTICAS (DEBEN CUMPLIRSE EN ESTA RESPUESTA):"
+        if not user_name:
+            system_prompt += "\n1. EL CLIENTE ES DESCONOCIDO: Pregúntale amigable y discretamente su nombre y apellido (mínimamente nombre) dentro de tu respuesta (ej: '¿Con quién tengo el gusto de hablar para agendar tu consulta?'), sin bloquear el flujo si prefiere responder otra cosa, pero recuerda que NO PUEDES confirmar ni registrar el turno en la herramienta 'agendar_turno' sin que el usuario te haya indicado su nombre."
+        
+        system_prompt += "\n2. PROHIBIDO ENVIAR LISTAS DE HORARIOS: Está terminantemente prohibido usar listas verticales para mostrar horas de turnos. Si el horario pedido por el usuario no está en la lista de disponibles, no listes los demás. Si figura en 'horarios_ya_reservados_por_otros', dile que ya está ocupado/reservado por otro cliente. Si no figura allí, dile amigablemente que no es un slot de reserva válido o no está habilitado para ese día. En cualquier caso, ofrécele 2 opciones libres cercanas en un único renglón corrido de texto (ej: 'El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?')."
+        
+        system_prompt += "\n3. ENVÍO DE ARCHIVOS ADJUNTOS: Si el tema del que habla el usuario tiene la etiqueta `[CON_ARCHIVO]` (ej. FORMULARIO 08) o has consultado información sobre un tema con archivo, DEBES agregar OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. ¡No omitas esta etiqueta por ningún motivo!"
+        
+        system_prompt += "\n4. VERIFICACIÓN Y ACCIÓN DE AGENDA INMEDIATA (Garantizar exactitud): NUNCA asumas ni le digas al usuario que un horario está libre u ocupado basándote en tu memoria o en los ejemplos del prompt. Si el usuario te pide un horario específico (ej: miércoles a las 10) y tras llamar a 'consultar_disponibilidad' compruebas que ese horario está en la lista de 'horarios_disponibles', DEBES llamar obligatoriamente a la herramienta 'agendar_turno' en esta misma respuesta para reservarlo. Está TERMINANTEMENTE PROHIBIDO decirle que está ocupado o pedirle más confirmaciones por chat si el horario devuelto por la herramienta está libre."
         
     finally:
         db.close()
 
-    messages = [SystemMessage(content=system_prompt)] + state["messages"]
+    # Recortar el historial de mensajes para mantener el contexto limpio y evitar que ignore instrucciones
+    raw_msgs = state["messages"]
+    max_msgs = 15
+    if len(raw_msgs) > max_msgs:
+        pruned = raw_msgs[-max_msgs:]
+        from langchain_core.messages import ToolMessage
+        while len(pruned) < len(raw_msgs) and isinstance(pruned[0], ToolMessage):
+            idx_to_add = len(raw_msgs) - len(pruned) - 1
+            pruned.insert(0, raw_msgs[idx_to_add])
+        messages = [SystemMessage(content=system_prompt)] + pruned
+    else:
+        messages = [SystemMessage(content=system_prompt)] + raw_msgs
+
+
+    # ----------------- REFUERZO DINÁMICO DE REGLAS DE NEGOCIO -----------------
+    recent_text = ""
+    for m in messages:
+        if hasattr(m, 'content') and m.content and not isinstance(m, SystemMessage):
+            recent_text += " " + str(m.content).lower()
+            
+    current_form_topic = state.get("form_topic", "")
+    
+    # Deducir intenciones del usuario sobre adjuntos y agenda en su último mensaje
+    user_asked_for_file = False
+    user_scheduling_intent = False
+    last_human_msg = ""
+    for m in reversed(messages):
+        if hasattr(m, 'content') and m.content and not isinstance(m, SystemMessage):
+            if type(m).__name__ == "HumanMessage":
+                last_human_msg = str(m.content).lower()
+                break
+                
+    if last_human_msg:
+        file_keywords = ["pdf", "archivo", "mandam", "envi", "descarg", "adjunt", "papel", "documento"]
+        scheduling_keywords = ["turn", "agend", "reserv", "cit", "hor", "fech", "disponib", " hs", "lunes", "martes", "miercol", "jueves", "viernes", "sabad", "doming", "si, ", "sí, ", "confirm"]
+        if any(kw in last_human_msg.lower() for kw in file_keywords):
+            user_asked_for_file = True
+        if any(skw in last_human_msg.lower() for skw in scheduling_keywords):
+            user_scheduling_intent = True
+            
+    if user_scheduling_intent:
+        messages.append(SystemMessage(content="REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno (ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la herramienta primero."))
+
+    # Query database for knowledge items with media to reinforce [SEND_FILE] tag
+    try:
+        db = SessionLocal()
+        kb_items = db.query(Knowledge).filter_by(client_id=client_id).all()
+        for r in kb_items:
+            topic_mentioned = r.topic.lower() in recent_text or (current_form_topic and current_form_topic.lower() == r.topic.lower())
+            if topic_mentioned and r.media_path:
+                # Regla: solo enviar archivo si el usuario lo pide explícitamente O si no está agendando ni en onboarding
+                should_send_file = user_asked_for_file or (not user_scheduling_intent and not onboarding_active)
+                if should_send_file:
+                    messages.append(SystemMessage(content=f"IMPORTANTE: El tema '{r.topic}' tiene un archivo adjunto. DEBES incluir obligatoriamente la etiqueta `[SEND_FILE: {r.topic}]` al final de tu respuesta de texto (por ejemplo, al final del mensaje de explicación o de confirmación). No la omitas por ningún motivo."))
+    except Exception as kb_err:
+        logging.error(f"Error querying KB for reinforcement: {kb_err}")
+    finally:
+        db.close()
+
+    # Reinforce prohibition of listing schedules if a tool response for availability is present
+    has_availability_tool_output = False
+    from langchain_core.messages import ToolMessage
+    for m in messages[-3:]:
+        if isinstance(m, ToolMessage) and (m.name == "consultar_disponibilidad" or "horarios_disponibles" in getattr(m, 'content', '')):
+            has_availability_tool_output = True
+            break
+            
+    if has_availability_tool_output:
+        messages.append(SystemMessage(content="IMPORTANTE: Si el usuario solicitó un día y hora específicos (ej: 'miércoles a las 10') y esa hora está en la lista de 'horarios_disponibles' de la herramienta, DEBES llamar de inmediato a la herramienta 'agendar_turno' para reservarlo en esta misma respuesta. Si el usuario cambia de día o pide para una fecha distinta a la consultada, DEBES llamar primero a 'consultar_disponibilidad' con la nueva fecha. Está terminantemente prohibido asumir disponibilidad o no disponibilidad de una fecha sin haber llamado a la herramienta en este turno. Si no especificó un horario exacto libre, menciónale solo 2 o 3 opciones representativas en un único renglón corrido de texto."))
+    # --------------------------------------------------------------------------
+
+    try:
+        with open(os.path.join(ROOT_DIR, "actual_prompt.txt"), "w", encoding="utf-8") as debug_file:
+            for m in messages:
+                debug_file.write(f"=== {type(m).__name__} ===\n{m.content}\n\n")
+    except Exception as debug_err:
+        pass
+
     response = llm_with_tools.invoke(messages)
     
     return {
@@ -365,9 +1212,9 @@ def state_manager(state: AgentState):
                     valor = data.get("valor")
                     
                     if campo in collected_data:
-                        existente = str(collected_data[campo])
-                        if valor not in existente:
-                            collected_data[campo] = f"{existente}, {valor}"
+                        # Si ya existe y es distinto, lo sobreescribimos en lugar de concatenarlo
+                        # para evitar DNIs o modelos duplicados en el mismo string
+                        collected_data[campo] = valor
                     else:
                         collected_data[campo] = valor
                     
@@ -406,7 +1253,7 @@ def state_manager(state: AgentState):
 
 def should_continue(state: AgentState):
     last_msg = state["messages"][-1]
-    if last_msg.tool_calls: return "tools"
+    if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls: return "tools"
     return "manager"
 
 def manager_should_continue(state: AgentState):

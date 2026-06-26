@@ -97,9 +97,19 @@
                         <i data-lucide="clipboard-list" class="w-4 h-4 shrink-0"></i> Trámites Recibidos
                     </a>
                     {% endif %}
+                    {% if not user or 'contacts' in user.permissions %}
+                    <a href="/admin/contacts" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/contacts' %}active{% endif %}">
+                        <i data-lucide="users-2" class="w-4 h-4 shrink-0"></i> Contactos / Nómina
+                    </a>
+                    {% endif %}
                     {% if not user or 'appointments' in user.permissions %}
                     <a href="/admin/appointments" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/appointments' %}active{% endif %}">
                         <i data-lucide="calendar" class="w-4 h-4 shrink-0"></i> Turnos
+                    </a>
+                    {% endif %}
+                    {% if not user or 'catalog' in user.permissions %}
+                    <a href="/admin/catalog" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/catalog' %}active{% endif %}">
+                        <i data-lucide="shopping-bag" class="w-4 h-4 shrink-0"></i> Catálogo / Precios
                     </a>
                     {% endif %}
                     {% if not user or 'gaps' in user.permissions %}
@@ -121,7 +131,7 @@
                     {% endif %}
                     {% if not user or 'config' in user.permissions %}
                     <a href="/admin/config" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/config' %}active{% endif %}">
-                        <i data-lucide="settings" class="w-4 h-4 shrink-0"></i> Configuración
+                        <i data-lucide="brain-circuit" class="w-4 h-4 shrink-0"></i> Entrenamiento IA
                     </a>
                     {% endif %}
                     {% if not user or 'audit' in user.permissions %}
@@ -171,6 +181,12 @@
             </div>
 
             <div class="flex items-center gap-3 lg:gap-4">
+                {% if is_impersonating %}
+                <a href="/super-admin/stop-impersonate" class="bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 border border-rose-500/30">
+                    <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                    <span>Salir de Impersonación</span>
+                </a>
+                {% endif %}
                 {% block header_actions %}{% endblock %}
                 <div class="hidden lg:block w-px h-6 bg-slate-800"></div>
                 <!-- Perfil -->

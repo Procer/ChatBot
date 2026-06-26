@@ -1,0 +1,294 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Modo Dios | ZSG SaaS{% endblock %}
+
+{% block breadcrumb %}Plataforma SaaS{% endblock %}
+{% block section_title %}Modo Dios - Súper Admin{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-4 lg:p-0">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Gestión de Clientes (Inquilinos)</h2>
+            <p class="text-sm text-slate-400 mt-1">Control maestro de todas las empresas conectadas a ZSG-Bot-iA.</p>
+        </div>
+        <button onclick="openModal('new-client-modal')" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center gap-2">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            Nuevo Cliente
+        </button>
+    </div>
+
+    <!-- Lista de Clientes -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {% for client in clients %}
+        <div class="glass rounded-xl p-5 border border-slate-700/50 hover:border-brand-500/30 transition-all flex flex-col">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300 border border-slate-700">
+                        <i data-lucide="building-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-white">{{ client.business_name }}</h3>
+                        <p class="text-[11px] text-slate-400 font-mono">slug: {{ client.slug }}</p>
+                    </div>
+                </div>
+                <span class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider
+                    {% if client.status == 'active' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
+                    {% else %}bg-rose-500/10 text-rose-400 border border-rose-500/20{% endif %}">
+                    {{ client.status }}
+                </span>
+            </div>
+
+            <!-- Feature Flags -->
+            <div class="bg-slate-900/50 rounded-lg p-3 mb-4 flex-1">
+                <p class="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">Módulos Activos</p>
+                <div class="flex flex-wrap gap-2">
+                    {% if client.settings %}
+                        <span class="px-2 py-1 rounded text-[10px] font-bold {% if client.settings.feat_rag_enabled %}bg-brand-500/20 text-brand-400 border border-brand-500/30{% else %}bg-slate-800 text-slate-500{% endif %}">RAG</span>
+                        <span class="px-2 py-1 rounded text-[10px] font-bold {% if client.settings.feat_human_handoff %}bg-amber-500/20 text-amber-400 border border-amber-500/30{% else %}bg-slate-800 text-slate-500{% endif %}">HUMANO</span>
+                        <span class="px-2 py-1 rounded text-[10px] font-bold {% if client.settings.feat_pdf_export %}bg-indigo-500/20 text-indigo-400 border border-indigo-500/30{% else %}bg-slate-800 text-slate-500{% endif %}">PDF</span>
+                    {% else %}
+                        <p class="text-xs text-rose-400">Sin configuración inicial</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <a href="/super-admin/impersonate/{{ client.id }}" class="flex-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <i data-lucide="log-in" class="w-4 h-4"></i>
+                    Panel
+                </a>
+                <button onclick="editClient({{ client.id }})" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors" title="Configurar">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                </button>
+                <button onclick="window.open('/webhook/{{ client.slug }}/greenapi', '_blank')" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white px-3 rounded-lg transition-colors" title="Test Webhook">
+                    <i data-lucide="webhook" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Modal Nuevo Cliente -->
+<div id="new-client-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal('new-client-modal')"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md">
+        <div class="glass border border-slate-700 rounded-xl shadow-2xl p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold text-white">Nuevo Inquilino</h3>
+                <button onclick="closeModal('new-client-modal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="newClientForm" onsubmit="createClient(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 mb-1">Nombre Comercial</label>
+                        <input type="text" id="business_name" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-400 mb-1">Slug (Identificador URL)</label>
+                        <input type="text" id="slug" required pattern="[a-z0-9-]+" placeholder="ej: escribania-rondan" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 outline-none font-mono">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all">
+                        Crear Cliente
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Configuración -->
+<div id="config-client-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal('config-client-modal')"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl">
+        <div class="glass border border-slate-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between p-6 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white">Configuración del Cliente</h3>
+                <button onclick="closeModal('config-client-modal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <form id="configClientForm" onsubmit="saveClientConfig(event)">
+                    <input type="hidden" id="edit_client_id">
+                    
+                    <div class="space-y-6">
+                        <!-- Credenciales -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <h4 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="key" class="w-4 h-4 text-emerald-500"></i> WhatsApp Green-API</h4>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Instance ID</label>
+                                    <input type="text" id="wa_instance" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-emerald-500 outline-none mt-1">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Token</label>
+                                    <input type="password" id="wa_token" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-emerald-500 outline-none mt-1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prompt -->
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 mb-1">System Prompt (Personalidad de IA)</label>
+                            <textarea id="sys_prompt" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 outline-none resize-none"></textarea>
+                        </div>
+
+                        <!-- Feature Flags -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <h4 class="text-sm font-bold text-white mb-3">Módulos (Feature Flags)</h4>
+                            <div class="space-y-3">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_rag" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Activar RAG (Respuestas desde Knowledge Base)</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_human" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Permitir Derivación a Humano</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_pdf" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Exportación de Datos a PDF</span>
+                                </label>
+                                <hr class="border-slate-800 my-2">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_dashboard" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Dashboard y Analíticas</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_history" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Historial de Chats</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_contacts" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Contactos y Etiquetas</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_submissions" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Formularios y Trámites</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_appointments" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Gestión de Turnos</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_gaps" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Base de Conocimiento (Gaps)</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_channels" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Conectividad de Canales</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_config" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Entrenamiento y Configuración</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_audit" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-300">Auditoría del Sistema</span>
+                                </label>
+                                <hr class="border-slate-800 my-2">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_catalog" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-brand-400">Catálogo de Productos</span>
+                                </label>
+                                <label class="flex items-center gap-3 cursor-pointer pl-6 border-l-2 border-slate-700 ml-2">
+                                    <input type="checkbox" id="feat_catalog_dynamic" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-slate-400">Atributos Dinámicos (Talles/Medidas)</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 flex justify-end">
+                        <button type="submit" class="bg-brand-600 hover:bg-brand-500 text-white px-6 py-2 rounded-lg font-semibold text-sm transition-all">
+                            Guardar Configuración
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    async function createClient(e) {
+        e.preventDefault();
+        const data = {
+            business_name: document.getElementById('business_name').value,
+            slug: document.getElementById('slug').value
+        };
+        const res = await fetch('/api/superadmin/clients', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if(res.ok) window.location.reload();
+        else alert('Error al crear cliente');
+    }
+
+    async function editClient(id) {
+        const res = await fetch(`/api/superadmin/clients/${id}`);
+        const data = await res.json();
+        
+        document.getElementById('edit_client_id').value = id;
+        document.getElementById('wa_instance').value = data.settings?.whatsapp_instance_id || '';
+        document.getElementById('wa_token').value = data.settings?.whatsapp_token || '';
+        document.getElementById('sys_prompt').value = data.settings?.bot_system_prompt || '';
+        document.getElementById('feat_rag').checked = data.settings?.feat_rag_enabled || false;
+        document.getElementById('feat_human').checked = data.settings?.feat_human_handoff || false;
+        document.getElementById('feat_pdf').checked = data.settings?.feat_pdf_export || false;
+        document.getElementById('feat_dashboard').checked = data.settings?.feat_dashboard ?? true;
+        document.getElementById('feat_history').checked = data.settings?.feat_history ?? true;
+        document.getElementById('feat_contacts').checked = data.settings?.feat_contacts ?? true;
+        document.getElementById('feat_submissions').checked = data.settings?.feat_submissions ?? true;
+        document.getElementById('feat_appointments').checked = data.settings?.feat_appointments ?? true;
+        document.getElementById('feat_gaps').checked = data.settings?.feat_gaps ?? true;
+        document.getElementById('feat_channels').checked = data.settings?.feat_channels ?? true;
+        document.getElementById('feat_config').checked = data.settings?.feat_config ?? true;
+        document.getElementById('feat_audit').checked = data.settings?.feat_audit ?? true;
+        document.getElementById('feat_catalog').checked = data.settings?.feat_catalog || false;
+        document.getElementById('feat_catalog_dynamic').checked = data.settings?.feat_catalog_dynamic_fields || false;
+        
+        openModal('config-client-modal');
+    }
+
+    async function saveClientConfig(e) {
+        e.preventDefault();
+        const id = document.getElementById('edit_client_id').value;
+        const data = {
+            whatsapp_instance_id: document.getElementById('wa_instance').value,
+            whatsapp_token: document.getElementById('wa_token').value,
+            bot_system_prompt: document.getElementById('sys_prompt').value,
+            feat_rag_enabled: document.getElementById('feat_rag').checked,
+            feat_human_handoff: document.getElementById('feat_human').checked,
+            feat_pdf_export: document.getElementById('feat_pdf').checked,
+            feat_dashboard: document.getElementById('feat_dashboard').checked,
+            feat_history: document.getElementById('feat_history').checked,
+            feat_contacts: document.getElementById('feat_contacts').checked,
+            feat_submissions: document.getElementById('feat_submissions').checked,
+            feat_appointments: document.getElementById('feat_appointments').checked,
+            feat_gaps: document.getElementById('feat_gaps').checked,
+            feat_channels: document.getElementById('feat_channels').checked,
+            feat_config: document.getElementById('feat_config').checked,
+            feat_audit: document.getElementById('feat_audit').checked,
+            feat_catalog: document.getElementById('feat_catalog').checked,
+            feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked
+        };
+        const res = await fetch(`/api/superadmin/clients/${id}/settings`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if(res.ok) window.location.reload();
+        else alert('Error al guardar configuración');
+    }
+</script>
+{% endblock %}

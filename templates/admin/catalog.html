@@ -1,0 +1,443 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Catálogo de Productos - ZSG-Bot-iA{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-6 max-w-[1600px] mx-auto w-full animate-fade-in">
+    <!-- Encabezado -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="shopping-bag" class="w-6 h-6 text-brand-500"></i>
+                Catálogo de Productos
+                <button onclick="document.getElementById('helpModal').classList.remove('hidden')" class="ml-2 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-semibold flex items-center gap-1 transition-colors">
+                    <i data-lucide="help-circle" class="w-3 h-3"></i> ¿Cómo funciona?
+                </button>
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">
+                Gestión de productos, precios y stock. Edición rápida desde la grilla.
+            </p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <button onclick="document.getElementById('csvUploadInput').click()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700">
+                <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i> Importar CSV
+            </button>
+            <button onclick="addNewRow()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Producto
+            </button>
+            <button onclick="openMassUpdateModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700">
+                <i data-lucide="zap" class="w-4 h-4 text-yellow-400"></i> Ajuste Masivo
+            </button>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <div class="flex items-center gap-4">
+            <div class="flex-1 relative">
+                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                <input type="text" id="searchInput" placeholder="Buscar por código, nombre..." class="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-300 focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+        </div>
+        <!-- Grilla de Productos -->
+        <div class="flex-1 bg-slate-900/50 rounded-xl border border-slate-800/80 overflow-hidden flex flex-col shadow-xl mt-6">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse whitespace-nowrap">
+                    <thead>
+                        <tr class="bg-slate-800/80 text-slate-400 text-[11px] uppercase tracking-widest border-b border-slate-700">
+                            <th class="px-4 py-3 font-semibold text-center w-16">Img</th>
+                            <th class="px-4 py-3 font-semibold">SKU</th>
+                            <th class="px-4 py-3 font-semibold w-full">Nombre del Producto</th>
+                            <th class="px-4 py-3 font-semibold text-right">Precio ($)</th>
+                            <th class="px-4 py-3 font-semibold text-center">Stock</th>
+                            <th class="px-4 py-3 font-semibold text-center">Mín.</th>
+                            {% if settings.feat_catalog_dynamic_fields %}
+                            <th class="px-4 py-3 font-semibold">Atributos Extra</th>
+                            <th class="px-4 py-3 font-semibold">Precios x Rango</th>
+                            {% endif %}
+                            <th class="px-4 py-3 font-semibold text-center w-24">Estado</th>
+                            <th class="px-4 py-3 font-semibold text-center w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="catalog-tbody" class="divide-y divide-slate-800/50">
+                        <!-- Filas renderizadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="empty-state" class="hidden flex-1 flex flex-col items-center justify-center p-12 text-center">
+                <div class="w-16 h-16 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700/50">
+                    <i data-lucide="package-open" class="w-8 h-8 text-slate-500"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2">Tu catálogo está vacío</h3>
+                <p class="text-slate-400 max-w-sm mb-6">Empieza a agregar productos o importa un Excel para verlos aquí.</p>
+                <button onclick="addNewRow()" class="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Crear el primero
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Inputs ocultos -->
+<input type="file" id="imageUploadInput" accept="image/*" class="hidden">
+<input type="file" id="csvUploadInput" accept=".csv" class="hidden">
+
+<style>
+    /* Estilos para edición en línea */
+    td[contenteditable="true"]:hover {
+        background-color: rgba(56, 189, 248, 0.05);
+        cursor: text;
+        box-shadow: inset 2px 0 0 0 #38bdf8;
+    }
+    td[contenteditable="true"]:focus {
+        background-color: #0f172a;
+        color: #38bdf8;
+        outline: 1px solid #38bdf8;
+        outline-offset: -1px;
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+</style>
+
+<script>
+    const hasDynamicFields = {{ 'true' if settings.feat_catalog_dynamic_fields else 'false' }};
+    let catalogData = [];
+    let currentUploadId = null;
+
+    // 1. Carga inicial
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCatalog();
+
+        // Buscador nativo
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = catalogData.filter(p => 
+                (p.name && p.name.toLowerCase().includes(term)) || 
+                (p.sku && p.sku.toLowerCase().includes(term))
+            );
+            renderTable(filtered);
+        });
+
+        // Subida de imagen
+        document.getElementById('imageUploadInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if(!file || !currentUploadId) return;
+            
+            const imgContainer = document.getElementById(`img-${currentUploadId}`);
+            imgContainer.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin text-brand-500"></i>`;
+            lucide.createIcons();
+
+            const formData = new FormData();
+            formData.append("file", file);
+            
+            try {
+                const res = await fetch(`/api/admin/catalog/upload_image/${currentUploadId}`, {
+                    method: 'POST', body: formData
+                });
+                const data = await res.json();
+                if(data.status === 'ok') {
+                    const prod = catalogData.find(p => p.id === currentUploadId);
+                    if(prod) prod.image_path = data.image_path;
+                    renderTable(catalogData);
+                } else alert("Error: " + data.error);
+            } catch(err) {
+                console.error(err);
+                alert("Error al subir la imagen.");
+            }
+            e.target.value = '';
+            lucide.createIcons();
+        });
+
+        // Importación CSV
+        document.getElementById('csvUploadInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const formData = new FormData();
+            formData.append("file", file);
+            try {
+                const res = await fetch('/api/admin/catalog/import_csv', { method: 'POST', body: formData });
+                const data = await res.json();
+                if(data.status === 'ok') {
+                    alert(`¡Éxito! Se importaron ${data.imported} productos.`);
+                    loadCatalog();
+                } else alert("Error: " + data.error);
+            } catch(err) {
+                alert("Error al subir el CSV.");
+            }
+            e.target.value = '';
+        });
+    });
+
+    async function loadCatalog() {
+        try {
+            const res = await fetch("/api/admin/catalog");
+            catalogData = await res.json();
+            renderTable(catalogData);
+        } catch(e) { console.error("Error cargando catálogo", e); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('catalog-tbody');
+        const emptyState = document.getElementById('empty-state');
+        
+        if (data.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            return;
+        }
+        
+        emptyState.classList.add('hidden');
+        tbody.innerHTML = data.map(p => {
+            const imgHtml = p.image_path 
+                ? `<img src="${p.image_path}" class="w-8 h-8 rounded object-cover border border-slate-700">`
+                : `<i data-lucide="image" class="w-4 h-4 text-slate-500"></i>`;
+                
+            const activeHtml = p.is_active 
+                ? `<button onclick="toggleActive(${p.id || `'new_${p._temp_id}'`})" class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/20 transition-colors">Activo</button>`
+                : `<button onclick="toggleActive(${p.id || `'new_${p._temp_id}'`})" class="px-2.5 py-1 bg-slate-800/50 text-slate-400 border border-slate-700 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-slate-700 transition-colors">Pausado</button>`;
+
+            const idAttr = p.id ? `data-id="${p.id}"` : `data-temp-id="${p._temp_id}"`;
+
+            let dynamicCols = '';
+            if (hasDynamicFields) {
+                dynamicCols = `
+                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 truncate max-w-[150px]" contenteditable="true" onblur="updateField(this, 'custom_attributes')">${p.custom_attributes || ''}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 truncate max-w-[150px]" contenteditable="true" onblur="updateField(this, 'price_rules')">${p.price_rules || ''}</td>
+                `;
+            }
+
+            return `
+                <tr class="group hover:bg-slate-800/30 transition-colors" ${idAttr}>
+                    <td class="px-4 py-2 text-center">
+                        <div id="img-${p.id}" onclick="triggerImageUpload(${p.id})" class="w-10 h-10 mx-auto rounded-lg bg-slate-900 flex items-center justify-center cursor-pointer hover:bg-slate-800 border border-slate-700/50 transition-colors shadow-inner">
+                            ${imgHtml}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm font-mono text-slate-300 border-x border-slate-800/30" contenteditable="true" onblur="updateField(this, 'sku')">${p.sku || ''}</td>
+                    <td class="px-4 py-3 text-sm font-medium text-white border-x border-slate-800/30" contenteditable="true" onblur="updateField(this, 'name')">${p.name || ''}</td>
+                    <td class="px-4 py-3 text-sm font-mono text-emerald-400 text-right border-x border-slate-800/30" contenteditable="true" onblur="updateField(this, 'price', 'number')">${p.price}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300 text-center border-x border-slate-800/30" contenteditable="true" onblur="updateField(this, 'stock', 'number')">${p.stock}</td>
+                    <td class="px-4 py-3 text-sm text-slate-400 text-center border-x border-slate-800/30" contenteditable="true" onblur="updateField(this, 'min_quantity', 'number')">${p.min_quantity}</td>
+                    ${dynamicCols}
+                    <td class="px-4 py-3 text-center border-x border-slate-800/30">
+                        ${activeHtml}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="deleteRow(${p.id || `'new_${p._temp_id}'`})" class="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    function triggerImageUpload(id) {
+        if(!id) {
+            alert("Guardá el producto poniendo un nombre primero.");
+            return;
+        }
+        currentUploadId = id;
+        document.getElementById('imageUploadInput').click();
+    }
+
+    async function updateField(cell, field, type = 'text') {
+        const tr = cell.closest('tr');
+        const id = tr.getAttribute('data-id');
+        const tempId = tr.getAttribute('data-temp-id');
+        
+        let rawValue = cell.innerText.trim();
+        let value = type === 'number' ? parseFloat(rawValue.replace(/[^0-9.-]+/g,"")) || 0 : rawValue;
+        
+        // Find product
+        let prod = catalogData.find(p => id ? p.id == id : p._temp_id == tempId);
+        if(!prod) return;
+        
+        if (prod[field] === value) return; // No change
+        prod[field] = value;
+        
+        // Save
+        saveProduct(prod, tr);
+    }
+
+    function toggleActive(id) {
+        let prod = catalogData.find(p => p.id == id || p._temp_id == id);
+        if(prod) {
+            prod.is_active = !prod.is_active;
+            saveProduct(prod);
+            renderTable(catalogData);
+        }
+    }
+
+    async function saveProduct(data, trElement = null) {
+        if(!data.name || data.name === "Nuevo Producto") return; // No guardar vacíos
+        try {
+            const res = await fetch('/api/admin/catalog/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if(result.status === 'ok') {
+                if(result.id && !data.id) {
+                    data.id = result.id;
+                    delete data._temp_id;
+                    if(trElement) {
+                        trElement.removeAttribute('data-temp-id');
+                        trElement.setAttribute('data-id', result.id);
+                        renderTable(catalogData); // re-render para fijar IDs
+                    }
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    function addNewRow() {
+        const newProd = {
+            _temp_id: Date.now(),
+            sku: "", name: "Nuevo Producto", price: 0, stock: 0, min_quantity: 1, is_active: true
+        };
+        catalogData.unshift(newProd);
+        renderTable(catalogData);
+    }
+
+    async function deleteRow(id) {
+        if(!confirm("¿Eliminar producto?")) return;
+        
+        if(typeof id === 'string' && id.startsWith('new_')) {
+            catalogData = catalogData.filter(p => p._temp_id != id.replace('new_',''));
+            renderTable(catalogData);
+            return;
+        }
+        
+        try {
+            await fetch(`/api/admin/catalog/delete/${id}`, { method: 'DELETE' });
+            catalogData = catalogData.filter(p => p.id != id);
+            renderTable(catalogData);
+        } catch(e) { console.error(e); }
+    }
+
+    // Modal Ajuste Masivo
+    function openMassUpdateModal() { document.getElementById('massUpdateModal').classList.remove('hidden'); }
+    function closeMassUpdateModal() { document.getElementById('massUpdateModal').classList.add('hidden'); }
+    async function applyMassUpdate() {
+        const action = document.querySelector('input[name="massAction"]:checked').value;
+        const type = document.getElementById('massType').value;
+        const value = parseFloat(document.getElementById('massValue').value);
+        const filterText = document.getElementById('massFilter').value;
+        if(!value || value <= 0) return alert("Valor inválido");
+        if(!confirm("¿Seguro?")) return;
+        try {
+            const res = await fetch('/api/admin/catalog/mass_update', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action, update_type: type, value, filter_text: filterText })
+            });
+            const data = await res.json();
+            if(data.status === 'ok') {
+                alert(`¡Éxito! Actualizados ${data.updated_count} productos.`);
+                closeMassUpdateModal();
+                loadCatalog();
+            } else alert("Error: " + data.error);
+        } catch(err) { alert("Error"); }
+    }
+</script>
+
+<!-- Modal Ajuste Masivo -->
+<div id="massUpdateModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-md animate-scale-in">
+        <h3 class="text-xl font-bold text-white mb-4">Ajuste Masivo de Precios</h3>
+        <p class="text-sm text-slate-400 mb-6">Esta acción aplicará un ajuste matemático a <strong>todos</strong> los productos activos de tu catálogo. El cambio quedará registrado en el historial de precios para auditoría.</p>
+        
+        <div class="space-y-4 mb-6">
+            <div>
+                <label class="block text-sm font-semibold text-slate-400 mb-2">Acción</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center gap-2 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                        <input type="radio" name="massAction" value="increase" checked class="text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                        <span class="text-sm text-white">Aumentar (+)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                        <input type="radio" name="massAction" value="decrease" class="text-red-500 focus:ring-red-500 bg-slate-800 border-slate-700">
+                        <span class="text-sm text-white">Descontar (-)</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="block text-sm font-semibold text-slate-400 mb-2">Tipo</label>
+                    <select id="massType" class="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                        <option value="percent">Porcentaje (%)</option>
+                        <option value="fixed">Monto Fijo ($)</option>
+                    </select>
+                </div>
+                <div class="flex-1">
+                    <label class="block text-sm font-semibold text-slate-400 mb-2">Valor</label>
+                    <input type="number" id="massValue" placeholder="Ej: 15" class="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-slate-800">
+                <label class="block text-sm font-semibold text-slate-400 mb-2">Aplicar sólo a (Opcional)</label>
+                <input type="text" id="massFilter" placeholder="Filtrar por nombre o SKU..." class="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <p class="text-xs text-slate-500 mt-1">Si lo dejas vacío, se aplicará a TODO el catálogo.</p>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button onclick="closeMassUpdateModal()" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="applyMassUpdate()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors shadow-lg shadow-brand-500/20">Aplicar a Todo</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ayuda -->
+<div id="helpModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="book-open" class="text-brand-500 w-5 h-5"></i> Guía de Uso Rápido</h3>
+            <button onclick="document.getElementById('helpModal').classList.add('hidden')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        
+        <div class="space-y-6 text-sm text-slate-300">
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="mouse-pointer-click" class="w-4 h-4 text-emerald-400"></i> 1. ¿Cómo edito los productos?</h4>
+                <p>No hay botón de "Guardar". Funciona como un Excel: hacé <strong>doble clic</strong> en la celda que quieras cambiar (ej. Precio o Nombre), escribí el nuevo dato y apretá Enter o hacé clic en otra parte. ¡Se guarda solo al instante!</p>
+            </div>
+
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="image" class="w-4 h-4 text-sky-400"></i> 2. ¿Cómo subo fotos?</h4>
+                <p>Si la columna "Imagen" tiene un cuadrito gris con un paisaje, hacé <strong>clic ahí mismo</strong>. Elegí la foto de tu compu y se va a cargar de inmediato en esa fila. (Nota: Si es un producto nuevo recién creado, ponele primero un Nombre y salí de la celda para que se genere, y después subile la foto).</p>
+            </div>
+
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="tag" class="w-4 h-4 text-purple-400"></i> 3. Cantidad Mínima (Columna Mín.)</h4>
+                <p>Si sos mayorista y de la "Remera Lisa" solo vendés de a 10 unidades o más, poné un <strong>10</strong> en la columna <strong>Mín</strong>. El bot vendedor no dejará que nadie compre menos de esa cantidad.</p>
+            </div>
+
+            {% if settings.feat_catalog_dynamic_fields %}
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4 text-pink-400"></i> 4. Atributos y Precios por Rango (Para el Bot)</h4>
+                <ul class="list-disc pl-5 space-y-2 mt-2">
+                    <li><strong>Atributos Extra:</strong> Escribí normal. Ej: <em>"Talle: L, Color: Rojo"</em>. El bot leerá esto para contestarle al cliente.</li>
+                    <li><strong>Precios x Rango:</strong> Para hacer descuentos mayoristas. Escribí: <em>"10 a 50 = $8000 | Más de 50 = $7000"</em>. Si un cliente le pide 15 unidades por WhatsApp, el bot le aplicará automáticamente el precio de $8000 en lugar del precio base.</li>
+                </ul>
+            </div>
+            {% endif %}
+            
+            <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-400"></i> 5. Importar desde Excel</h4>
+                <p>Hacé clic en "Importar CSV". El archivo que subas debe tener formato <strong>.csv</strong> (separado por comas) y contener las columnas: <em>SKU, Nombre, Precio, Stock</em>. Se agregarán todos de golpe al catálogo.</p>
+            </div>
+        </div>
+        
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('helpModal').classList.add('hidden')" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Entendido</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -214,7 +214,7 @@
 
     // 2. Gráfico de Temas (Doughnut)
     const ctxTopics = document.getElementById('topicsChart').getContext('2d');
-    const topicLabels = {{ metrics.top_topics | map(attribute='topic') | list | tojson if metrics.top_topics else '["Sin datos"]' | tojson }};
+    const topicLabels = {{ metrics.top_topics | map(attribute='intent') | list | tojson if metrics.top_topics else '["Sin datos"]' | tojson }};
     const topicData = {{ metrics.top_topics | map(attribute='count') | list | tojson if metrics.top_topics else '[1]' | tojson }};
     
     new Chart(ctxTopics, {

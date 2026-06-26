@@ -102,6 +102,13 @@ def process_form_completion(client_id: int, thread_id: str, topic: str, data: di
     logging.info(f" - Topic: {topic}")
     logging.info(f" - Destino: {storage_dest}")
     
+    try:
+        from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
+        assign_tag_by_name(client_id, thread_id, "🎓 Trámite Completado")
+        remove_tag_by_name(client_id, thread_id, "📝 Trámite Iniciado")
+    except Exception as te:
+        logging.error(f"[Tagging] Error applying tag in process_form_completion: {te}")
+        
     success_local = False
     if storage_dest in ['database', 'both']:
         # 1. Guardar en DB local y obtener ID
