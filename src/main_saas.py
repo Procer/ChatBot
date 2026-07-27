@@ -3076,6 +3076,22 @@ async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, f
 async def process_bot_response(client_id: int, user_id: str, user_text: str, platform: str, attachment_data: dict = None):
     """Orquestador principal que conecta el Webhook con LangGraph."""
     async with get_user_lock(user_id):
+        # --- Modo Prueba: si está activo, ignorar a cualquiera que no esté en test_numbers ---
+        try:
+            from src.database.models import ClientSettings
+            db_tm = SessionLocal()
+            tm_settings = db_tm.query(ClientSettings).filter_by(client_id=client_id).first()
+            db_tm.close()
+            if tm_settings and tm_settings.test_mode_enabled:
+                allowed = {n.strip() for n in (tm_settings.test_numbers or "").split(",") if n.strip()}
+                sender_id = str(user_id)
+                sender_phone = sender_id.split("@")[0]
+                if sender_phone not in allowed and sender_id not in allowed:
+                    logging.info(f"[TestMode] Ignorando mensaje de {sender_id} (no está en test_numbers) para cliente {client_id}")
+                    return
+        except Exception as e:
+            logging.error(f"[TestMode] Error chequeando modo prueba: {e}")
+
         print(f"\n[SaaS Process] Iniciando respuesta para cliente {client_id}, usuario {user_id}...")
         
         try:
