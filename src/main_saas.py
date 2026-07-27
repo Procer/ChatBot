@@ -3580,7 +3580,8 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     db.commit()
 
     if settings.whatsapp_instance_id and settings.whatsapp_token:
-        asyncio.create_task(setup_whatsapp_webhook("http://TU_DOMINIO_VPS", client.slug))
+        public_base_url = os.getenv("PUBLIC_BASE_URL", "http://TU_DOMINIO_VPS")
+        asyncio.create_task(setup_whatsapp_webhook(public_base_url, client.slug))
 
     return {"status": "ok"}
 
