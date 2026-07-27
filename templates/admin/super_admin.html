@@ -129,10 +129,101 @@
                             </div>
                         </div>
 
+                        <!-- Google Drive OAuth -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <div class="flex items-center justify-between mb-1">
+                                <h4 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4 text-sky-500"></i> Google Drive (app OAuth propia del cliente)</h4>
+                                <span id="gauthStatusBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin configurar</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mb-3">Cada cliente registra su propio proyecto en Google Cloud. Pegá acá el Client ID/Secret que le dio Google.</p>
+
+                            <details class="mb-3 bg-slate-950/60 border border-slate-800 rounded-lg text-xs text-slate-400">
+                                <summary class="cursor-pointer select-none px-3 py-2 font-semibold text-slate-300 flex items-center gap-2">
+                                    <i data-lucide="info" class="w-3.5 h-3.5 text-sky-500"></i> Paso a paso: cómo conseguir el Client ID y el Client Secret
+                                </summary>
+                                <div class="px-3 pb-3 pt-1 space-y-4 border-t border-slate-800 pt-3">
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">1. Crear el proyecto en Google Cloud</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Entrá a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener" class="text-sky-400 hover:underline">console.cloud.google.com</a> logueado con la cuenta de Google del cliente (o la que administre su Drive).</li>
+                                            <li>Arriba a la izquierda, al lado del logo de Google Cloud, click en el selector de proyecto (dice "Seleccionar un proyecto" o el nombre de otro proyecto).</li>
+                                            <li>Click en <strong class="text-slate-300">"Proyecto nuevo"</strong>, poné un nombre (ej: "Bot Documentos - [Nombre del Cliente]") y click en <strong class="text-slate-300">"Crear"</strong>.</li>
+                                            <li>Esperá unos segundos y volvé a abrir el selector de proyecto para elegir el que acabás de crear (tiene que quedar seleccionado antes de seguir).</li>
+                                        </ul>
+                                    </div>
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">2. Habilitar la Google Drive API</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Menú de tres líneas (☰) arriba a la izquierda → <strong class="text-slate-300">"APIs y servicios"</strong> → <strong class="text-slate-300">"Biblioteca"</strong>.</li>
+                                            <li>En el buscador escribí <strong class="text-slate-300">"Google Drive API"</strong> y hacé click en el resultado.</li>
+                                            <li>Click en el botón azul <strong class="text-slate-300">"Habilitar"</strong>.</li>
+                                        </ul>
+                                    </div>
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">3. Configurar la pantalla de consentimiento</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Pantalla de consentimiento de OAuth"</strong>.</li>
+                                            <li>Tipo de usuario: elegí <strong class="text-slate-300">"Externo"</strong> → "Crear".</li>
+                                            <li>Completá "Nombre de la aplicación" (ej: el nombre del bot), tu email en "Correo electrónico de asistencia al usuario" y en "Datos de contacto del desarrollador" → "Guardar y continuar".</li>
+                                            <li>En la pantalla de "Permisos"/Scopes no hace falta tocar nada → "Guardar y continuar".</li>
+                                            <li>En <strong class="text-slate-300">"Usuarios de prueba"</strong> → "+ Add Users" → agregá el email de Gmail/Workspace de la cuenta cuyo Drive se va a conectar (importante: mientras la app esté en modo "Prueba", SOLO esa cuenta va a poder conectarse) → "Guardar y continuar".</li>
+                                        </ul>
+                                    </div>
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">4. Crear las credenciales OAuth</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Credenciales"</strong>.</li>
+                                            <li>Click en <strong class="text-slate-300">"+ Crear credenciales"</strong> (arriba) → <strong class="text-slate-300">"ID de cliente de OAuth"</strong>.</li>
+                                            <li>En "Tipo de aplicación" elegí <strong class="text-slate-300">"Aplicación web"</strong>. Nombre: el que quieras (ej: "Bot WhatsApp").</li>
+                                            <li>Bajá hasta <strong class="text-slate-300">"URI de redireccionamiento autorizados"</strong> → "+ Añadir URI" → pegá exactamente esta URL (copiala tal cual, sin espacios):
+                                                <code id="gauthRedirectUriHint" class="block mt-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-slate-300 break-all select-all"></code>
+                                            </li>
+                                            <li>Click en <strong class="text-slate-300">"Crear"</strong>.</li>
+                                        </ul>
+                                    </div>
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">5. Copiar y pegar acá abajo</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Google va a mostrar un cuadro con <strong class="text-slate-300">"Tu ID de cliente"</strong> y <strong class="text-slate-300">"Tu secreto de cliente"</strong>. Copiá cada uno.</li>
+                                            <li>Pegalos en los campos "Client ID" y "Client Secret" de acá abajo y guardá con el botón "Guardar Configuración" al final del formulario.</li>
+                                            <li>Si cerraste ese cuadro sin copiar el secreto, volvé a "Credenciales", hacé click en el nombre de la credencial creada y ahí podés volver a verlo (o generar uno nuevo con "Restablecer secreto").</li>
+                                        </ul>
+                                    </div>
+
+                                    <div>
+                                        <p class="font-bold text-slate-300 mb-1">6. Conectar la cuenta de Drive del cliente</p>
+                                        <ul class="list-disc list-inside space-y-1 pl-1">
+                                            <li>Guardado esto, andá al panel de <strong class="text-slate-300">este cliente</strong> → "Biblioteca de Documentos" → sección "Google Drive" → botón "Conectar con Google Drive".</li>
+                                            <li>Elegí la cuenta de Google que agregaste como "usuario de prueba" en el paso 3.</li>
+                                            <li>Es normal que Google muestre un aviso <strong class="text-slate-300">"Google no verificó esta app"</strong> (porque la app está en modo prueba, no publicada) → click en "Avanzado" → "Ir a [nombre de tu app] (no seguro)". No es un problema real, es tu propia app.</li>
+                                            <li>Aceptá el permiso de solo lectura de Drive y listo.</li>
+                                        </ul>
+                                    </div>
+
+                                </div>
+                            </details>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Client ID</label>
+                                    <input type="text" id="gauth_client_id" autocomplete="off" placeholder="xxxxx.apps.googleusercontent.com" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1 font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Client Secret</label>
+                                    <input type="password" id="gauth_client_secret" autocomplete="new-password" placeholder="Dejar vacío para no modificarlo" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1 font-mono">
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Prompt -->
                         <div>
                             <label class="block text-xs font-bold text-slate-400 mb-1">System Prompt (Personalidad de IA)</label>
-                            <textarea id="sys_prompt" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 outline-none resize-none"></textarea>
+                            <textarea id="sys_prompt" rows="14" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 outline-none resize-y"></textarea>
                         </div>
 
                         <!-- Feature Flags -->
@@ -197,6 +288,11 @@
                                     <input type="checkbox" id="feat_catalog_dynamic" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
                                     <span class="text-sm font-semibold text-slate-400">Atributos Dinámicos (Talles/Medidas)</span>
                                 </label>
+                                <hr class="border-slate-800 my-2">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_document_library" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-brand-400">Biblioteca de Documentos</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -218,6 +314,8 @@
 <script>
     function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    document.getElementById('gauthRedirectUriHint').textContent = window.location.origin + '/api/admin/gdrive/oauth/callback';
 
     async function createClient(e) {
         e.preventDefault();
@@ -256,7 +354,19 @@
         document.getElementById('feat_audit').checked = data.settings?.feat_audit ?? true;
         document.getElementById('feat_catalog').checked = data.settings?.feat_catalog || false;
         document.getElementById('feat_catalog_dynamic').checked = data.settings?.feat_catalog_dynamic_fields || false;
-        
+        document.getElementById('feat_document_library').checked = data.settings?.feat_document_library || false;
+
+        document.getElementById('gauth_client_id').value = data.settings?.google_oauth_client_id || '';
+        document.getElementById('gauth_client_secret').value = '';
+        const badge = document.getElementById('gauthStatusBadge');
+        if (data.settings?.google_oauth_configured) {
+            badge.textContent = 'Configurado';
+            badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        } else {
+            badge.textContent = 'Sin configurar';
+            badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20';
+        }
+
         openModal('config-client-modal');
     }
 
@@ -280,7 +390,10 @@
             feat_config: document.getElementById('feat_config').checked,
             feat_audit: document.getElementById('feat_audit').checked,
             feat_catalog: document.getElementById('feat_catalog').checked,
-            feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked
+            feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked,
+            feat_document_library: document.getElementById('feat_document_library').checked,
+            google_oauth_client_id: document.getElementById('gauth_client_id').value.trim(),
+            google_oauth_client_secret: document.getElementById('gauth_client_secret').value.trim()
         };
         const res = await fetch(`/api/superadmin/clients/${id}/settings`, {
             method: 'PUT',
@@ -288,7 +401,10 @@
             body: JSON.stringify(data)
         });
         if(res.ok) window.location.reload();
-        else alert('Error al guardar configuración');
+        else {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || 'Error al guardar configuración');
+        }
     }
 </script>
 {% endblock %}

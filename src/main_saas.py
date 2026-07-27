@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import logging
 import asyncio
@@ -6,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from fastapi import FastAPI, Request, BackgroundTasks, Depends, Form, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -107,6 +108,9 @@ class ClientSettingsUpdate(BaseModel):
     feat_audit: bool = True
     feat_catalog: bool = False
     feat_catalog_dynamic_fields: bool = False
+    feat_document_library: bool = False
+    google_oauth_client_id: str = None
+    google_oauth_client_secret: str = None  # vacío/None = no tocar el secreto ya guardado
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -118,6 +122,7 @@ DEFAULT_MENU_ITEMS = [
     {"key": "submissions", "label": "Formularios Recibidos", "icon": "file-text", "section": "Operación"},
     {"key": "appointments", "label": "Gestión de Turnos", "icon": "calendar", "section": "Operación"},
     {"key": "catalog", "label": "Catálogo de Productos", "icon": "shopping-bag", "section": "Operación"},
+    {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
     {"key": "gaps", "label": "Base de Conocimiento", "icon": "database", "section": "Cerebro"},
     {"key": "config", "label": "Configuración del Bot", "icon": "settings", "section": "Configuración"},
     {"key": "channels", "label": "Canales (WhatsApp/TG)", "icon": "share-2", "section": "Configuración"},
@@ -173,6 +178,7 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_config', True): active_modules.append("config")
         if getattr(settings, 'feat_audit', True): active_modules.append("audit")
         if getattr(settings, 'feat_catalog', False): active_modules.append("catalog")
+        if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
     else:
         active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "config", "audit"]
     
@@ -1660,6 +1666,7 @@ class CatalogProductPayload(BaseModel):
     is_active: bool = True
     custom_attributes: str = None
     price_rules: str = None
+    image_path: str = None
 
 @app.get("/admin/catalog", response_class=HTMLResponse)
 async def catalog_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1682,6 +1689,68 @@ async def catalog_panel(request: Request, db: Session = Depends(get_db), current
             "active_section": "operacion"
         }
     )
+
+@app.get("/admin/catalog-requests", response_class=HTMLResponse)
+async def catalog_requests_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import CatalogRequest, CatalogSearchLog
+    import json
+
+    raw = db.query(CatalogRequest).filter_by(client_id=target_client_id).order_by(CatalogRequest.created_at.desc()).all()
+    requests_list = []
+    for r in raw:
+        try:
+            contact = json.loads(r.contact_data) if r.contact_data else {}
+        except Exception:
+            contact = {}
+        requests_list.append({
+            "tipo": r.tipo,
+            "producto_nombre": r.producto_nombre,
+            "producto_sku": r.producto_sku,
+            "cantidad": r.cantidad,
+            "contact": contact,
+            "pdf_path": r.pdf_path,
+            "status": r.status,
+            "formatted_date": r.created_at.strftime("%d/%m/%Y %H:%M") if r.created_at else ""
+        })
+
+    raw_logs = db.query(CatalogSearchLog).filter_by(client_id=target_client_id).order_by(CatalogSearchLog.created_at.desc()).limit(300).all()
+    search_logs = [{
+        "query": l.query,
+        "found": l.found,
+        "results_count": l.results_count,
+        "producto_nombre": l.producto_nombre,
+        "producto_sku": l.producto_sku,
+        "formatted_date": l.created_at.strftime("%d/%m/%Y %H:%M") if l.created_at else ""
+    } for l in raw_logs]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/catalog_requests.html",
+        context={"requests": requests_list, "search_logs": search_logs, "user": user_mock, "is_impersonating": is_impersonating}
+    )
+
+@app.delete("/api/admin/catalog-requests/clear")
+async def api_clear_catalog_requests(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import CatalogRequest
+    deleted_count = db.query(CatalogRequest).filter_by(client_id=target_client_id).delete()
+    db.commit()
+    return {"status": "ok", "deleted_count": deleted_count}
+
+@app.delete("/api/admin/catalog-requests/logs/clear")
+async def api_clear_catalog_search_logs(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import CatalogSearchLog
+    deleted_count = db.query(CatalogSearchLog).filter_by(client_id=target_client_id).delete()
+    db.commit()
+    return {"status": "ok", "deleted_count": deleted_count}
 
 @app.get("/api/admin/catalog")
 async def api_get_catalog(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -1731,6 +1800,8 @@ async def api_save_catalog_product(
             p.is_active = payload.is_active
             p.custom_attributes = payload.custom_attributes
             p.price_rules = payload.price_rules
+            if payload.image_path is not None:
+                p.image_path = payload.image_path
     else:
         p = CatalogProduct(
             client_id=target_client_id,
@@ -1741,7 +1812,8 @@ async def api_save_catalog_product(
             min_quantity=payload.min_quantity,
             is_active=payload.is_active,
             custom_attributes=payload.custom_attributes,
-            price_rules=payload.price_rules
+            price_rules=payload.price_rules,
+            image_path=payload.image_path
         )
         db.add(p)
         
@@ -1761,6 +1833,56 @@ async def api_delete_catalog_product(
     
     from src.database.models import CatalogProduct
     db.query(CatalogProduct).filter_by(client_id=target_client_id, id=prod_id).delete()
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/admin/catalog/clear_all")
+async def api_clear_catalog(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import CatalogProduct
+    deleted_count = db.query(CatalogProduct).filter_by(client_id=target_client_id).delete()
+    db.commit()
+    return {"status": "ok", "deleted_count": deleted_count}
+
+class CatalogResponseSettingsPayload(BaseModel):
+    catalog_require_lead_before_price: bool = False
+    catalog_lead_fields: list[str] = []
+    catalog_send_pdf_quote: bool = False
+    catalog_order_fields: list[str] = []
+    catalog_min_lead_days: int = 0
+    catalog_confirm_attributes: bool = False
+    catalog_include_images: bool = True
+    catalog_response_style: str = None
+
+@app.post("/api/admin/catalog/response_settings")
+async def api_save_catalog_response_settings(
+    request: Request,
+    payload: CatalogResponseSettingsPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import ClientSettings
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings:
+        return JSONResponse(status_code=404, content={"error": "Configuración no encontrada"})
+
+    settings.catalog_require_lead_before_price = payload.catalog_require_lead_before_price
+    settings.catalog_lead_fields = json.dumps(payload.catalog_lead_fields) if payload.catalog_lead_fields else None
+    settings.catalog_send_pdf_quote = payload.catalog_send_pdf_quote
+    settings.catalog_order_fields = json.dumps(payload.catalog_order_fields) if payload.catalog_order_fields else None
+    settings.catalog_min_lead_days = payload.catalog_min_lead_days
+    settings.catalog_confirm_attributes = payload.catalog_confirm_attributes
+    settings.catalog_include_images = payload.catalog_include_images
+    settings.catalog_response_style = payload.catalog_response_style or None
     db.commit()
     return {"status": "ok"}
 
@@ -1908,6 +2030,491 @@ async def api_import_catalog_csv(
     except Exception as e:
         db.rollback()
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+# ==========================================
+# BIBLIOTECA DE DOCUMENTOS
+# ==========================================
+
+class DocSegmentPayload(BaseModel):
+    id: int | None = None
+    name: str
+    is_public: bool = True
+    auth_mode: str = "generic"  # "generic" | "individual" (solo aplica si is_public=False)
+    generic_password: str | None = None  # se hashea acá; si se deja vacío en una edición, se conserva la clave existente
+    session_expiry_days: int | None = None  # None = sesión permanente
+    is_active: bool = True
+
+class DocumentPayload(BaseModel):
+    id: int | None = None
+    title: str
+    keywords: str | None = None
+    description: str | None = None
+    segment_ids: list[int] = []
+    is_active: bool = True
+
+class DocLibraryUserPayload(BaseModel):
+    id: int | None = None
+    username: str
+    password: str | None = None  # opcional en edición: si se deja vacío, se conserva la clave existente
+    full_name: str | None = None
+    segment_ids: list[int] = []
+    is_active: bool = True
+
+class DocLibrarySettingsPayload(BaseModel):
+    trigger_phrases: list[str] = []
+
+@app.get("/admin/document-library", response_class=HTMLResponse)
+async def document_library_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not getattr(settings, 'feat_document_library', False):
+        return RedirectResponse(url="/admin")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/document_library.html",
+        context={
+            "user": user_mock,
+            "settings": settings,
+            "is_impersonating": is_impersonating,
+            "active_section": "operacion"
+        }
+    )
+
+@app.get("/admin/document-library-logs", response_class=HTMLResponse)
+async def document_library_logs_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import DocSearchLog
+    raw_logs = db.query(DocSearchLog).filter_by(client_id=target_client_id).order_by(DocSearchLog.created_at.desc()).limit(300).all()
+    search_logs = [{
+        "query": l.query,
+        "found": l.found,
+        "results_count": l.results_count,
+        "document_title": l.document_title,
+        "auth_blocked": l.auth_blocked,
+        "formatted_date": l.created_at.strftime("%d/%m/%Y %H:%M") if l.created_at else ""
+    } for l in raw_logs]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/document_library_logs.html",
+        context={"search_logs": search_logs, "user": user_mock, "is_impersonating": is_impersonating}
+    )
+
+# --- Segmentos ---
+
+@app.get("/api/admin/document_library/segments")
+async def api_get_doc_segments(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocSegment
+    segments = db.query(DocSegment).filter_by(client_id=target_client_id).order_by(DocSegment.name).all()
+    return [{
+        "id": s.id,
+        "name": s.name,
+        "is_public": s.is_public,
+        "auth_mode": s.auth_mode,
+        "has_generic_password": bool(s.generic_password_hash),
+        "session_expiry_days": s.session_expiry_days,
+        "is_active": s.is_active,
+    } for s in segments]
+
+@app.post("/api/admin/document_library/segments/save")
+async def api_save_doc_segment(request: Request, payload: DocSegmentPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocSegment
+    from src.database.document_library import hash_password
+
+    if payload.id:
+        s = db.query(DocSegment).filter_by(client_id=target_client_id, id=payload.id).first()
+        if not s:
+            return JSONResponse(status_code=404, content={"error": "Segmento no encontrado"})
+    else:
+        s = DocSegment(client_id=target_client_id)
+        db.add(s)
+
+    s.name = payload.name.strip()
+    s.is_public = payload.is_public
+    s.auth_mode = payload.auth_mode if payload.auth_mode in ("generic", "individual") else "generic"
+    s.session_expiry_days = payload.session_expiry_days
+    s.is_active = payload.is_active
+    if not payload.is_public and payload.auth_mode == "generic" and payload.generic_password:
+        s.generic_password_hash = hash_password(payload.generic_password)
+
+    db.commit()
+    db.refresh(s)
+    return {"status": "ok", "id": s.id}
+
+@app.delete("/api/admin/document_library/segments/delete/{segment_id}")
+async def api_delete_doc_segment(request: Request, segment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocSegment
+    db.query(DocSegment).filter_by(client_id=target_client_id, id=segment_id).delete()
+    db.commit()
+    return {"status": "ok"}
+
+# --- Documentos ---
+
+@app.get("/api/admin/document_library/documents")
+async def api_get_documents(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import Document, DocumentSegmentLink
+    docs = db.query(Document).filter_by(client_id=target_client_id).order_by(Document.id.desc()).all()
+
+    data = []
+    for d in docs:
+        segment_ids = [l.segment_id for l in db.query(DocumentSegmentLink).filter_by(document_id=d.id).all()]
+        data.append({
+            "id": d.id,
+            "title": d.title,
+            "keywords": d.keywords or "",
+            "description": d.description or "",
+            "file_path": d.file_path or "",
+            "source_type": d.source_type or "local",
+            "segment_ids": segment_ids,
+            "is_active": d.is_active,
+        })
+    return data
+
+@app.post("/api/admin/document_library/documents/save")
+async def api_save_document(request: Request, payload: DocumentPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import Document, DocumentSegmentLink
+
+    if payload.id:
+        d = db.query(Document).filter_by(client_id=target_client_id, id=payload.id).first()
+        if not d:
+            return JSONResponse(status_code=404, content={"error": "Documento no encontrado"})
+    else:
+        d = Document(client_id=target_client_id)
+        db.add(d)
+
+    d.title = payload.title.strip()
+    d.keywords = payload.keywords
+    d.description = payload.description
+    d.is_active = payload.is_active
+    db.commit()
+    db.refresh(d)
+
+    db.query(DocumentSegmentLink).filter_by(document_id=d.id).delete()
+    for seg_id in (payload.segment_ids or []):
+        db.add(DocumentSegmentLink(client_id=target_client_id, document_id=d.id, segment_id=seg_id))
+    db.commit()
+
+    from src.database.document_library import sync_document_to_chroma
+    sync_document_to_chroma(d.id)
+
+    return {"status": "ok", "id": d.id}
+
+@app.delete("/api/admin/document_library/documents/delete/{doc_id}")
+async def api_delete_document(request: Request, doc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import Document
+    doc = db.query(Document).filter_by(client_id=target_client_id, id=doc_id).first()
+    if not doc:
+        return JSONResponse(status_code=404, content={"error": "Documento no encontrado"})
+
+    if doc.file_path:
+        local_path = doc.file_path.lstrip("/")
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception as e:
+                logging.error(f"[DocLibrary] Error borrando archivo {local_path}: {e}")
+
+    from src.database.document_library import remove_document_from_chroma
+    remove_document_from_chroma(doc_id, target_client_id)
+
+    db.delete(doc)
+    db.commit()
+    return {"status": "ok"}
+
+@app.post("/api/admin/document_library/documents/upload_file/{doc_id}")
+async def api_upload_document_file(
+    request: Request,
+    doc_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import Document
+    doc = db.query(Document).filter_by(client_id=target_client_id, id=doc_id).first()
+    if not doc:
+        return JSONResponse(status_code=404, content={"error": "Documento no encontrado"})
+
+    client_dir = os.path.join("uploads", f"client_{target_client_id}", "documents")
+    os.makedirs(client_dir, exist_ok=True)
+
+    filename = f"doc_{doc_id}_{int(datetime.now().timestamp())}{os.path.splitext(file.filename)[1]}"
+    file_path = os.path.join(client_dir, filename).replace("\\", "/")
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        doc.file_path = f"/{file_path}"
+        db.commit()
+        return {"status": "ok", "file_path": doc.file_path}
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# --- Usuarios de Biblioteca (credenciales individuales) ---
+
+@app.get("/api/admin/document_library/users")
+async def api_get_doc_library_users(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocLibraryUser, DocLibraryUserSegment
+    users = db.query(DocLibraryUser).filter_by(client_id=target_client_id).order_by(DocLibraryUser.username).all()
+
+    data = []
+    for u in users:
+        segment_ids = [l.segment_id for l in db.query(DocLibraryUserSegment).filter_by(library_user_id=u.id).all()]
+        data.append({
+            "id": u.id,
+            "username": u.username,
+            "full_name": u.full_name or "",
+            "segment_ids": segment_ids,
+            "is_active": u.is_active,
+        })
+    return data
+
+@app.post("/api/admin/document_library/users/save")
+async def api_save_doc_library_user(request: Request, payload: DocLibraryUserPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocLibraryUser, DocLibraryUserSegment
+    from src.database.document_library import hash_password
+
+    if payload.id:
+        u = db.query(DocLibraryUser).filter_by(client_id=target_client_id, id=payload.id).first()
+        if not u:
+            return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+    else:
+        if not payload.password:
+            return JSONResponse(status_code=400, content={"error": "La contraseña es obligatoria para un usuario nuevo"})
+        u = DocLibraryUser(client_id=target_client_id, password_hash=hash_password(payload.password))
+        db.add(u)
+
+    u.username = payload.username.strip()
+    u.full_name = payload.full_name
+    u.is_active = payload.is_active
+    if payload.password:
+        u.password_hash = hash_password(payload.password)
+
+    db.commit()
+    db.refresh(u)
+
+    db.query(DocLibraryUserSegment).filter_by(library_user_id=u.id).delete()
+    for seg_id in (payload.segment_ids or []):
+        db.add(DocLibraryUserSegment(client_id=target_client_id, library_user_id=u.id, segment_id=seg_id))
+    db.commit()
+
+    return {"status": "ok", "id": u.id}
+
+@app.delete("/api/admin/document_library/users/delete/{user_id}")
+async def api_delete_doc_library_user(request: Request, user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocLibraryUser, DocSession
+    # DocSession.library_user_id no tiene ON DELETE CASCADE (a propósito, para no perder
+    # sesiones por error): hay que soltar la referencia a mano antes de borrar el usuario.
+    db.query(DocSession).filter_by(client_id=target_client_id, library_user_id=user_id).delete()
+    db.query(DocLibraryUser).filter_by(client_id=target_client_id, id=user_id).delete()
+    db.commit()
+    return {"status": "ok"}
+
+# --- Configuración (frases gatillo) ---
+
+@app.get("/api/admin/document_library/settings")
+async def api_get_doc_library_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    try:
+        phrases = json.loads(settings.doc_library_trigger_phrases) if settings and settings.doc_library_trigger_phrases else []
+    except Exception:
+        phrases = []
+    return {"trigger_phrases": phrases}
+
+@app.post("/api/admin/document_library/settings")
+async def api_save_doc_library_settings(request: Request, payload: DocLibrarySettingsPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings:
+        return JSONResponse(status_code=404, content={"error": "Configuración no encontrada"})
+
+    settings.doc_library_trigger_phrases = json.dumps(payload.trigger_phrases) if payload.trigger_phrases else None
+    db.commit()
+    return {"status": "ok"}
+
+# ── API: Google Drive (sync de la Biblioteca de Documentos) ───────────────────
+
+class GDriveSetFolderPayload(BaseModel):
+    folder_id: str
+
+@app.get("/api/admin/gdrive/oauth/start")
+async def api_gdrive_oauth_start(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.gdrive_sync import build_oauth_flow, get_oauth_redirect_uri, generate_oauth_state
+    try:
+        redirect_uri = get_oauth_redirect_uri(str(request.base_url))
+        flow = build_oauth_flow(redirect_uri, target_client_id)
+        state = generate_oauth_state(target_client_id)
+        auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent", state=state)
+        return RedirectResponse(url=auth_url)
+    except Exception as e:
+        logging.error(f"[GDrive] Error iniciando OAuth: {e}")
+        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
+
+@app.get("/api/admin/gdrive/oauth/callback")
+async def api_gdrive_oauth_callback(request: Request, current_user: User = Depends(get_current_user)):
+    from src.database.gdrive_sync import build_oauth_flow, get_oauth_redirect_uri, pop_oauth_state, save_oauth_tokens
+
+    state = request.query_params.get("state")
+    code = request.query_params.get("code")
+    client_id = pop_oauth_state(state) if state else None
+    if not client_id or not code:
+        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
+
+    # Defensa en profundidad: el admin logueado debe seguir teniendo permiso sobre ese cliente
+    # (respeta impersonación de super-admin, pero no confía únicamente en la cookie de sesión).
+    if current_user.client_id is not None and current_user.client_id != client_id:
+        return JSONResponse(status_code=403, content={"error": "No autorizado para este cliente"})
+
+    try:
+        redirect_uri = get_oauth_redirect_uri(str(request.base_url))
+        flow = build_oauth_flow(redirect_uri, client_id)
+        flow.fetch_token(code=code)
+        save_oauth_tokens(client_id, flow.credentials)
+    except Exception as e:
+        logging.error(f"[GDrive] Error en callback OAuth (client_id={client_id}): {e}")
+        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
+
+    return RedirectResponse(url="/admin/document-library?gdrive=connected")
+
+@app.post("/api/admin/gdrive/disconnect")
+async def api_gdrive_disconnect(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.gdrive_sync import disconnect_drive
+    disconnect_drive(target_client_id)
+    return {"status": "ok"}
+
+@app.get("/api/admin/gdrive/status")
+async def api_gdrive_status(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings:
+        return {"connected": False}
+
+    summary = None
+    if settings.gdrive_last_sync_summary:
+        try:
+            summary = json.loads(settings.gdrive_last_sync_summary)
+        except Exception:
+            summary = None
+
+    return {
+        "connected": bool(settings.gdrive_refresh_token_encrypted),
+        "email": settings.gdrive_connected_email,
+        "root_folder_name": settings.gdrive_root_folder_name,
+        "last_sync_at": settings.gdrive_last_sync_at.isoformat() if settings.gdrive_last_sync_at else None,
+        "last_sync_summary": summary,
+        "needs_reconnect": bool(settings.gdrive_needs_reconnect),
+    }
+
+@app.get("/api/admin/gdrive/folders")
+async def api_gdrive_folders(request: Request, parent_id: str = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.gdrive_sync import list_folder_contents_for_picker
+    folders = list_folder_contents_for_picker(target_client_id, parent_id)
+    if folders is None:
+        return JSONResponse(status_code=400, content={"error": "Google Drive no está conectado"})
+    return {"folders": folders}
+
+@app.post("/api/admin/gdrive/set_root_folder")
+async def api_gdrive_set_root_folder(request: Request, payload: GDriveSetFolderPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.gdrive_sync import parse_folder_id_from_input, get_folder_info
+    folder_id = parse_folder_id_from_input(payload.folder_id)
+    info = get_folder_info(target_client_id, folder_id)
+    if not info:
+        return JSONResponse(status_code=400, content={"error": "No se pudo acceder a esa carpeta. Verificá el link/ID y que la cuenta conectada tenga acceso."})
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    settings.gdrive_root_folder_id = info["id"]
+    settings.gdrive_root_folder_name = info["name"]
+    db.commit()
+    return {"status": "ok", "folder_name": info["name"]}
+
+@app.post("/api/admin/gdrive/sync_now")
+async def api_gdrive_sync_now(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.gdrive_sync import sync_client_drive
+    summary = sync_client_drive(target_client_id)
+    return summary
+
+@app.get("/api/gdrive/stream/{token}")
+async def api_gdrive_stream_file(token: str):
+    """Endpoint público (sin sesión de admin): lo llaman los servidores de Green-API/Telegram para
+    descargar el archivo mientras lo envían al usuario final. Protegido por token opaco + TTL corto +
+    re-verificación de autorización en vivo (ver create_download_token/get_authorized_document_file)."""
+    from src.database.gdrive_sync import peek_download_token, resolve_file_download
+    from src.database.document_library import get_authorized_document_file
+
+    entry = peek_download_token(token)
+    if not entry:
+        return Response(status_code=404)
+
+    doc_info = get_authorized_document_file(entry["client_id"], entry["thread_id"], entry["document_id"])
+    if not doc_info or doc_info.get("source_type") != "gdrive":
+        return Response(status_code=404)
+
+    try:
+        content, filename, mimetype = resolve_file_download(entry["client_id"], doc_info["external_file_id"])
+    except Exception as e:
+        logging.error(f"[GDrive] Error resolviendo descarga para stream (token={token}): {e}")
+        return Response(status_code=404)
+
+    return StreamingResponse(io.BytesIO(content), media_type=mimetype,
+                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 # ── API: Gestión de Usuarios ───────────────────────────────────────────────────
 class UserCreatePayload(BaseModel):
@@ -2385,28 +2992,29 @@ async def send_telegram_file_saas(client_id: int, user_id: str, local_path: str,
         token = settings.telegram_token if settings else None
         db.close()
         if not token or not settings.telegram_enabled: return None
-        
-        actual_path = local_path.lstrip('/')
-        if not os.path.exists(actual_path):
-            logging.error(f"[SaaS Telegram File] Archivo no encontrado localmente: {actual_path}")
-            return None
 
         formatted_caption = format_message_for_telegram(caption)
-        url = f"https://api.telegram.org/bot{token}/sendDocument"
-        payload = {"chat_id": user_id, "caption": formatted_caption, "parse_mode": "HTML"}
-        
-        ext = actual_path.lower()
-        if ext.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-            url = f"https://api.telegram.org/bot{token}/sendPhoto"
-            file_key = "photo"
-        else:
-            file_key = "document"
+        is_remote_url = local_path.startswith("http://") or local_path.startswith("https://")
+        ext = local_path.split("?")[0].lower()
+        is_image = ext.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp'))
+        file_key = "photo" if is_image else "document"
+        url = f"https://api.telegram.org/bot{token}/{'sendPhoto' if is_image else 'sendDocument'}"
 
         async with httpx.AsyncClient() as hc:
-            with open(actual_path, "rb") as f:
-                files = {file_key: f}
-                r = await hc.post(url, data=payload, files=files, timeout=30.0)
-                
+            if is_remote_url:
+                # Imagen alojada externamente: Telegram la descarga directo de la URL
+                payload = {"chat_id": user_id, "caption": formatted_caption, "parse_mode": "HTML", file_key: local_path}
+                r = await hc.post(url, json=payload, timeout=30.0)
+            else:
+                actual_path = local_path.lstrip('/')
+                if not os.path.exists(actual_path):
+                    logging.error(f"[SaaS Telegram File] Archivo no encontrado localmente: {actual_path}")
+                    return None
+                payload = {"chat_id": user_id, "caption": formatted_caption, "parse_mode": "HTML"}
+                with open(actual_path, "rb") as f:
+                    files = {file_key: f}
+                    r = await hc.post(url, data=payload, files=files, timeout=30.0)
+
             if r.status_code == 200:
                 res = r.json()
                 return str(res.get("result", {}).get("message_id", ""))
@@ -2640,7 +3248,18 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                 
                 new_ai_texts.reverse()
                 bot_msg = "\n\n".join(new_ai_texts).strip()
-                
+
+                # Entrega determinística del presupuesto en PDF: se genera únicamente
+                # cuando process_form_completion confirma un pedido de catálogo, y no
+                # depende de que el modelo recuerde escribir el tag por su cuenta.
+                pending_pdf_path = final_state.get("pending_pdf_path")
+                if pending_pdf_path:
+                    bot_msg = f"{bot_msg}\n\n[SEND_PRODUCT_PDF: {pending_pdf_path}]".strip()
+                    try:
+                        chatbot_app.update_state(config, {"pending_pdf_path": None})
+                    except Exception as e:
+                        logging.error(f"[SaaS] Error limpiando pending_pdf_path: {e}")
+
                 if bot_msg:
                     # --- LÓGICA DE ENVÍO DE ARCHIVOS AUTOMÁTICO (Tag [SEND_FILE: ...]) ---
                     file_to_send_payloads = []
@@ -2693,10 +3312,14 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             matches = re.finditer(r"\[SEND_PRODUCT_IMAGE:\s*(.*?)\]", bot_msg)
                             for match in matches:
                                 img_path = match.group(1).strip()
-                                media_slash = img_path if img_path.startswith('/') else f"/{img_path}"
-                                public_url = f"{base_url}{media_slash}"
-                                filename = os.path.basename(img_path)
-                                
+                                if img_path.startswith("http://") or img_path.startswith("https://"):
+                                    # Imagen alojada externamente (URL completa cargada en el catálogo)
+                                    public_url = img_path
+                                else:
+                                    media_slash = img_path if img_path.startswith('/') else f"/{img_path}"
+                                    public_url = f"{base_url}{media_slash}"
+                                filename = os.path.basename(img_path.split("?")[0])
+
                                 file_to_send_payloads.append({
                                     "public_url": public_url,
                                     "filename": filename,
@@ -2707,6 +3330,79 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             bot_msg = re.sub(r"\[SEND_PRODUCT_IMAGE:.*?\]", "", bot_msg).strip()
                         except Exception as e:
                             logging.error(f"[SaaS SEND_PRODUCT_IMAGE] Error: {e}")
+
+                    if "[SEND_PRODUCT_PDF:" in bot_msg:
+                        try:
+                            import re, os
+                            from src.database.models import ClientSettings
+                            db_local = SessionLocal()
+                            settings = db_local.query(ClientSettings).filter_by(client_id=client_id).first()
+                            base_url = (settings.webhook_base_url or "").rstrip('/')
+
+                            matches = re.finditer(r"\[SEND_PRODUCT_PDF:\s*(.*?)\]", bot_msg)
+                            for match in matches:
+                                pdf_path = match.group(1).strip()
+                                if pdf_path.startswith("http://") or pdf_path.startswith("https://"):
+                                    public_url = pdf_path
+                                else:
+                                    media_slash = pdf_path if pdf_path.startswith('/') else f"/{pdf_path}"
+                                    public_url = f"{base_url}{media_slash}"
+                                filename = os.path.basename(pdf_path.split("?")[0])
+
+                                file_to_send_payloads.append({
+                                    "public_url": public_url,
+                                    "filename": filename,
+                                    "media_path": pdf_path
+                                })
+
+                            db_local.close()
+                            bot_msg = re.sub(r"\[SEND_PRODUCT_PDF:.*?\]", "", bot_msg).strip()
+                        except Exception as e:
+                            logging.error(f"[SaaS SEND_PRODUCT_PDF] Error: {e}")
+
+                    if "[SEND_DOC:" in bot_msg:
+                        try:
+                            import re, os
+                            from src.database.models import ClientSettings
+                            from src.database.document_library import get_authorized_document_file
+                            db_local = SessionLocal()
+                            settings = db_local.query(ClientSettings).filter_by(client_id=client_id).first()
+                            base_url = (settings.webhook_base_url or "").rstrip('/')
+                            db_local.close()
+
+                            matches = re.finditer(r"\[SEND_DOC:\s*(\d+)\]", bot_msg)
+                            for match in matches:
+                                doc_id = int(match.group(1))
+                                # Verificación server-side obligatoria: nunca confiar en que el LLM
+                                # solo emitió el tag para un documento realmente autorizado para este thread.
+                                doc_info = get_authorized_document_file(client_id, user_id, doc_id)
+                                if doc_info and doc_info.get("source_type") == "gdrive":
+                                    from src.database.gdrive_sync import check_file_available, create_download_token
+                                    if check_file_available(client_id, doc_info["external_file_id"]):
+                                        token = create_download_token(client_id, user_id, doc_id)
+                                        stream_url = f"{base_url}/api/gdrive/stream/{token}"
+                                        file_to_send_payloads.append({
+                                            "public_url": stream_url,
+                                            "filename": doc_info["title"],
+                                            "media_path": stream_url
+                                        })
+                                    else:
+                                        bot_msg += f"\n\n_(No pude acceder a \"{doc_info['title']}\" en este momento, puede que ya no esté disponible.)_"
+                                elif doc_info:
+                                    media_slash = doc_info["file_path"] if doc_info["file_path"].startswith('/') else f"/{doc_info['file_path']}"
+                                    public_url = f"{base_url}{media_slash}"
+                                    filename = os.path.basename(doc_info["file_path"])
+                                    file_to_send_payloads.append({
+                                        "public_url": public_url,
+                                        "filename": filename,
+                                        "media_path": doc_info["file_path"]
+                                    })
+                                else:
+                                    logging.warning(f"[SaaS SEND_DOC] Denegado o inexistente doc_id={doc_id} thread={user_id} client={client_id}")
+
+                            bot_msg = re.sub(r"\[SEND_DOC:.*?\]", "", bot_msg).strip()
+                        except Exception as e:
+                            logging.error(f"[SaaS SEND_DOC] Error: {e}")
 
                     # 1. Enviar primero el texto (ya limpio sin el tag)
                     wa_id = None
@@ -2828,7 +3524,10 @@ async def get_client(client_id: int, db: Session = Depends(get_db)):
             "feat_config": getattr(client.settings, 'feat_config', True),
             "feat_audit": getattr(client.settings, 'feat_audit', True),
             "feat_catalog": getattr(client.settings, 'feat_catalog', False),
-            "feat_catalog_dynamic_fields": getattr(client.settings, 'feat_catalog_dynamic_fields', False)
+            "feat_catalog_dynamic_fields": getattr(client.settings, 'feat_catalog_dynamic_fields', False),
+            "feat_document_library": getattr(client.settings, 'feat_document_library', False),
+            "google_oauth_client_id": getattr(client.settings, 'google_oauth_client_id', None) or '',
+            "google_oauth_configured": bool(getattr(client.settings, 'google_oauth_client_id', None) and getattr(client.settings, 'google_oauth_client_secret_encrypted', None))
         }
         
     return {
@@ -2862,15 +3561,27 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_audit = settings_data.feat_audit
     settings.feat_catalog = settings_data.feat_catalog
     settings.feat_catalog_dynamic_fields = settings_data.feat_catalog_dynamic_fields
-    
+    settings.feat_document_library = settings_data.feat_document_library
+
+    oauth_client_id = (settings_data.google_oauth_client_id or "").strip()
+    if oauth_client_id:
+        from src.database.gdrive_sync import encrypt_token
+        settings.google_oauth_client_id = oauth_client_id
+        oauth_secret = (settings_data.google_oauth_client_secret or "").strip()
+        if oauth_secret:
+            try:
+                settings.google_oauth_client_secret_encrypted = encrypt_token(oauth_secret)
+            except RuntimeError as e:
+                return JSONResponse(status_code=500, content={"error": f"No se pudo guardar el Client Secret: {e}. Configurá GDRIVE_TOKEN_ENCRYPTION_KEY en el .env del servidor y reiniciá."})
+
     # Trigger webhook update in Green API
     client = db.query(Client).filter_by(id=client_id).first()
-    
+
     db.commit()
-    
+
     if settings.whatsapp_instance_id and settings.whatsapp_token:
         asyncio.create_task(setup_whatsapp_webhook("http://TU_DOMINIO_VPS", client.slug))
-        
+
     return {"status": "ok"}
 
 
@@ -3043,9 +3754,41 @@ async def scheduler_reminders_loop():
         await asyncio.sleep(300)
 
 
+async def gdrive_sync_loop():
+    """Sync automático de Google Drive: solo metadata (título/keywords a Chroma), cada 8hs.
+    El contenido real siempre se trae fresco al momento de enviar, así que no hace falta
+    near-real-time. Mismo patrón defensivo que scheduler_reminders_loop (try/except por
+    cliente para que un error no tumbe el loop)."""
+    from src.database.gdrive_sync import sync_client_drive
+
+    logging.info("[GDrive] Starting automatic sync service...")
+
+    while True:
+        try:
+            db = SessionLocal()
+            clients = db.query(ClientSettings).filter(
+                ClientSettings.gdrive_refresh_token_encrypted.isnot(None),
+                ClientSettings.gdrive_needs_reconnect.is_(False)
+            ).all()
+            client_ids = [c.client_id for c in clients]
+            db.close()
+
+            for cid in client_ids:
+                try:
+                    summary = sync_client_drive(cid)
+                    logging.info(f"[GDrive] Sync client_id={cid}: {summary}")
+                except Exception as e:
+                    logging.error(f"[GDrive] Error sincronizando client_id={cid}: {e}")
+        except Exception as e:
+            logging.error(f"[GDrive] Error in loop: {e}")
+
+        await asyncio.sleep(28800)  # 8 horas
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(scheduler_reminders_loop())
+    asyncio.create_task(gdrive_sync_loop())
 
 
 # ==========================================

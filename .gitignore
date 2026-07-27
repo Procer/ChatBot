@@ -32,3 +32,6 @@ actual_prompt.txt
 legacy/
 scripts_legacy/
 checkpoints.sqlite.bak
+
+# Binarios de terceros descargados localmente (ej. ngrok)
+tools/

@@ -16,7 +16,7 @@ if ROOT_DIR not in sys.path:
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings, HarmBlockThreshold, HarmCategory
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage, AIMessage
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START
@@ -50,6 +50,8 @@ class AgentState(TypedDict):
     fields_to_collect: List[str]
     collected_data: dict
     storage_dest: str
+    pending_pdf_path: str
+    form_just_completed: bool
 
 # --- Helpers SaaS ---
 def get_user_profile(client_id: int, user_id: str):
@@ -853,28 +855,158 @@ def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None
         })
     return "No se pudo agendar el turno. Por favor, intentá nuevamente."
 
+CATALOG_LEAD_TOPIC = "Datos de Contacto - Catálogo"
+DEFAULT_CATALOG_LEAD_FIELDS = ["Nombre del Cliente", "Email", "Teléfono"]
+
+# Palabras de relleno gramatical o cantidades ("precios PARA 1500 boligrafos") que casi
+# nunca están en el nombre de un producto. OJO: NO metemos acá jerga de personalización
+# como "logo"/"full"/"color" -en este catálogo esa jerga SÍ puede ser información real
+# del producto (el atributo "Impresion Logo" distingue productos "Un color" de "Full
+# color"), así que filtrarla de la búsqueda hacía que el bot no pudiera encontrar ni
+# distinguir el único bolígrafo que sí imprime a full color.
+CATALOG_STOPWORDS = {
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "al", "con", "sin",
+    "por", "para", "que", "cuanto", "cuánto", "cuanta", "cuesta", "cuestan", "precio", "precios",
+    "quiero", "quisiera", "necesito", "dame", "hay", "tenes", "tenés", "tienen", "unidades",
+    "unidad", "cantidad", "y", "o", "en", "me", "sale", "salen", "vale", "valen", "costaria",
+    "costaría", "costo", "costos", "sobre", "info", "informacion", "información",
+}
+
+
+def _catalog_search_query(db, client_id: int, query: str, searchable_fields):
+    """Arma un query de CatalogProduct ordenado por relevancia, en vez de exigir que
+    TODAS las palabras coincidan (AND). El usuario suele describir lo que quiere con
+    palabras que nunca van a estar literalmente en el catálogo (cantidades como "1500",
+    plurales como "boligrafos" vs. el "Boligrafo" singular cargado en el nombre).
+
+    Ranking: cualquier producto cuyo NOMBRE matchee al menos una palabra de la consulta
+    recibe un bonus grande y fijo (no acumulativo por palabra), porque eso es lo que
+    realmente identifica DE QUÉ TIPO de producto se trata. El resto de las palabras que
+    matcheen (en cualquier campo, incluida descripción/atributos) solo suman como
+    desempate menor. Esto evita que productos de OTRA categoría ganen por pura casualidad
+    de tener mucho texto genérico de marketing repetido en el nombre (ej. varios llaveros
+    de este catálogo tienen literalmente "impresa con logo full color" en el nombre, lo
+    que antes los hacía ganarle a los bolígrafos reales en una búsqueda de "bolígrafo full
+    color"). `searchable_fields` debe empezar con el campo `name`."""
+    from sqlalchemy import or_, case
+    from src.database.models import CatalogProduct
+
+    name_field = searchable_fields[0]
+
+    raw_words = [w.strip(".,;:()\"'").lower() for w in query.strip().split() if w.strip(".,;:()\"'")]
+    words = [w for w in raw_words if w not in CATALOG_STOPWORDS]
+    if not words:
+        words = raw_words or [query.strip()]
+
+    alpha_words = [w for w in words if not w.isdigit()]
+    # Los números sueltos (cantidad pedida) casi nunca están en el nombre del producto;
+    # si hay otras palabras que sí pueden identificarlo, no las usamos para el filtro/score
+    # (así no le restan relevancia a productos que sí coinciden en todo lo demás).
+    match_words = alpha_words if alpha_words else words
+
+    or_conditions = []
+    name_match_conditions = []
+    word_match_terms = []
+    for w in match_words:
+        variants = {w}
+        if w.endswith("s") and len(w) > 3:
+            variants.add(w[:-1])
+        else:
+            variants.add(w + "s")
+        name_match = or_(*[name_field.ilike(f"%{v}%") for v in variants])
+        any_match = or_(*[field.ilike(f"%{v}%") for field in searchable_fields for v in variants])
+        name_match_conditions.append(name_match)
+        or_conditions.append(any_match)
+        word_match_terms.append(case((any_match, 1), else_=0))
+
+    name_bonus = case((or_(*name_match_conditions), 100), else_=0)
+    word_match_count = sum(word_match_terms[1:], word_match_terms[0])
+    relevance = name_bonus + word_match_count
+
+    return db.query(CatalogProduct).filter(
+        CatalogProduct.client_id == client_id,
+        CatalogProduct.is_active == True,
+        or_(*or_conditions)
+    ).order_by(relevance.desc())
+
 @tool
 def consultar_catalogo(query: str, config: RunnableConfig):
     """Busca productos, precios y disponibilidad en el catálogo comercial.
     Úsala cuando el usuario pregunte por precios, stock, características o imágenes de productos en venta.
+    IMPORTANTE sobre el parámetro 'query': incluí TODAS las palabras relevantes que dijo el usuario
+    sobre qué producto quiere, no solo el nombre genérico. Si mencionó color, material, tipo de
+    impresión del logo (ej. "full color" vs "un color") u otra característica distintiva, esas
+    palabras van también en el query: son las que permiten encontrar el producto exacto entre
+    varias variantes similares (ej. "bolígrafo full color" en vez de solo "bolígrafo").
     Si encuentras un producto con 'ruta_imagen', incluye exactamente la etiqueta [SEND_PRODUCT_IMAGE: <ruta_imagen>] en tu respuesta para enviarle la foto al usuario.
-    Si el producto tiene 'reglas_precio' (precio por cantidad), calcula o deduce el precio correcto según la cantidad que pida el usuario."""
+    Si la respuesta trae 'ruta_pdf', incluye exactamente la etiqueta [SEND_PRODUCT_PDF: <ruta_pdf>] para enviarle el presupuesto en PDF.
+    Si el producto tiene 'reglas_precio' (precio por cantidad), calcula o deduce el precio correcto según la cantidad que pida el usuario.
+    Cada resultado trae 'atributos_extra' con datos reales del producto (ej. tipo de impresión del logo):
+    respondé SIEMPRE en base a ese valor real, nunca asumas ni repitas literalmente lo que pidió el
+    usuario si el atributo dice otra cosa (ej. si pidió "full color" pero el atributo dice "Un color",
+    tenés que aclararle que ESE producto es de un color, no ofrecerlo como si fuera full color)."""
     client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
     if not client_id: return json.dumps({"error": "No client ID"})
-    
+
     db = SessionLocal()
     try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+
+        # Modo "pedir datos antes de informar": si está activo y este contacto todavía
+        # no completó el formulario de datos, activamos el mismo mecanismo de onboarding
+        # genérico que usan los trámites (ver state_manager), en vez de responder la consulta.
+        if settings and settings.catalog_require_lead_before_price:
+            from src.database.models import CatalogRequest
+            # Los datos de contacto del catálogo se guardan en CatalogRequest
+            # (ver process_catalog_completion), NO en Submission -esa tabla es para
+            # los trámites administrativos genéricos-. Antes esta verificación
+            # consultaba Submission, así que nunca encontraba nada y el bot volvía a
+            # pedir los datos de contacto en cada consulta, sin llegar nunca a
+            # responder con el precio.
+            prev_lead = db.query(CatalogRequest).filter_by(
+                client_id=client_id, thread_id=thread_id
+            ).first()
+            if not prev_lead:
+                try:
+                    fields = json.loads(settings.catalog_lead_fields) if settings.catalog_lead_fields else None
+                except Exception:
+                    fields = None
+                if not fields:
+                    fields = DEFAULT_CATALOG_LEAD_FIELDS
+
+                return json.dumps({
+                    "status": "activated",
+                    "topic": CATALOG_LEAD_TOPIC,
+                    "fields": fields,
+                    "storage": "database",
+                    "producto_consulta": query,
+                    "message": (
+                        f"Antes de responder sobre precios o productos del catálogo, pedile amablemente al "
+                        f"usuario estos datos (uno por vez o todos juntos): {', '.join(fields)}. Usá "
+                        f"'registrar_dato_tramite' para cada dato que te dé. La consulta original del usuario "
+                        f"era: '{query}'. Una vez completados los datos, continuá respondiendo esa consulta."
+                    )
+                })
+
         from src.database.models import CatalogProduct
-        search_term = f"%{query.strip()}%"
-        products = db.query(CatalogProduct).filter(
-            CatalogProduct.client_id == client_id,
-            CatalogProduct.is_active == True,
-            (CatalogProduct.name.ilike(search_term)) | (CatalogProduct.description.ilike(search_term)) | (CatalogProduct.sku.ilike(search_term))
-        ).limit(5).all()
-        
+
+        # Buscamos por palabras clave y ordenamos por relevancia (cuántas coinciden),
+        # así "Boligrafo con mi logo full color" encuentra los bolígrafos aunque "logo"
+        # o "full color" no estén literales en ningún producto (ver _catalog_search_query).
+        searchable_fields = [
+            CatalogProduct.name,
+            CatalogProduct.description,
+            CatalogProduct.sku,
+            CatalogProduct.custom_attributes,
+        ]
+        products = _catalog_search_query(db, client_id, query, searchable_fields).limit(5).all()
+
         if not products:
+            from src.database.catalog_requests import log_catalog_search
+            log_catalog_search(client_id, thread_id, query, found=False)
             return json.dumps({"status": "no_results", "message": f"No se encontraron productos para '{query}'."})
-            
+
         results = []
         for p in products:
             res = {
@@ -889,21 +1021,282 @@ def consultar_catalogo(query: str, config: RunnableConfig):
                 res["reglas_precio"] = p.price_rules
             if p.custom_attributes:
                 res["atributos_extra"] = p.custom_attributes
-            if p.image_path:
+            include_images = not settings or settings.catalog_include_images is not False
+            if p.image_path and include_images:
                 res["ruta_imagen"] = p.image_path
             results.append(res)
-            
-        return json.dumps({
-            "status": "success",
-            "resultados": results,
-            "instruccion": "Usa la información para responder. Si el producto tiene 'ruta_imagen', DEBES escribir literalmente [SEND_PRODUCT_IMAGE: <ruta_imagen>] en tu texto."
-        })
+
+        from src.database.catalog_requests import log_catalog_search
+        top = results[0]
+        log_catalog_search(client_id, thread_id, query, found=True, results_count=len(results),
+                            producto_nombre=top.get("nombre"), producto_sku=top.get("sku"))
+
+        response_payload = {"status": "success", "resultados": results}
+
+        # El presupuesto en PDF ya NO se manda en cada búsqueda: se genera y envía
+        # automáticamente recién cuando el cliente confirma el pedido de un producto
+        # puntual (ver iniciar_pedido_catalogo / process_form_completion).
+        if settings and settings.catalog_response_style:
+            instruccion = (
+                "Usa la información para responder SIGUIENDO ESTRICTAMENTE las 'ESTILO DE RESPUESTA DEL CATÁLOGO' "
+                "indicadas en tu configuración (cuántos productos mostrar, qué campos incluir, cuándo mandar imagen, etc.). "
+                "Si según esas instrucciones corresponde enviar una imagen, escribí literalmente [SEND_PRODUCT_IMAGE: <ruta_imagen>]."
+            )
+        else:
+            instruccion = "Usa la información para responder. Si el producto tiene 'ruta_imagen', DEBES escribir literalmente [SEND_PRODUCT_IMAGE: <ruta_imagen>] en tu texto."
+        response_payload["instruccion"] = instruccion
+
+        return json.dumps(response_payload)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
     finally:
         db.close()
 
-tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo]
+DEFAULT_CATALOG_ORDER_FIELDS = ["Cantidad", "Fecha de Entrega"]
+
+def _buscar_producto_catalogo(db, client_id: int, query: str):
+    """Busca un único producto por SKU exacto o por palabras (mismo motor que consultar_catalogo)."""
+    from src.database.models import CatalogProduct
+
+    exact = db.query(CatalogProduct).filter(
+        CatalogProduct.client_id == client_id,
+        CatalogProduct.is_active == True,
+        CatalogProduct.sku == query.strip()
+    ).first()
+    if exact:
+        return exact
+
+    searchable_fields = [CatalogProduct.name, CatalogProduct.description, CatalogProduct.sku, CatalogProduct.custom_attributes]
+    return _catalog_search_query(db, client_id, query, searchable_fields).first()
+
+@tool
+def iniciar_pedido_catalogo(producto: str, config: RunnableConfig):
+    """Activa la toma de pedido de un producto del catálogo (cantidad, fecha de entrega, etc.).
+    Úsala cuando el usuario exprese intención real de compra sobre un producto ya identificado
+    (ej. "quiero comprar X", "hacéme el pedido", "dame 200 unidades"), no para una simple consulta de precio.
+    IMPORTANTE sobre el parámetro 'producto': incluí TODAS las características relevantes que dijo
+    el usuario (color, tipo de impresión del logo, material, etc.), no solo el nombre genérico -
+    si hay varias variantes similares, esas palabras son las que permiten identificar la correcta
+    (ej. "bolígrafo full color" en vez de solo "bolígrafo")."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        prod = _buscar_producto_catalogo(db, client_id, producto)
+        if not prod:
+            return json.dumps({"status": "error", "message": f"No encontré el producto '{producto}' en el catálogo."})
+
+        try:
+            fields = json.loads(settings.catalog_order_fields) if settings and settings.catalog_order_fields else None
+        except Exception:
+            fields = None
+        if not fields:
+            fields = DEFAULT_CATALOG_ORDER_FIELDS
+
+        message = (
+            f"Estás tomando el pedido de '{prod.name}' (SKU: {prod.sku}). Pedile al usuario, uno por vez o "
+            f"todos juntos, estos datos: {', '.join(fields)}. Para 'Cantidad' usá SIEMPRE la herramienta "
+            f"'registrar_cantidad_pedido' (pasándole el sku '{prod.sku}'), y para 'Fecha de Entrega' usá SIEMPRE "
+            f"'registrar_fecha_entrega_pedido'. Para cualquier otro dato usá 'registrar_dato_tramite'. "
+            f"IMPORTANTE: ANTES de pedir esos datos, decile al usuario el precio de este producto (ver "
+            f"'reglas_precio' de esta respuesta) calculando el tramo que corresponda si ya mencionó una "
+            f"cantidad, o el rango completo si todavía no la dijo. Nunca sigas con el pedido sin haber "
+            f"comunicado el precio."
+        )
+        if settings and settings.catalog_confirm_attributes and prod.custom_attributes:
+            message += (
+                f" IMPORTANTE: el atributo REAL de este producto es '{prod.custom_attributes}'. Comunicáselo "
+                f"tal cual es, sin suponer ni afirmar otra cosa. Si algo que el usuario pidió antes (color, "
+                f"tipo de impresión, etc.) NO coincide con este atributo real, decíselo explícitamente "
+                f"(ej. 'este modelo imprime el logo a un solo color, no a full color') en vez de confirmar "
+                f"como si coincidiera, y preguntale si igual lo quiere o prefiere otra opción. Solo si "
+                f"coincide, confirmale explícitamente que este es el que quiere antes de cerrar el pedido."
+            )
+
+        response_payload = {
+            "status": "activated",
+            "topic": f"Pedido: {prod.name}",
+            "fields": fields,
+            "storage": "database",
+            "producto_sku": prod.sku,
+            "producto_nombre": prod.name,
+            "message": message
+        }
+        if prod.price_rules:
+            response_payload["reglas_precio"] = prod.price_rules
+        elif prod.price:
+            response_payload["precio_base"] = prod.price
+
+        return json.dumps(response_payload)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+    finally:
+        db.close()
+
+@tool
+def registrar_cantidad_pedido(producto_sku: str, cantidad: int, config: RunnableConfig):
+    """Registra la cantidad de un pedido de catálogo, validando la cantidad mínima del producto."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    db = SessionLocal()
+    try:
+        from src.database.models import CatalogProduct
+        prod = db.query(CatalogProduct).filter_by(client_id=client_id, sku=producto_sku).first()
+        min_qty = prod.min_quantity if prod and prod.min_quantity else 1
+
+        if cantidad < min_qty:
+            return json.dumps({
+                "status": "error",
+                "message": f"La cantidad mínima para este producto es {min_qty}. Pedile al usuario que confirme una cantidad de al menos {min_qty} unidades."
+            })
+
+        response = {"status": "recorded", "campo": "Cantidad", "valor": str(cantidad)}
+        if prod:
+            from src.pricing import resolve_unit_price
+            precio_unitario = resolve_unit_price(prod.price, prod.price_rules, cantidad)
+            if precio_unitario:
+                response["precio_unitario_calculado"] = precio_unitario
+                response["subtotal_calculado"] = round(precio_unitario * cantidad, 2)
+                response["instruccion"] = (
+                    f"Comunicale al usuario EXACTAMENTE este precio unitario y subtotal (ya calculados, "
+                    f"NO los recalcules vos): $ {precio_unitario} por unidad, subtotal $ {round(precio_unitario * cantidad, 2)} "
+                    f"para {cantidad} unidades."
+                )
+        return json.dumps(response)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+    finally:
+        db.close()
+
+@tool
+def registrar_fecha_entrega_pedido(fecha: str, config: RunnableConfig):
+    """Registra la fecha de entrega deseada de un pedido de catálogo (formato YYYY-MM-DD),
+    validando el mínimo de días de anticipación configurado por el negocio."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        min_lead_days = (settings.catalog_min_lead_days or 0) if settings else 0
+
+        try:
+            fecha_pedida = datetime.strptime(fecha.strip(), "%Y-%m-%d")
+        except ValueError:
+            return json.dumps({"status": "error", "message": f"La fecha '{fecha}' no tiene el formato YYYY-MM-DD. Volvé a calcularla usando el CONTEXTO TEMPORAL."})
+
+        hoy = datetime.utcnow() - timedelta(hours=3)
+        fecha_minima = hoy + timedelta(days=min_lead_days)
+
+        if min_lead_days > 0 and fecha_pedida.date() < fecha_minima.date():
+            return json.dumps({
+                "status": "error",
+                "message": (
+                    f"Ese producto requiere un mínimo de {min_lead_days} días de anticipación. "
+                    f"La fecha más próxima posible es {fecha_minima.strftime('%Y-%m-%d')}. Pedile al usuario que elija esa fecha u otra posterior."
+                )
+            })
+
+        return json.dumps({"status": "recorded", "campo": "Fecha de Entrega", "valor": fecha.strip()})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+    finally:
+        db.close()
+
+DOC_LOGIN_TOPIC_PREFIX = "Login Documento: "
+
+@tool
+def buscar_documento(query: str, config: RunnableConfig):
+    """Busca documentos (manuales, reglamentos, formularios, instructivos) por título o
+    palabras clave, para enviárselos al usuario. NO analiza el contenido de los archivos,
+    solo el título y las palabras clave configuradas. Solo debe usarse cuando el usuario
+    pide explícitamente un documento/manual/reglamento (o cuando el sistema te indique
+    con un 'REFUERZO DE BIBLIOTECA DE DOCUMENTOS' que corresponde buscar).
+    Si el resultado trae 'status':'multiple', mostrale al usuario una lista NUMERADA solo
+    con los títulos y esperá que elija uno antes de escribir cualquier etiqueta [SEND_DOC: ...].
+    Si trae 'status':'success', y el documento responde lo que pidió el usuario, incluí
+    literalmente la etiqueta [SEND_DOC: <id>] al final de tu respuesta.
+    Si trae 'status':'activated', seguí el flujo de login indicado en 'message'."""
+    client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings or not settings.feat_document_library:
+            return json.dumps({"status": "error", "message": "La biblioteca de documentos no está habilitada para este cliente."})
+    finally:
+        db.close()
+
+    from src.database.document_library import search_documents_candidates, log_document_search
+
+    candidates = search_documents_candidates(client_id, thread_id, query, k=5)
+
+    if not candidates:
+        log_document_search(client_id, thread_id, query, found=False)
+        return json.dumps({"status": "no_results", "message": f"No encontré ningún documento para '{query}'."})
+
+    accessible = [c for c in candidates if c["accessible"]]
+    log_document_search(client_id, thread_id, query, found=True, results_count=len(candidates),
+                         document_title=candidates[0]["title"])
+
+    if not accessible:
+        blocked = candidates[0]
+        segment_name = blocked["blocking_segment_name"]
+        auth_mode = blocked["blocking_segment_auth_mode"]
+        fields = ["Usuario", "Contraseña"] if auth_mode == "individual" else ["Contraseña"]
+        return json.dumps({
+            "status": "activated",
+            "topic": f"{DOC_LOGIN_TOPIC_PREFIX}{segment_name}",
+            "fields": fields,
+            "storage": "database",
+            "documento_consulta": query,
+            "message": (
+                f"El documento que busca el usuario pertenece a un segmento protegido ('{segment_name}'). "
+                f"Pedile amablemente estos datos, uno por vez o todos juntos: {', '.join(fields)}. "
+                f"Para 'Usuario' (si corresponde) usá 'registrar_dato_tramite', y para 'Contraseña' usá "
+                f"SIEMPRE la herramienta 'registrar_clave_documento' (pasándole segmento='{segment_name}'). "
+                f"La consulta original del usuario era: '{query}'. Una vez validado el acceso, volvé a "
+                f"llamar a 'buscar_documento' con esa misma consulta."
+            )
+        })
+
+    if len(accessible) == 1:
+        doc = accessible[0]
+        return json.dumps({
+            "status": "success",
+            "documento": {"id": doc["id"], "titulo": doc["title"], "descripcion": doc["description"]},
+            "instruccion": "Si esto responde lo que pidió el usuario, incluí la etiqueta [SEND_DOC: <id>] al final de tu respuesta."
+        })
+
+    return json.dumps({
+        "status": "multiple",
+        "candidatos": [{"id": c["id"], "titulo": c["title"]} for c in accessible],
+        "instruccion": "Mostrale al usuario una lista numerada SOLO con los títulos y esperá a que elija uno antes de escribir cualquier etiqueta [SEND_DOC: ...]."
+    })
+
+@tool
+def registrar_clave_documento(segmento: str, clave: str, config: RunnableConfig, usuario: str = None):
+    """Valida la contraseña (y usuario, si el segmento lo requiere) para acceder a un
+    segmento protegido de la biblioteca de documentos. Se debe llamar con el nombre exacto
+    del segmento indicado en el flujo de login."""
+    client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    from src.database.document_library import validate_segment_credentials
+    result = validate_segment_credentials(client_id, thread_id, segmento, clave, usuario=usuario)
+
+    if result.get("status") != "success":
+        return json.dumps({"status": "error", "message": result.get("message", "No se pudo validar el acceso.")})
+
+    return json.dumps({"status": "recorded", "campo": "Contraseña", "valor": "••••••"})
+
+tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento]
 tool_node = ToolNode(tools)
 
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
@@ -1011,7 +1404,7 @@ def call_model(state: AgentState):
             from src.database.tagging_manager import get_user_role, get_user_tags
             user_role = get_user_role(client_id, t_id)
             user_tags = get_user_tags(client_id, t_id)
-            tags_str = ", ".join(user_tags) if user_tags else "Ninguna"
+            tags_str = ", ".join(t.get("name", "") for t in user_tags) if user_tags else "Ninguna"
             
             tagging_context = f"""
 ### 🏷️ PERFIL Y PERMISOS DEL USUARIO:
@@ -1029,6 +1422,8 @@ def call_model(state: AgentState):
                 fields_to_collect.insert(0, "Nombre del Cliente")
  
             missing = [f for f in fields_to_collect if f not in collected_data]
+            is_pedido_topic = str(state.get('form_topic') or '').startswith("Pedido: ")
+            is_doc_login_topic = str(state.get('form_topic') or '').startswith(DOC_LOGIN_TOPIC_PREFIX)
             if missing:
                 current_field = missing[0]
                 system_prompt += f"\n### 📝 GESTIÓN DE TRÁMITE: {state.get('form_topic')}\n"
@@ -1038,9 +1433,36 @@ def call_model(state: AgentState):
 ### 🧠 REGLAS CRÍTICAS DE EXTRACCIÓN (MAPEADO INTELIGENTE):
 1. **EXTRACCIÓN INMEDIATA (OBLIGATORIO):** En cuanto detectes un dato en el mensaje, usá 'registrar_dato_tramite'.
 2. **SIEMPRE USA HERRAMIENTAS:** No confirmes los datos solo con texto.
+3. **CONVERSACIÓN, NO FORMULARIO:** No lo conviertas en un cuestionario. Pedí el próximo dato como parte natural de la charla (por ejemplo, después de comentar algo sobre el producto o responder algo que dijo el cliente), nunca como una lista fría de campos pendientes.
 """
+                if is_pedido_topic:
+                    system_prompt += "4. **CAMPOS ESPECIALES DEL PEDIDO:** Para 'Cantidad' usá SIEMPRE 'registrar_cantidad_pedido' (nunca 'registrar_dato_tramite'). Para 'Fecha de Entrega' usá SIEMPRE 'registrar_fecha_entrega_pedido'. Si alguna de esas herramientas devuelve un error (cantidad o fecha inválida), NO uses 'registrar_dato_tramite' como respaldo: explicale el motivo al usuario y pedile un valor válido.\n"
+                elif is_doc_login_topic:
+                    system_prompt += "4. **CAMPO ESPECIAL DE LOGIN:** Para 'Contraseña' usá SIEMPRE 'registrar_clave_documento' (nunca 'registrar_dato_tramite'), pasándole el nombre del segmento. Si devuelve un error (usuario/clave incorrectos), NO la registres como si fuera válida: explicale el motivo al usuario y pedile que la vuelva a escribir.\n"
             else:
-                system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
+                if state.get('form_topic') == CATALOG_LEAD_TOPIC:
+                    system_prompt += (
+                        "\n### ✅ DATOS DE CONTACTO COMPLETADOS\n"
+                        "Ya tenés todos los datos de contacto del usuario. Ahora DEBÉS continuar respondiendo "
+                        "su consulta original sobre el catálogo (precio/producto que había preguntado antes), "
+                        "volviendo a llamar a la herramienta 'consultar_catalogo' con esa misma consulta.\n"
+                    )
+                elif is_pedido_topic:
+                    system_prompt += (
+                        f"\n### ✅ PEDIDO REGISTRADO: {state.get('form_topic')}\n"
+                        f"Ya tenés todos los datos del pedido ({', '.join(f'{k}: {v}' for k, v in collected_data.items())}). "
+                        "Confirmale al usuario un resumen claro del pedido (producto, cantidad, fecha de entrega) y "
+                        "avisale que fue registrado y que se va a procesar.\n"
+                    )
+                elif is_doc_login_topic:
+                    system_prompt += (
+                        "\n### ✅ ACCESO A DOCUMENTOS VALIDADO\n"
+                        "El usuario ya se autenticó correctamente. Ahora DEBÉS continuar respondiendo su consulta "
+                        "original sobre el documento que había pedido, volviendo a llamar a la herramienta "
+                        "'buscar_documento' con esa misma consulta.\n"
+                    )
+                else:
+                    system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
         else:
             rag_enabled = settings.feat_rag_enabled if settings else False
             rag_rule = ""
@@ -1052,8 +1474,15 @@ def call_model(state: AgentState):
 1. **INFORMACIÓN PRIMERO:** Brindá la info.
 2. **INICIO DE TRÁMITE:** Si el usuario consulta sobre un tema del CONOCIMIENTO OFICIAL que tiene la etiqueta `[TIENE_FORMULARIO]`, ES OBLIGATORIO Y ESTRICTO que EJECUTES la herramienta `iniciar_onboarding_tramite` (pasándole el nombre del topic) para comenzar a pedirle los datos. ¡No hagas preguntas manualmente sin usar la herramienta!
 3. **ARCHIVOS ADJUNTOS:** Si el conocimiento consultado tiene la etiqueta `[CON_ARCHIVO]`, DEBES incluir OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. El sistema se encargará de enviarlo.
-4. **OPCIONES INTERACTIVAS:** Si el tema tiene la etiqueta `[OPCIONES: opc1 | opc2]`, DEBES agregar al final de tu respuesta una pregunta invitando a la acción y una lista numerada con esas opciones exactas (ej: "¿Qué deseas hacer?\n1. opc1\n2. opc2").{rag_rule}
+4. **OPCIONES INTERACTIVAS:** Si el tema tiene la etiqueta `[OPCIONES: opc1 | opc2]`, DEBES agregar al final de tu respuesta una pregunta invitando a la acción y una lista numerada con esas opciones exactas (ej: "¿Qué deseas hacer?\n1. opc1\n2. opc2").
+6. **INICIO DE PEDIDO DE CATÁLOGO:** Si el usuario expresa intención real de comprar un producto del catálogo ya identificado (ej. "quiero comprarlo", "hacéme el pedido", "dame 200 unidades"), y no solo consulta el precio, ES OBLIGATORIO que EJECUTES la herramienta `iniciar_pedido_catalogo` (pasándole el nombre o SKU del producto) para empezar a tomar el pedido. No lo hagas manualmente por texto.
+7. **ROL DE VENDEDOR EXPERTO:** Cuando hables de productos del catálogo, actuá como un vendedor experto: destacá beneficios concretos, resolvé objeciones, sugerí la opción que mejor resuelve lo que pidió el cliente y, cuando tenga sentido, ofrecé un producto complementario o de mayor valor. Guiá activamente hacia el cierre (ej. "¿Querés que te lo reserve?") en vez de solo listar información.
+8. **BÚSQUEDA OBLIGATORIA ANTES DE RESPONDER SOBRE PRODUCTOS:** Ante CUALQUIER mensaje que pregunte, aunque sea de forma informal o ambigua, si vendés o tenés determinado producto, ES OBLIGATORIO ejecutar la herramienta `consultar_catalogo` con esa consulta ANTES de responder, incluso si estás seguro de que no lo tenés. Nunca respondas de memoria ni digas que no tenés/vendés algo sin haber ejecutado la herramienta primero: si no lo hacés, esa consulta no queda registrada para detectar demanda de productos faltantes.{rag_rule}
+9. **BIBLIOTECA DE DOCUMENTOS:** Si el usuario pide un manual/reglamento/documento (o el sistema te indica con un "REFUERZO DE BIBLIOTECA DE DOCUMENTOS" que corresponde), ES OBLIGATORIO llamar a `buscar_documento`. Si devuelve `status: multiple`, mostrale al usuario una lista NUMERADA solo con los títulos y esperá su elección antes de escribir cualquier etiqueta. Cuando identifiques cuál documento quiere (por número o nombre) y tengas su `id`, incluí literalmente la etiqueta `[SEND_DOC: <id>]` al final de tu respuesta. Si devuelve `status: activated`, seguí el mismo flujo de recolección de datos que para trámites: usá `registrar_dato_tramite` para 'Usuario' (si corresponde) y `registrar_clave_documento` para 'Contraseña', pasándole el nombre del segmento indicado.
 """
+
+            if settings and settings.catalog_response_style:
+                system_prompt += f"\n### 🎨 ESTILO DE RESPUESTA DEL CATÁLOGO:\n{settings.catalog_response_style}\n"
 
         # Las reglas de turnos deben estar siempre presentes, aun durante el onboarding
         system_prompt += """
@@ -1122,23 +1551,46 @@ def call_model(state: AgentState):
     # Deducir intenciones del usuario sobre adjuntos y agenda en su último mensaje
     user_asked_for_file = False
     user_scheduling_intent = False
+    user_product_intent = False
     last_human_msg = ""
     for m in reversed(messages):
         if hasattr(m, 'content') and m.content and not isinstance(m, SystemMessage):
             if type(m).__name__ == "HumanMessage":
                 last_human_msg = str(m.content).lower()
                 break
-                
+
     if last_human_msg:
         file_keywords = ["pdf", "archivo", "mandam", "envi", "descarg", "adjunt", "papel", "documento"]
         scheduling_keywords = ["turn", "agend", "reserv", "cit", "hor", "fech", "disponib", " hs", "lunes", "martes", "miercol", "jueves", "viernes", "sabad", "doming", "si, ", "sí, ", "confirm"]
+        product_keywords = ["tene", "tien", "vend", "hay ", "consig", "necesit", "busco", "buscas", "quiero", "precio", "cuest", "cuant", "cuánt", "stock", "catalog", "catálog", "comprar", "producto", "modelo"]
         if any(kw in last_human_msg.lower() for kw in file_keywords):
             user_asked_for_file = True
         if any(skw in last_human_msg.lower() for skw in scheduling_keywords):
             user_scheduling_intent = True
-            
+        if any(pkw in last_human_msg.lower() for pkw in product_keywords):
+            user_product_intent = True
+
     if user_scheduling_intent:
         messages.append(SystemMessage(content="REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno (ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la herramienta primero."))
+
+    user_doc_intent = False
+    if last_human_msg and settings and settings.feat_document_library:
+        try:
+            db_kw = SessionLocal()
+            from src.database.document_library import get_doc_trigger_keywords
+            doc_keywords = get_doc_trigger_keywords(db_kw, client_id, settings)
+            db_kw.close()
+        except Exception as kw_err:
+            logging.error(f"Error obteniendo frases gatillo de la biblioteca de documentos: {kw_err}")
+            doc_keywords = []
+        if doc_keywords and any(dk in last_human_msg.lower() for dk in doc_keywords):
+            user_doc_intent = True
+
+    if user_doc_intent and not onboarding_active:
+        messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
+
+    if user_product_intent and settings and settings.feat_catalog and not onboarding_active:
+        messages.append(SystemMessage(content="REFUERZO DE CATÁLOGO: El usuario está preguntando por un producto, precio o disponibilidad. DEBES llamar obligatoriamente a la herramienta `consultar_catalogo` en esta misma respuesta con esa consulta, INCLUSO SI ESTÁS SEGURO de que ese producto no existe en el catálogo. Está terminantemente prohibido responder 'no tenemos/no vendemos eso' o cualquier respuesta similar sin haber ejecutado antes la herramienta: si no la ejecutás, esa consulta no queda registrada."))
 
     # Query database for knowledge items with media to reinforce [SEND_FILE] tag
     try:
@@ -1200,7 +1652,14 @@ def state_manager(state: AgentState):
                     new_state["onboarding_active"] = True
                     new_state["form_topic"] = data["topic"]
                     new_state["fields_to_collect"] = data["fields"]
-                    new_state["collected_data"] = {}
+                    initial_data = {}
+                    if data.get("producto_consulta"):
+                        initial_data["Producto de Interés"] = data["producto_consulta"]
+                    if data.get("producto_sku"):
+                        initial_data["SKU"] = data["producto_sku"]
+                    if data.get("documento_consulta"):
+                        initial_data["Consulta de Documento"] = data["documento_consulta"]
+                    new_state["collected_data"] = initial_data
                     new_state["storage_dest"] = data["storage"]
                 elif data.get("status") == "profile_update":
                     name = data.get("full_name")
@@ -1234,21 +1693,63 @@ def state_manager(state: AgentState):
             if f_norm not in data_keys_norm or not str(collected_data[data_keys_norm[f_norm]]).strip():
                 missing.append(f)
 
-        if fields and not missing:
+        already_completed = state.get("form_just_completed", False)
+
+        if fields and not missing and not already_completed:
             final_thread_id = t_id or "unknown_user"
-            
-            process_form_completion(
-                client_id=client_id,
-                thread_id=final_thread_id,
-                topic=new_state.get("form_topic", state.get("form_topic")),
-                data=collected_data,
-                storage_dest=new_state.get("storage_dest", state.get("storage_dest", "database"))
-            )
-            new_state["onboarding_active"] = False
-            new_state["fields_to_collect"] = []
-            new_state["form_topic"] = None
-            new_state["collected_data"] = {} 
-            
+            topic = new_state.get("form_topic", state.get("form_topic"))
+            storage_dest = new_state.get("storage_dest", state.get("storage_dest", "database"))
+            is_catalog_topic = topic == CATALOG_LEAD_TOPIC or str(topic or "").startswith("Pedido: ")
+            is_doc_login_topic = str(topic or "").startswith(DOC_LOGIN_TOPIC_PREFIX)
+
+            pdf_path = None
+            if is_catalog_topic:
+                # El catálogo (consultas y pedidos) se guarda aparte de los trámites
+                # administrativos: no va a data_submissions/data_proceedings.
+                from src.database.catalog_requests import process_catalog_completion
+                pdf_path = process_catalog_completion(
+                    client_id=client_id,
+                    thread_id=final_thread_id,
+                    topic=topic,
+                    data=collected_data,
+                    storage_dest=storage_dest
+                )
+            elif is_doc_login_topic:
+                # La sesión ya se creó en validate_segment_credentials; acá solo se
+                # audita con un tag. A propósito NO se persiste collected_data (puede
+                # contener rastros de usuario/clave) en data_submissions.
+                from src.database.document_library import process_doc_login_completion
+                process_doc_login_completion(
+                    client_id=client_id,
+                    thread_id=final_thread_id,
+                    topic=topic
+                )
+            else:
+                process_form_completion(
+                    client_id=client_id,
+                    thread_id=final_thread_id,
+                    topic=topic,
+                    data=collected_data,
+                    storage_dest=storage_dest
+                )
+            # OJO: NO reseteamos onboarding_active/form_topic/collected_data todavía.
+            # Si lo hiciéramos acá, el agente perdería el contexto (form_topic, datos
+            # recolectados) justo antes de generar el mensaje de cierre (resumen del
+            # pedido, o continuar la consulta de catálogo), porque LangGraph aplica
+            # este cambio de estado ANTES de la próxima invocación del agente. Se
+            # limpia recién en la pasada siguiente, una vez que el agente ya respondió.
+            new_state["form_just_completed"] = True
+            if pdf_path:
+                new_state["pending_pdf_path"] = pdf_path
+        elif already_completed:
+            last_msg = state["messages"][-1]
+            if isinstance(last_msg, AIMessage) and not getattr(last_msg, "tool_calls", None):
+                new_state["onboarding_active"] = False
+                new_state["fields_to_collect"] = []
+                new_state["form_topic"] = None
+                new_state["collected_data"] = {}
+                new_state["form_just_completed"] = False
+
     return new_state
 
 def should_continue(state: AgentState):

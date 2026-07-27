@@ -1,0 +1,160 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Catálogo: Consultas y Pedidos | ZSG-Bot-iA{% endblock %}
+{% block breadcrumb %}Catálogo{% endblock %}
+{% block section_title %}Consultas y Pedidos{% endblock %}
+
+{% block header_actions %}
+    <div class="flex items-center gap-3">
+        <span class="text-[13px] font-bold text-slate-500 hidden md:block">{{ requests|length }} registros</span>
+        <button onclick="window.location.reload()" class="p-2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+    </div>
+{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-[1600px] mx-auto w-full animate-fade-in">
+    <p class="text-slate-500 text-sm mb-4">Consultas de catálogo y pedidos confirmados por los clientes, separado de los trámites administrativos.</p>
+
+    <div class="flex items-center justify-between gap-2 mb-6">
+        <div class="flex items-center gap-2">
+            <button id="tabBtnRequests" onclick="showCatalogTab('requests')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-500 text-white transition-colors">Consultas y Pedidos</button>
+            <button id="tabBtnLogs" onclick="showCatalogTab('logs')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-colors">Historial de Búsquedas ({{ search_logs|length }})</button>
+        </div>
+        <div>
+            <button id="btnClearRequests" onclick="clearCatalogSection('requests')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Borrar Consultas y Pedidos
+            </button>
+            <button id="btnClearLogs" onclick="clearCatalogSection('logs')" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Borrar Historial de Búsquedas
+            </button>
+        </div>
+    </div>
+
+    <div id="panelRequests" class="bg-panel rounded-xl border border-slate-800/50 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800/50 text-left text-slate-500 text-xs uppercase tracking-wider">
+                        <th class="px-4 py-3">Fecha</th>
+                        <th class="px-4 py-3">Tipo</th>
+                        <th class="px-4 py-3">Cliente</th>
+                        <th class="px-4 py-3">Producto</th>
+                        <th class="px-4 py-3">Cantidad</th>
+                        <th class="px-4 py-3">Contacto</th>
+                        <th class="px-4 py-3">PDF</th>
+                        <th class="px-4 py-3">Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in requests %}
+                    <tr class="border-b border-slate-800/30 hover:bg-slate-800/30 transition-colors">
+                        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">{{ r.formatted_date }}</td>
+                        <td class="px-4 py-3">
+                            {% if r.tipo == 'Pedido' %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400">🛒 Pedido</span>
+                            {% else %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-sky-500/10 text-sky-400">🛍️ Consulta</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-white font-semibold">{{ r.contact.get("Nombre del Cliente") or r.contact.get("Nombre") or "Sin nombre" }}</td>
+                        <td class="px-4 py-3 text-slate-300">{{ r.producto_nombre or "-" }}{% if r.producto_sku %} <span class="text-slate-600 text-xs">({{ r.producto_sku }})</span>{% endif %}</td>
+                        <td class="px-4 py-3 text-slate-300">{{ r.cantidad or "-" }}</td>
+                        <td class="px-4 py-3 text-slate-400 text-xs">
+                            {% if r.contact.get("Email") %}<div>{{ r.contact.get("Email") }}</div>{% endif %}
+                            {% if r.contact.get("Teléfono") %}<div>{{ r.contact.get("Teléfono") }}</div>{% endif %}
+                            {% if r.contact.get("Empresa") %}<div>{{ r.contact.get("Empresa") }}</div>{% endif %}
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if r.pdf_path %}
+                            <a href="{{ r.pdf_path }}" target="_blank" class="flex items-center gap-1 text-brand-400 hover:text-brand-300 text-xs font-semibold">
+                                <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Ver PDF
+                            </a>
+                            {% else %}
+                            <span class="text-slate-700 text-xs">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-slate-400 text-xs">{{ r.status }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="px-4 py-16 text-center text-slate-600">
+                            Todavía no hay consultas ni pedidos de catálogo registrados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="panelLogs" class="hidden bg-panel rounded-xl border border-slate-800/50 overflow-hidden">
+        <p class="text-slate-500 text-xs px-4 pt-4">Todas las búsquedas de catálogo hechas por los clientes, incluidas las que no encontraron ningún producto (útil para detectar demanda de productos que faltan cargar).</p>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800/50 text-left text-slate-500 text-xs uppercase tracking-wider">
+                        <th class="px-4 py-3">Fecha</th>
+                        <th class="px-4 py-3">Búsqueda del cliente</th>
+                        <th class="px-4 py-3">Resultado</th>
+                        <th class="px-4 py-3">Producto encontrado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in search_logs %}
+                    <tr class="border-b border-slate-800/30 hover:bg-slate-800/30 transition-colors">
+                        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">{{ l.formatted_date }}</td>
+                        <td class="px-4 py-3 text-slate-300">{{ l.query }}</td>
+                        <td class="px-4 py-3">
+                            {% if l.found %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400">{{ l.results_count }} resultado(s)</span>
+                            {% else %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-400">Sin resultados</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-slate-300">{{ l.producto_nombre or "-" }}{% if l.producto_sku %} <span class="text-slate-600 text-xs">({{ l.producto_sku }})</span>{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="px-4 py-16 text-center text-slate-600">
+                            Todavía no hay búsquedas de catálogo registradas.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+function showCatalogTab(tab) {
+    document.getElementById('panelRequests').classList.toggle('hidden', tab !== 'requests');
+    document.getElementById('panelLogs').classList.toggle('hidden', tab !== 'logs');
+    document.getElementById('tabBtnRequests').classList.toggle('bg-brand-500', tab === 'requests');
+    document.getElementById('tabBtnRequests').classList.toggle('text-white', tab === 'requests');
+    document.getElementById('tabBtnRequests').classList.toggle('bg-slate-800', tab !== 'requests');
+    document.getElementById('tabBtnRequests').classList.toggle('text-slate-400', tab !== 'requests');
+    document.getElementById('tabBtnLogs').classList.toggle('bg-brand-500', tab === 'logs');
+    document.getElementById('tabBtnLogs').classList.toggle('text-white', tab === 'logs');
+    document.getElementById('tabBtnLogs').classList.toggle('bg-slate-800', tab !== 'logs');
+    document.getElementById('tabBtnLogs').classList.toggle('text-slate-400', tab !== 'logs');
+    document.getElementById('btnClearRequests').classList.toggle('hidden', tab !== 'requests');
+    document.getElementById('btnClearLogs').classList.toggle('hidden', tab !== 'logs');
+}
+
+async function clearCatalogSection(tab) {
+    const label = tab === 'requests' ? 'todas las Consultas y Pedidos' : 'todo el Historial de Búsquedas';
+    if (!confirm(`¿Seguro que querés borrar ${label}? Esta acción no se puede deshacer.`)) return;
+
+    const url = tab === 'requests' ? '/api/admin/catalog-requests/clear' : '/api/admin/catalog-requests/logs/clear';
+    try {
+        const res = await fetch(url, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Error al borrar');
+        window.location.reload();
+    } catch (e) {
+        alert('No se pudo borrar. Intentá de nuevo.');
+    }
+}
+</script>
+{% endblock %}

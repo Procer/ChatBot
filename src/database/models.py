@@ -68,7 +68,23 @@ class ClientSettings(Base):
     # --- FEATURE FLAGS DE CATÁLOGO ---
     feat_catalog = Column(Boolean, default=False)
     feat_catalog_dynamic_fields = Column(Boolean, default=False)
-    
+
+    # --- FEATURE FLAG DE BIBLIOTECA DE DOCUMENTOS ---
+    feat_document_library = Column(Boolean, default=False)
+    doc_library_trigger_phrases = Column(Text, nullable=True)  # JSON list, frases gatillo generales del cliente
+
+    # --- MODOS DE RESPUESTA DEL CATÁLOGO (combinables) ---
+    catalog_require_lead_before_price = Column(Boolean, default=False)
+    catalog_lead_fields = Column(Text, nullable=True)  # JSON list, ej: ["Nombre y Apellido","Email","Teléfono"]
+    catalog_send_pdf_quote = Column(Boolean, default=False)
+
+    # --- TOMA DE PEDIDO DEL CATÁLOGO ---
+    catalog_order_fields = Column(Text, nullable=True)  # JSON list, ej: ["Cantidad","Fecha de Entrega"]
+    catalog_min_lead_days = Column(Integer, default=0)  # 0 = sin restricción
+    catalog_confirm_attributes = Column(Boolean, default=False)
+    catalog_include_images = Column(Boolean, default=True)
+    catalog_response_style = Column(Text, nullable=True)  # instrucciones libres de tono/orden
+
     # --- NUEVAS COLUMNAS DE TURNOS (SAAS) ---
     scheduling_provider = Column(String(50), default="local")
     scheduling_days = Column(String(255), default="mon,tue,wed,thu,fri")
@@ -84,7 +100,23 @@ class ClientSettings(Base):
     reminder_2h_enabled = Column(Boolean, default=False)
     reminder_2h_template = Column(Text, nullable=True)
     reminder_2h_hours = Column(Integer, default=2, server_default='2')
-    
+
+    # --- SINCRONIZACIÓN CON GOOGLE DRIVE (Biblioteca de Documentos) ---
+    gdrive_refresh_token_encrypted = Column(Text, nullable=True)  # Fernet, nunca texto plano (más sensible que whatsapp_token/telegram_token)
+    gdrive_connected_email = Column(String(255), nullable=True)
+    gdrive_connected_at = Column(DateTime, nullable=True)
+    gdrive_root_folder_id = Column(String(255), nullable=True)
+    gdrive_root_folder_name = Column(String(255), nullable=True)
+    gdrive_last_sync_at = Column(DateTime, nullable=True)
+    gdrive_last_sync_summary = Column(Text, nullable=True)  # JSON: {"created":N,"unmapped_folders":[...],"missing_in_drive":N}
+    gdrive_needs_reconnect = Column(Boolean, default=False)
+
+    # Credenciales de la app OAuth de Google propia de ESTE cliente (cada tenant registra
+    # su propio proyecto en Google Cloud — a diferencia del refresh token de arriba, esto
+    # identifica la "app", no la cuenta de Drive conectada).
+    google_oauth_client_id = Column(String(255), nullable=True)
+    google_oauth_client_secret_encrypted = Column(Text, nullable=True)  # Fernet, misma clave que gdrive_refresh_token_encrypted
+
     client = relationship("Client", back_populates="settings")
 
 class User(Base):
@@ -325,6 +357,34 @@ class CatalogProduct(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class CatalogRequest(Base):
+    __tablename__ = "data_catalog_requests"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    tracking_number = Column(String(100), unique=True, nullable=False)
+    tipo = Column(String(20), nullable=False)  # "Consulta" | "Pedido"
+    producto_nombre = Column(String(255), nullable=True)
+    producto_sku = Column(String(100), nullable=True)
+    cantidad = Column(Integer, nullable=True)
+    fecha_entrega = Column(String(20), nullable=True)
+    contact_data = Column(Text, nullable=True)  # JSON: Nombre/Email/Teléfono/Empresa/etc.
+    pdf_path = Column(String(255), nullable=True)
+    status = Column(String(50), default="Pendiente")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class CatalogSearchLog(Base):
+    __tablename__ = "data_catalog_search_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    query = Column(String(255), nullable=False)
+    found = Column(Boolean, default=False)
+    results_count = Column(Integer, default=0)
+    producto_nombre = Column(String(255), nullable=True)
+    producto_sku = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class CatalogPriceHistory(Base):
     __tablename__ = "data_catalog_price_history"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -333,4 +393,82 @@ class CatalogPriceHistory(Base):
     old_price = Column(Float, nullable=False)
     new_price = Column(Float, nullable=False)
     reason = Column(String(255), nullable=True) # ej: 'Ajuste Masivo +15%'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# ==========================================
+# CAPA 4: BIBLIOTECA DE DOCUMENTOS
+# ==========================================
+
+class DocSegment(Base):
+    __tablename__ = "data_doc_segments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)
+    is_public = Column(Boolean, default=True)
+    auth_mode = Column(String(20), default="generic")  # "generic" | "individual" (solo aplica si is_public=False)
+    generic_password_hash = Column(String(255), nullable=True)
+    session_expiry_days = Column(Integer, nullable=True)  # NULL = sesión permanente
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DocLibraryUser(Base):
+    __tablename__ = "data_doc_library_users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    username = Column(String(100), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DocLibraryUserSegment(Base):
+    __tablename__ = "data_doc_library_user_segments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    library_user_id = Column(Integer, ForeignKey("data_doc_library_users.id", ondelete="CASCADE"), nullable=False)
+    segment_id = Column(Integer, ForeignKey("data_doc_segments.id", ondelete="CASCADE"), nullable=False)
+
+class Document(Base):
+    __tablename__ = "data_doc_documents"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    keywords = Column(Text, nullable=True)  # alias/palabras clave embebidas junto al título (NUNCA el contenido del archivo)
+    description = Column(Text, nullable=True)  # solo uso admin, no se embebe
+    file_path = Column(String(255), nullable=True)
+    source_type = Column(String(20), default="local")  # "local" hoy; punto de extensión (sharepoint/gdrive/onedrive) a futuro
+    external_file_id = Column(String(255), nullable=True)  # Drive fileId (u otro origen externo), para upsert idempotente en cada sync
+    gdrive_last_seen_at = Column(DateTime, nullable=True)  # última vez que el sync lo encontró presente en Drive
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DocumentSegmentLink(Base):
+    __tablename__ = "data_doc_document_segments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    document_id = Column(Integer, ForeignKey("data_doc_documents.id", ondelete="CASCADE"), nullable=False)
+    segment_id = Column(Integer, ForeignKey("data_doc_segments.id", ondelete="CASCADE"), nullable=False)
+
+class DocSession(Base):
+    __tablename__ = "data_doc_sessions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    segment_id = Column(Integer, ForeignKey("data_doc_segments.id", ondelete="CASCADE"), nullable=False)
+    library_user_id = Column(Integer, ForeignKey("data_doc_library_users.id"), nullable=True)  # NULL si auth genérica
+    authenticated_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)  # NULL = permanente
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DocSearchLog(Base):
+    __tablename__ = "data_doc_search_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    query = Column(String(255), nullable=False)
+    found = Column(Boolean, default=False)
+    results_count = Column(Integer, default=0)
+    document_title = Column(String(255), nullable=True)
+    auth_blocked = Column(Boolean, default=False)  # hubo match pero bloqueado por falta de acceso
     created_at = Column(DateTime, default=datetime.utcnow)

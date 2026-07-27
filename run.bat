@@ -18,7 +18,7 @@ call .venv\Scripts\activate
 
 :: 1. Iniciar Servidor Principal PRIMERO (en su propia ventana)
 echo [SERVER] Iniciando FastAPI en puerto 8000...
-start "ZSG Bot - Servidor FastAPI" cmd /k "call .venv\Scripts\activate && python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+start "ZSG Bot - Servidor FastAPI" cmd /k "call .venv\Scripts\activate && python -m uvicorn src.main_saas:app --host 0.0.0.0 --port 8000 --reload"
 
 :: 2. Esperar a que el servidor levante completamente antes de iniciar Telegram
 echo [WAIT] Esperando que el servidor inicialice (8 segundos)...

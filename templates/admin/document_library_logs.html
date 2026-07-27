@@ -1,0 +1,56 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Biblioteca de Documentos: Búsquedas - ZSG-Bot-iA{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-6 max-w-[1600px] mx-auto w-full animate-fade-in overflow-y-auto custom-scrollbar">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+            <i data-lucide="search" class="w-6 h-6 text-brand-500"></i>
+            Búsquedas de Documentos
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">
+            Todas las búsquedas de la biblioteca de documentos, incluidas las que no encontraron nada o quedaron bloqueadas por falta de acceso.
+        </p>
+    </div>
+
+    <div class="bg-panel rounded-xl border border-slate-800/50 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800/50 text-left text-slate-500 text-xs uppercase tracking-wider">
+                        <th class="px-4 py-3">Fecha</th>
+                        <th class="px-4 py-3">Búsqueda del usuario</th>
+                        <th class="px-4 py-3">Resultado</th>
+                        <th class="px-4 py-3">Documento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in search_logs %}
+                    <tr class="border-b border-slate-800/30 hover:bg-slate-800/30 transition-colors">
+                        <td class="px-4 py-3 text-slate-400 whitespace-nowrap">{{ l.formatted_date }}</td>
+                        <td class="px-4 py-3 text-slate-300">{{ l.query }}</td>
+                        <td class="px-4 py-3">
+                            {% if l.auth_blocked %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-400">Bloqueado (sin acceso)</span>
+                            {% elif l.found %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400">{{ l.results_count }} resultado(s)</span>
+                            {% else %}
+                            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-400">Sin resultados</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-slate-300">{{ l.document_title or "-" }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="px-4 py-16 text-center text-slate-600">
+                            Todavía no hay búsquedas de documentos registradas.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

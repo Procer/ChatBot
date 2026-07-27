@@ -115,7 +115,7 @@ def process_form_completion(client_id: int, thread_id: str, topic: str, data: di
         submission_id = save_submission_local(client_id, thread_id, topic, data)
         success_local = submission_id is not None
         logging.info(f" - Resultado guardado local: {success_local} (ID: {submission_id})")
-        
+
         if success_local:
             try:
                 db: Session = SessionLocal()
@@ -125,14 +125,14 @@ def process_form_completion(client_id: int, thread_id: str, topic: str, data: di
                     Attachment.thread_id == thread_id,
                     Attachment.form_id == None
                 ).update({"form_id": submission_id})
-                
+
                 # 2. Crear entrada en el CRM (proceedings) para el tablero Kanban
                 now_str = datetime.now().strftime("%M%S")
                 suffix = str(thread_id)[-4:] if thread_id and len(str(thread_id)) >= 4 else "0000"
                 tracking = f"TR-{suffix}-{now_str}"
-                
+
                 client_name = data.get("Nombre del Cliente", data.get("Nombre", data.get("nombre", data.get("Cliente", "Cliente Nuevo"))))
-                
+
                 new_proc = Proceeding(
                     client_id=client_id,
                     tracking_number=tracking,
@@ -148,9 +148,9 @@ def process_form_completion(client_id: int, thread_id: str, topic: str, data: di
                 logging.error(f"Error procesando CRM o Adjuntos SaaS: {e}")
             finally:
                 db.close()
-        
+
     success_sheets = True
     if storage_dest in ['sheets', 'both']:
         success_sheets = save_to_google_sheets(client_id, thread_id, topic, data)
-        
+
     return success_local or success_sheets

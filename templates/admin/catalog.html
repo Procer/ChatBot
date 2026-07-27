@@ -23,12 +23,86 @@
             <button onclick="document.getElementById('csvUploadInput').click()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700">
                 <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i> Importar CSV
             </button>
+            <button onclick="openPasteModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700">
+                <i data-lucide="clipboard-paste" class="w-4 h-4 text-sky-400"></i> Pegar desde Excel
+            </button>
             <button onclick="addNewRow()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2">
                 <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Producto
             </button>
             <button onclick="openMassUpdateModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700">
                 <i data-lucide="zap" class="w-4 h-4 text-yellow-400"></i> Ajuste Masivo
             </button>
+            <button onclick="openClearCatalogModal()" class="px-4 py-2 bg-slate-800 hover:bg-red-900/40 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 border border-slate-700 hover:border-red-800">
+                <i data-lucide="trash-2" class="w-4 h-4 text-red-400"></i> Vaciar Catálogo
+            </button>
+        </div>
+    </div>
+
+    <!-- Configuración de Respuesta del Catálogo -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <i data-lucide="message-square-reply" class="w-4 h-4 text-brand-500"></i> Configuración de Respuesta del Catálogo
+        </h2>
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 space-y-3">
+                <label class="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                    <input type="checkbox" id="reqLeadToggle" onchange="onToggleLeadFields()" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                    <span class="text-sm text-white">Pedir datos de contacto antes de informar precios</span>
+                </label>
+                <div id="leadFieldsBox" class="hidden pl-4 pt-1 pb-2 space-y-2">
+                    <p class="text-xs text-slate-500 mb-1">Elegí qué datos pedir antes de responder:</p>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="leadFieldCheck" value="Nombre del Cliente" checked disabled> Nombre del Cliente</label>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="leadFieldCheck" value="Email"> Email</label>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="leadFieldCheck" value="Teléfono"> Teléfono</label>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="leadFieldCheck" value="Empresa"> Empresa</label>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="leadFieldCheck" value="DNI/CUIT"> DNI/CUIT</label>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1">
+                <label class="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                    <input type="checkbox" id="sendPdfToggle" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                    <span class="text-sm text-white">Enviar presupuesto en PDF junto con la respuesta</span>
+                </label>
+                <p class="text-xs text-slate-500 mt-2 px-1">Ambas opciones se pueden combinar: primero se piden los datos y, al responder, se adjunta el PDF.</p>
+            </div>
+        </div>
+
+        <hr class="border-slate-800 my-4">
+
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Al confirmar un pedido</h3>
+        <div class="flex flex-col md:flex-row gap-4 mb-3">
+            <div class="flex-1">
+                <p class="text-xs text-slate-500 mb-2">Qué pedirle al cliente cuando quiere comprar (no solo consultar precio):</p>
+                <div class="flex flex-wrap gap-3">
+                    <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="orderFieldCheck" value="Cantidad"> Cantidad</label>
+                    <label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" class="orderFieldCheck" value="Fecha de Entrega"> Fecha de Entrega</label>
+                </div>
+                <div class="mt-3 flex items-center gap-2">
+                    <label class="text-xs text-slate-400">Días mínimos de anticipación para la entrega:</label>
+                    <input type="number" id="minLeadDaysInput" min="0" placeholder="0" class="w-20 px-2 py-1 bg-slate-900 border border-slate-800 rounded text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+            </div>
+            <div class="flex-1 space-y-3">
+                <label class="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                    <input type="checkbox" id="confirmAttrsToggle" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                    <span class="text-sm text-white">Confirmar atributos especiales antes de cerrar el pedido</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-slate-800 bg-slate-900/50 hover:bg-slate-800/50">
+                    <input type="checkbox" id="includeImagesToggle" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                    <span class="text-sm text-white">Incluir imágenes en las respuestas</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="block text-xs font-semibold text-slate-400 mb-2">Instrucciones de estilo de respuesta (texto libre, opcional)</label>
+            <textarea id="responseStyleInput" rows="2" placeholder="Ej: Mostrá primero el precio y después la imagen. Tono formal, sin emojis." class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+        </div>
+
+        <div class="mt-3 flex justify-end">
+            <button onclick="saveResponseSettings()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar Configuración</button>
         </div>
     </div>
 
@@ -104,12 +178,21 @@
 
 <script>
     const hasDynamicFields = {{ 'true' if settings.feat_catalog_dynamic_fields else 'false' }};
+    const initialCatalogRequireLead = {{ 'true' if settings.catalog_require_lead_before_price else 'false' }};
+    const initialCatalogSendPdf = {{ 'true' if settings.catalog_send_pdf_quote else 'false' }};
+    const initialCatalogLeadFields = {{ (settings.catalog_lead_fields or '[]') | safe }};
+    const initialCatalogOrderFields = {{ (settings.catalog_order_fields or '[]') | safe }};
+    const initialCatalogMinLeadDays = {{ settings.catalog_min_lead_days or 0 }};
+    const initialCatalogConfirmAttributes = {{ 'true' if settings.catalog_confirm_attributes else 'false' }};
+    const initialCatalogIncludeImages = {{ 'false' if settings.catalog_include_images is sameas false else 'true' }};
+    const initialCatalogResponseStyle = {{ (settings.catalog_response_style or '') | tojson }};
     let catalogData = [];
     let currentUploadId = null;
 
     // 1. Carga inicial
     document.addEventListener('DOMContentLoaded', () => {
         loadCatalog();
+        initResponseSettingsUI();
 
         // Buscador nativo
         document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -141,6 +224,7 @@
                 if(data.status === 'ok') {
                     const prod = catalogData.find(p => p.id === currentUploadId);
                     if(prod) prod.image_path = data.image_path;
+                    closeImageSourceModal();
                     renderTable(catalogData);
                 } else alert("Error: " + data.error);
             } catch(err) {
@@ -170,6 +254,64 @@
             e.target.value = '';
         });
     });
+
+    // Configuración de Respuesta del Catálogo
+    function initResponseSettingsUI() {
+        document.getElementById('reqLeadToggle').checked = initialCatalogRequireLead;
+        document.getElementById('sendPdfToggle').checked = initialCatalogSendPdf;
+
+        const fields = initialCatalogLeadFields.length ? initialCatalogLeadFields : ["Nombre del Cliente"];
+        document.querySelectorAll('.leadFieldCheck').forEach(cb => {
+            if (fields.includes(cb.value)) cb.checked = true;
+        });
+
+        document.querySelectorAll('.orderFieldCheck').forEach(cb => {
+            if (initialCatalogOrderFields.includes(cb.value)) cb.checked = true;
+        });
+        document.getElementById('minLeadDaysInput').value = initialCatalogMinLeadDays;
+        document.getElementById('confirmAttrsToggle').checked = initialCatalogConfirmAttributes;
+        document.getElementById('includeImagesToggle').checked = initialCatalogIncludeImages;
+        document.getElementById('responseStyleInput').value = initialCatalogResponseStyle;
+
+        onToggleLeadFields();
+    }
+
+    function onToggleLeadFields() {
+        const active = document.getElementById('reqLeadToggle').checked;
+        document.getElementById('leadFieldsBox').classList.toggle('hidden', !active);
+    }
+
+    async function saveResponseSettings() {
+        const catalog_require_lead_before_price = document.getElementById('reqLeadToggle').checked;
+        const catalog_send_pdf_quote = document.getElementById('sendPdfToggle').checked;
+        const catalog_lead_fields = Array.from(document.querySelectorAll('.leadFieldCheck'))
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+        const catalog_order_fields = Array.from(document.querySelectorAll('.orderFieldCheck'))
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+        const catalog_min_lead_days = parseInt(document.getElementById('minLeadDaysInput').value) || 0;
+        const catalog_confirm_attributes = document.getElementById('confirmAttrsToggle').checked;
+        const catalog_include_images = document.getElementById('includeImagesToggle').checked;
+        const catalog_response_style = document.getElementById('responseStyleInput').value.trim();
+
+        try {
+            const res = await fetch('/api/admin/catalog/response_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    catalog_require_lead_before_price, catalog_lead_fields, catalog_send_pdf_quote,
+                    catalog_order_fields, catalog_min_lead_days, catalog_confirm_attributes,
+                    catalog_include_images, catalog_response_style
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') alert('Configuración guardada.');
+            else alert('Error: ' + (data.error || 'No se pudo guardar.'));
+        } catch (e) {
+            alert('Error al guardar la configuración.');
+        }
+    }
 
     async function loadCatalog() {
         try {
@@ -204,8 +346,8 @@
             let dynamicCols = '';
             if (hasDynamicFields) {
                 dynamicCols = `
-                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 truncate max-w-[150px]" contenteditable="true" onblur="updateField(this, 'custom_attributes')">${p.custom_attributes || ''}</td>
-                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 truncate max-w-[150px]" contenteditable="true" onblur="updateField(this, 'price_rules')">${p.price_rules || ''}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 whitespace-normal break-words min-w-[200px] max-w-[280px]" contenteditable="true" onblur="updateField(this, 'custom_attributes')">${p.custom_attributes || ''}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300 border-x border-slate-800/30 whitespace-normal break-words min-w-[200px] max-w-[280px]" contenteditable="true" onblur="updateField(this, 'price_rules')">${p.price_rules || ''}</td>
                 `;
             }
 
@@ -242,7 +384,25 @@
             return;
         }
         currentUploadId = id;
-        document.getElementById('imageUploadInput').click();
+        document.getElementById('imageUrlInput').value = '';
+        document.getElementById('imageSourceModal').classList.remove('hidden');
+    }
+
+    function closeImageSourceModal() {
+        document.getElementById('imageSourceModal').classList.add('hidden');
+    }
+
+    async function saveImageUrl() {
+        const url = document.getElementById('imageUrlInput').value.trim();
+        if(!url) return alert("Pegá una URL primero.");
+        if(!/^https?:\/\//i.test(url)) return alert("La URL debe empezar con http:// o https://");
+
+        const prod = catalogData.find(p => p.id === currentUploadId);
+        if(!prod) return;
+        prod.image_path = url;
+        await saveProduct(prod);
+        closeImageSourceModal();
+        renderTable(catalogData);
     }
 
     async function updateField(cell, field, type = 'text') {
@@ -321,6 +481,118 @@
         } catch(e) { console.error(e); }
     }
 
+    // Modal Pegar desde Excel
+    function openPasteModal() {
+        document.getElementById('pasteArea').value = '';
+        document.getElementById('pasteModal').classList.remove('hidden');
+    }
+    function closePasteModal() { document.getElementById('pasteModal').classList.add('hidden'); }
+
+    function parseMoney(raw) {
+        const cleaned = String(raw || '').replace(/[^0-9.,-]+/g, '');
+        if(!cleaned) return 0;
+        // Formato AR "1.450,50" -> la coma es la última separadora => es el decimal
+        if(cleaned.includes(',') && cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+            return parseFloat(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+        }
+        return parseFloat(cleaned.replace(/,/g, '')) || 0;
+    }
+
+    async function processPaste() {
+        const raw = document.getElementById('pasteArea').value;
+        if(!raw.trim()) return alert("Pegá filas primero.");
+
+        const rows = raw.split(/\r\n|\n|\r/).map(r => r.trim()).filter(r => r.length > 0);
+        if(rows.length === 0) return alert("No se encontraron filas.");
+
+        // Validar cantidad de columnas para detectar filas con alguna columna faltante
+        // (ej. si te olvidás de "Mínimo", todo lo de la derecha se corre de lugar)
+        const minCols = hasDynamicFields ? 7 : 5; // hasta "Precios x Rango" o hasta "Mínimo"; Imagen es opcional
+        const badRows = [];
+        rows.forEach((row, idx) => {
+            if (row.split('\t').length < minCols) badRows.push(idx + 1);
+        });
+        if (badRows.length > 0) {
+            const expectedText = hasDynamicFields
+                ? 'SKU, Nombre, Precio, Stock, Mínimo, Atributos Extra, Precios x Rango (e Imagen opcional)'
+                : 'SKU, Nombre, Precio, Stock, Mínimo (e Imagen opcional)';
+            const proceed = confirm(
+                `Atención: la fila ${badRows.join(', ')} tiene menos columnas de las esperadas (parece que falta alguna, ej. "Mínimo"). ` +
+                `El orden esperado es: ${expectedText}. Si continuás, esas filas van a cargarse con los datos corridos de columna.\n\n` +
+                `¿Querés continuar de todos modos?`
+            );
+            if (!proceed) return;
+        }
+
+        const btn = document.getElementById('pasteSubmitBtn');
+        btn.disabled = true;
+        btn.textContent = 'Cargando...';
+
+        let imported = 0, errors = 0;
+        for (const row of rows) {
+            const cells = row.split('\t');
+            const [sku, name, priceRaw, stockRaw, minRaw, col6, col7, col8] = cells;
+            if(!name || !name.trim()) continue;
+
+            const product = {
+                sku: (sku || '').trim(),
+                name: name.trim(),
+                price: parseMoney(priceRaw),
+                stock: parseInt(String(stockRaw || '0').replace(/[^0-9-]/g, '')) || 0,
+                min_quantity: parseInt(String(minRaw || '1').replace(/[^0-9-]/g, '')) || 1,
+                is_active: true
+            };
+
+            if (hasDynamicFields) {
+                product.custom_attributes = (col6 || '').trim() || null;
+                product.price_rules = (col7 || '').trim() || null;
+                if (col8 && col8.trim()) product.image_path = col8.trim();
+            } else if (col6 && col6.trim()) {
+                product.image_path = col6.trim();
+            }
+
+            try {
+                const res = await fetch('/api/admin/catalog/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(product)
+                });
+                const data = await res.json();
+                if (data.status === 'ok') imported++; else errors++;
+            } catch (e) { errors++; }
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Cargar Productos';
+        closePasteModal();
+        await loadCatalog();
+        alert(`Listo. Se cargaron ${imported} productos.${errors ? ` (${errors} con error)` : ''}`);
+    }
+
+    // Modal Vaciar Catálogo
+    function openClearCatalogModal() {
+        document.getElementById('clearCatalogCount').textContent = catalogData.length;
+        document.getElementById('clearCatalogInput').value = '';
+        document.getElementById('clearCatalogModal').classList.remove('hidden');
+    }
+    function closeClearCatalogModal() { document.getElementById('clearCatalogModal').classList.add('hidden'); }
+    async function confirmClearCatalog() {
+        const typed = document.getElementById('clearCatalogInput').value.trim().toUpperCase();
+        if (typed !== 'BORRAR TODO') {
+            alert('Tenés que escribir exactamente "BORRAR TODO" para confirmar.');
+            return;
+        }
+        try {
+            const res = await fetch('/api/admin/catalog/clear_all', { method: 'DELETE' });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                closeClearCatalogModal();
+                await loadCatalog();
+                alert(`Catálogo vaciado. Se eliminaron ${data.deleted_count} productos.`);
+            } else alert("Error: " + (data.error || 'No se pudo vaciar el catálogo.'));
+        } catch (e) { alert("Error al vaciar el catálogo."); }
+    }
+
     // Modal Ajuste Masivo
     function openMassUpdateModal() { document.getElementById('massUpdateModal').classList.remove('hidden'); }
     function closeMassUpdateModal() { document.getElementById('massUpdateModal').classList.add('hidden'); }
@@ -345,6 +617,78 @@
         } catch(err) { alert("Error"); }
     }
 </script>
+
+<!-- Modal Imagen (Subir Archivo o Pegar URL) -->
+<div id="imageSourceModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-md animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white">Imagen del Producto</h3>
+            <button onclick="closeImageSourceModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <div class="space-y-4">
+            <button onclick="document.getElementById('imageUploadInput').click()" class="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 border border-slate-700">
+                <i data-lucide="upload" class="w-4 h-4 text-sky-400"></i> Subir desde mi PC
+            </button>
+            <div class="flex items-center gap-2 text-xs text-slate-500">
+                <div class="flex-1 h-px bg-slate-800"></div> o pegar un link <div class="flex-1 h-px bg-slate-800"></div>
+            </div>
+            <div class="flex gap-2">
+                <input type="text" id="imageUrlInput" placeholder="https://..." class="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <button onclick="saveImageUrl()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Usar</button>
+            </div>
+            <p class="text-xs text-slate-500">Pegá la URL directa de la imagen (que la foto ya esté alojada en otro sitio: tu web, Google Drive público, etc). El bot la va a usar tal cual para mandarla por WhatsApp o Telegram.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Pegar desde Excel -->
+<div id="pasteModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-3xl animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-bold text-white">Pegar desde Excel</h3>
+            <button onclick="closePasteModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <p class="text-sm text-slate-400 mb-3">
+            En tu Excel/Google Sheets ordená las columnas exactamente así (de izquierda a derecha), seleccioná ese rango de celdas, copialo (Ctrl+C) y pegalo (Ctrl+V) en el cuadro de abajo. <strong>No incluyas la fila de títulos.</strong>
+        </p>
+        <div class="bg-slate-900/50 border border-slate-800 rounded-lg p-3 mb-4 text-xs text-slate-300 font-mono overflow-x-auto whitespace-nowrap">
+            SKU &nbsp;→&nbsp; Nombre &nbsp;→&nbsp; Precio &nbsp;→&nbsp; Stock &nbsp;→&nbsp; Mínimo
+            {% if settings.feat_catalog_dynamic_fields %}&nbsp;→&nbsp; Atributos Extra &nbsp;→&nbsp; Precios x Rango{% endif %}
+            &nbsp;→&nbsp; Imagen (URL, opcional)
+        </div>
+        <textarea id="pasteArea" rows="10" placeholder="Pegá acá (Ctrl+V) las celdas copiadas de Excel..." class="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+        <p class="text-xs text-slate-500 mt-2">
+            Si tu Excel tiene una columna separada por cada rango de cantidad (ej. "200 a 499", "500 a 999"...), primero armá en tu planilla una única columna con el texto combinado antes de copiar. Ej: <em>"200 a 499 = $757,50 | 500 a 999 = $549,60"</em>. Mirá "¿Cómo funciona?" para el detalle de ese formato.
+        </p>
+        <div class="flex gap-3 mt-4">
+            <button onclick="closePasteModal()" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button id="pasteSubmitBtn" onclick="processPaste()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors shadow-lg shadow-brand-500/20">Cargar Productos</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Vaciar Catálogo -->
+<div id="clearCatalogModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-red-900/50 rounded-2xl p-6 w-full max-w-md animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i> Vaciar Catálogo
+            </h3>
+            <button onclick="closeClearCatalogModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <p class="text-sm text-slate-300 mb-2">
+            Esta acción va a eliminar <strong class="text-red-400"><span id="clearCatalogCount">0</span> productos</strong> de tu catálogo, de forma <strong>permanente e irreversible</strong>.
+        </p>
+        <p class="text-sm text-slate-400 mb-4">
+            Para confirmar, escribí <strong class="text-white">BORRAR TODO</strong> en el campo de abajo:
+        </p>
+        <input type="text" id="clearCatalogInput" placeholder="BORRAR TODO" class="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-red-500 outline-none mb-4">
+        <div class="flex gap-3">
+            <button onclick="closeClearCatalogModal()" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="confirmClearCatalog()" class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors">Eliminar Todo</button>
+        </div>
+    </div>
+</div>
 
 <!-- Modal Ajuste Masivo -->
 <div id="massUpdateModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
@@ -411,7 +755,7 @@
 
             <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
                 <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="image" class="w-4 h-4 text-sky-400"></i> 2. ¿Cómo subo fotos?</h4>
-                <p>Si la columna "Imagen" tiene un cuadrito gris con un paisaje, hacé <strong>clic ahí mismo</strong>. Elegí la foto de tu compu y se va a cargar de inmediato en esa fila. (Nota: Si es un producto nuevo recién creado, ponele primero un Nombre y salí de la celda para que se genere, y después subile la foto).</p>
+                <p>Si la columna "Imagen" tiene un cuadrito gris con un paisaje, hacé <strong>clic ahí mismo</strong>. Se abre una ventanita con dos opciones: <strong>"Subir desde mi PC"</strong> (elegís el archivo de tu compu) o <strong>pegar un link</strong> si la foto ya está alojada en otro lado (tu web, Google Drive público, etc). Cualquiera de las dos formas se guarda al instante. (Nota: Si es un producto nuevo recién creado, ponele primero un Nombre y salí de la celda para que se genere, y después cargale la foto).</p>
             </div>
 
             <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
@@ -426,12 +770,23 @@
                     <li><strong>Atributos Extra:</strong> Escribí normal. Ej: <em>"Talle: L, Color: Rojo"</em>. El bot leerá esto para contestarle al cliente.</li>
                     <li><strong>Precios x Rango:</strong> Para hacer descuentos mayoristas. Escribí: <em>"10 a 50 = $8000 | Más de 50 = $7000"</em>. Si un cliente le pide 15 unidades por WhatsApp, el bot le aplicará automáticamente el precio de $8000 en lugar del precio base.</li>
                 </ul>
+                <div class="mt-3 pt-3 border-t border-slate-800/70 bg-amber-500/5 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl">
+                    <p class="text-amber-400 font-semibold flex items-center gap-1.5 mb-2"><i data-lucide="alert-triangle" class="w-4 h-4"></i> Importante si usás Precios x Rango:</p>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><strong>¿Qué va en la columna "Precio" (base)?</strong> Es el precio para las cantidades que NO están cubiertas por ningún rango. Ej: si tus rangos arrancan en 10 unidades ("10 a 50 = $8000..."), el precio base es el que se cobra por comprar menos de 10. Si tu producto no se vende por debajo del primer rango, poné ahí el precio del primer tramo como referencia.</li>
+                        <li><strong>¿Y la columna "Mín." (Cantidad Mínima)?</strong> Si el producto NO se vende por debajo del primer rango (ej. mínimo 10 unidades), poné ese número en <strong>Mín.</strong> (ej. <strong>10</strong>). Así el bot no le va a ofrecer al cliente comprar menos de esa cantidad.</li>
+                    </ul>
+                </div>
             </div>
             {% endif %}
             
             <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800">
                 <h4 class="font-bold text-white text-base mb-2 flex items-center gap-2"><i data-lucide="file-spreadsheet" class="w-4 h-4 text-green-400"></i> 5. Importar desde Excel</h4>
-                <p>Hacé clic en "Importar CSV". El archivo que subas debe tener formato <strong>.csv</strong> (separado por comas) y contener las columnas: <em>SKU, Nombre, Precio, Stock</em>. Se agregarán todos de golpe al catálogo.</p>
+                <p>Tenés dos formas de cargar muchos productos de golpe:</p>
+                <ul class="list-disc pl-5 space-y-2 mt-2">
+                    <li><strong>Importar CSV:</strong> subís un archivo <strong>.csv</strong> (separado por comas) con las columnas <em>SKU, Nombre, Precio, Stock</em>.</li>
+                    <li><strong>Pegar desde Excel:</strong> si ya tenés el catálogo armado en Excel o Google Sheets, seleccioná las filas y columnas (SKU, Nombre, Precio, Stock, Mínimo{% if settings.feat_catalog_dynamic_fields %}, Atributos Extra, Precios x Rango{% endif %} e Imagen/URL, en ese orden, sin títulos), copialas (Ctrl+C) y pegalas en la ventana que se abre con el botón <strong>"Pegar desde Excel"</strong>. Se cargan todas de una sin necesidad de guardar el archivo como CSV.</li>
+                </ul>
             </div>
         </div>
         

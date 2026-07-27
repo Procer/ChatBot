@@ -1,0 +1,812 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Biblioteca de Documentos - ZSG-Bot-iA{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-6 max-w-[1600px] mx-auto w-full animate-fade-in overflow-y-auto custom-scrollbar">
+    <!-- Encabezado -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="library" class="w-6 h-6 text-brand-500"></i>
+                Biblioteca de Documentos
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">
+                Configurá segmentos, documentos y accesos para que el bot busque y envíe archivos según lo que pida cada usuario.
+            </p>
+        </div>
+    </div>
+
+    <div id="gdriveOauthErrorBanner" class="hidden bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm rounded-lg p-3 mb-6 flex items-start gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0"></i>
+        <span>No se pudo conectar con Google Drive. Es probable que la app OAuth de Google no esté configurada todavía — pedile a un Súper Admin que la cargue en el panel Modo Dios (Integraciones Globales).</span>
+    </div>
+    <div id="gdriveOauthOkBanner" class="hidden bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm rounded-lg p-3 mb-6 flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+        <span>Google Drive conectado correctamente.</span>
+    </div>
+
+    <!-- Configuración: frases gatillo -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+            <i data-lucide="zap" class="w-4 h-4 text-brand-500"></i> Frases gatillo generales
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">
+            El bot solo busca documentos cuando el mensaje del usuario contiene alguna de estas palabras/frases (además de las palabras clave propias de cada documento). Separadas por coma.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-3">
+            <input type="text" id="triggerPhrasesInput" placeholder="manual, reglamento, enviame el documento de..." class="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            <button onclick="saveSettings()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+        </div>
+    </div>
+
+    <!-- Segmentos -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="shield" class="w-4 h-4 text-brand-500"></i> Segmentos
+            </h2>
+            <button onclick="openSegmentModal()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Segmento
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        <th class="py-2 pr-3">Nombre</th>
+                        <th class="py-2 pr-3">Acceso</th>
+                        <th class="py-2 pr-3">Sesión</th>
+                        <th class="py-2 pr-3">Activo</th>
+                        <th class="py-2 pr-3 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="segmentsTableBody"></tbody>
+            </table>
+            <p id="segmentsEmptyState" class="text-slate-500 text-sm py-4 hidden">Todavía no creaste ningún segmento.</p>
+        </div>
+    </div>
+
+    <!-- Google Drive -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <i data-lucide="cloud" class="w-4 h-4 text-brand-500"></i> Google Drive
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">
+            Sincronizá documentos directo desde una carpeta de Drive: una subcarpeta por segmento (ej. "Choferes"), mismo nombre que el segmento ya creado arriba. El bot indexa título y palabras clave; el archivo se trae fresco desde Drive recién al momento de enviarlo, sin guardar copia permanente.
+        </p>
+
+        <details id="gdriveSetupInstructions" class="mb-4 bg-slate-900/50 border border-slate-800 rounded-lg text-xs text-slate-400">
+            <summary class="cursor-pointer select-none px-3 py-2 font-semibold text-slate-300 flex items-center gap-2">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-brand-500"></i> Paso a paso: cómo configurar la conexión con Google Drive
+            </summary>
+            <div class="px-3 pb-3 pt-1 space-y-4 border-t border-slate-800 pt-3">
+                <p>Esto se configura <strong class="text-slate-300">una vez por cliente</strong>: cada cliente tiene su propio proyecto y su propia app OAuth en Google Cloud (no se comparte con otros clientes del sistema). El Client ID/Secret se cargan desde <a href="/super-admin" class="text-brand-400 hover:underline">el panel Súper Admin</a> (botón de engranaje de este cliente → sección "Google Drive"), pero acá te dejamos la guía completa.</p>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">1. Crear el proyecto en Google Cloud</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Entrá a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener" class="text-brand-400 hover:underline">console.cloud.google.com</a> logueado con la cuenta de Google del cliente (o la que administre su Drive).</li>
+                        <li>Arriba a la izquierda, al lado del logo de Google Cloud, click en el selector de proyecto (dice "Seleccionar un proyecto" o el nombre de otro proyecto).</li>
+                        <li>Click en <strong class="text-slate-300">"Proyecto nuevo"</strong>, poné un nombre (ej: "Bot Documentos - [Nombre del Cliente]") y click en <strong class="text-slate-300">"Crear"</strong>.</li>
+                        <li>Esperá unos segundos y volvé a abrir el selector de proyecto para elegir el que acabás de crear (tiene que quedar seleccionado antes de seguir).</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">2. Habilitar la Google Drive API</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Menú de tres líneas (☰) arriba a la izquierda → <strong class="text-slate-300">"APIs y servicios"</strong> → <strong class="text-slate-300">"Biblioteca"</strong>.</li>
+                        <li>En el buscador escribí <strong class="text-slate-300">"Google Drive API"</strong> y hacé click en el resultado.</li>
+                        <li>Click en el botón azul <strong class="text-slate-300">"Habilitar"</strong>.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">3. Configurar la pantalla de consentimiento</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Pantalla de consentimiento de OAuth"</strong>.</li>
+                        <li>Tipo de usuario: elegí <strong class="text-slate-300">"Externo"</strong> → "Crear".</li>
+                        <li>Completá "Nombre de la aplicación" (ej: el nombre del bot), tu email en "Correo electrónico de asistencia al usuario" y en "Datos de contacto del desarrollador" → "Guardar y continuar".</li>
+                        <li>En la pantalla de "Permisos"/Scopes no hace falta tocar nada → "Guardar y continuar".</li>
+                        <li>En <strong class="text-slate-300">"Usuarios de prueba"</strong> → "+ Add Users" → agregá el email de Gmail/Workspace de la cuenta cuyo Drive se va a conectar (mientras la app esté en modo "Prueba", SOLO esa cuenta va a poder conectarse) → "Guardar y continuar".</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">4. Crear las credenciales OAuth</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Credenciales"</strong>.</li>
+                        <li>Click en <strong class="text-slate-300">"+ Crear credenciales"</strong> (arriba) → <strong class="text-slate-300">"ID de cliente de OAuth"</strong>.</li>
+                        <li>En "Tipo de aplicación" elegí <strong class="text-slate-300">"Aplicación web"</strong>. Nombre: el que quieras (ej: "Bot WhatsApp").</li>
+                        <li>Bajá hasta <strong class="text-slate-300">"URI de redireccionamiento autorizados"</strong> → "+ Añadir URI" → pegá exactamente esta URL (copiala tal cual, sin espacios):
+                            <code id="gdriveRedirectUriHint" class="block mt-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-slate-300 break-all select-all"></code>
+                        </li>
+                        <li>Click en <strong class="text-slate-300">"Crear"</strong>.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">5. Copiar y pegar en el panel Súper Admin</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Google va a mostrar un cuadro con <strong class="text-slate-300">"Tu ID de cliente"</strong> y <strong class="text-slate-300">"Tu secreto de cliente"</strong>. Copiá cada uno.</li>
+                        <li>Andá a <a href="/super-admin" class="text-brand-400 hover:underline">/super-admin</a>, click en el ícono de engranaje de este cliente, sección "Google Drive", pegá el Client ID y el Client Secret y guardá con "Guardar Configuración".</li>
+                        <li>Si cerraste ese cuadro sin copiar el secreto, volvé a "Credenciales" en Google Cloud, hacé click en el nombre de la credencial creada y ahí podés volver a verlo (o generar uno nuevo con "Restablecer secreto").</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="font-bold text-slate-300 mb-1">6. Conectar la cuenta de Drive</p>
+                    <ul class="list-disc list-inside space-y-1 pl-1">
+                        <li>Volvé a esta página y apretá <strong class="text-slate-300">"Conectar con Google Drive"</strong> más abajo.</li>
+                        <li>Elegí la cuenta de Google que agregaste como "usuario de prueba" en el paso 3.</li>
+                        <li>Es normal que Google muestre un aviso <strong class="text-slate-300">"Google no verificó esta app"</strong> (porque la app está en modo prueba, no publicada) → click en "Avanzado" → "Ir a [nombre de tu app] (no seguro)". No es un problema real, es tu propia app.</li>
+                        <li>Aceptá el permiso de solo lectura de Drive y listo.</li>
+                    </ul>
+                </div>
+            </div>
+        </details>
+
+        <div id="gdriveNotConnectedBox" class="hidden">
+            <a href="/api/admin/gdrive/oauth/start" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">
+                <i data-lucide="link" class="w-4 h-4"></i> Conectar con Google Drive
+            </a>
+        </div>
+
+        <div id="gdriveConnectedBox" class="hidden space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <span class="text-sm text-emerald-400 flex items-center gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    Conectado como <span id="gdriveEmail" class="text-white font-medium"></span>
+                </span>
+                <button onclick="disconnectGDrive()" class="text-xs text-red-400 hover:text-red-300">Desconectar</button>
+            </div>
+            <div id="gdriveNeedsReconnect" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-2">
+                El acceso fue revocado o expiró. Reconectá para seguir sincronizando.
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                <input type="text" id="gdriveFolderInput" placeholder="Pegá el link o ID de la carpeta raíz en Drive" class="flex-1 w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <button onclick="setGDriveRootFolder()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 whitespace-nowrap">Usar esta carpeta</button>
+            </div>
+            <p class="text-xs text-slate-500">Carpeta actual: <span id="gdriveRootFolderName" class="text-slate-300">Ninguna configurada</span></p>
+
+            <div class="flex items-center gap-3">
+                <button onclick="syncGDriveNow()" id="gdriveSyncBtn" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sincronizar ahora
+                </button>
+                <span id="gdriveLastSync" class="text-xs text-slate-500"></span>
+            </div>
+            <p id="gdriveSyncSummary" class="text-xs text-slate-400 hidden"></p>
+        </div>
+    </div>
+
+    <!-- Documentos -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="file-text" class="w-4 h-4 text-brand-500"></i> Documentos
+            </h2>
+            <div class="flex items-center gap-2">
+                <button onclick="document.getElementById('bulkUploadInput').click()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-1">
+                    <i data-lucide="upload" class="w-3.5 h-3.5 text-sky-400"></i> Cargar varios documentos
+                </button>
+                <input type="file" id="bulkUploadInput" class="hidden" multiple onchange="handleBulkDocumentUpload(event)">
+                <button onclick="openDocumentModal()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Documento
+                </button>
+            </div>
+        </div>
+        <p id="bulkUploadProgress" class="text-xs text-brand-400 mb-2 hidden"></p>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        <th class="py-2 pr-3">Título</th>
+                        <th class="py-2 pr-3">Palabras clave</th>
+                        <th class="py-2 pr-3">Segmentos</th>
+                        <th class="py-2 pr-3">Archivo</th>
+                        <th class="py-2 pr-3">Activo</th>
+                        <th class="py-2 pr-3 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="documentsTableBody"></tbody>
+            </table>
+            <p id="documentsEmptyState" class="text-slate-500 text-sm py-4 hidden">Todavía no cargaste ningún documento.</p>
+        </div>
+    </div>
+
+    <!-- Usuarios de Biblioteca -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-10">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                <i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Usuarios de Biblioteca
+                <span class="text-xs font-normal text-slate-500">(credenciales individuales para segmentos protegidos)</span>
+            </h2>
+            <button onclick="openUserModal()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Usuario
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        <th class="py-2 pr-3">Usuario</th>
+                        <th class="py-2 pr-3">Nombre</th>
+                        <th class="py-2 pr-3">Segmentos</th>
+                        <th class="py-2 pr-3">Activo</th>
+                        <th class="py-2 pr-3 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+            </table>
+            <p id="usersEmptyState" class="text-slate-500 text-sm py-4 hidden">Todavía no creaste ningún usuario de biblioteca.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Segmento -->
+<div id="segmentModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-md animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white" id="segmentModalTitle">Nuevo Segmento</h3>
+            <button onclick="closeModal('segmentModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="segmentId">
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Nombre del segmento</label>
+                <input type="text" id="segmentName" placeholder="Ej: Choferes" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <label class="flex items-center gap-3 cursor-pointer p-2">
+                <input type="checkbox" id="segmentIsPublic" onchange="onToggleSegmentPublic()" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                <span class="text-sm text-white">Público (cualquier usuario puede buscar sus documentos sin clave)</span>
+            </label>
+            <div id="segmentAuthBox" class="space-y-3 pl-2 border-l-2 border-slate-800">
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Modo de acceso</label>
+                    <select id="segmentAuthMode" onchange="onToggleSegmentAuthMode()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                        <option value="generic">Clave genérica (una sola clave para todo el segmento)</option>
+                        <option value="individual">Usuario y clave individual por persona</option>
+                    </select>
+                </div>
+                <div id="segmentGenericPasswordBox">
+                    <label class="text-xs text-slate-400 block mb-1">Clave genérica (dejar vacío para no cambiarla)</label>
+                    <input type="text" id="segmentGenericPassword" placeholder="••••••" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Vencimiento de sesión (días, vacío = permanente)</label>
+                    <input type="number" id="segmentExpiryDays" min="0" placeholder="Permanente" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+            </div>
+            <label class="flex items-center gap-3 cursor-pointer p-2">
+                <input type="checkbox" id="segmentIsActive" checked class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                <span class="text-sm text-white">Activo</span>
+            </label>
+        </div>
+        <div class="flex gap-3 mt-5">
+            <button onclick="closeModal('segmentModal')" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="saveSegment()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Documento -->
+<div id="documentModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-lg animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white" id="documentModalTitle">Nuevo Documento</h3>
+            <button onclick="closeModal('documentModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="documentId">
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Título</label>
+                <input type="text" id="documentTitle" placeholder="Ej: Manual del Conductor 2026" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Palabras clave / alias (separadas por coma)</label>
+                <input type="text" id="documentKeywords" placeholder="manual chofer, reglamento de manejo" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <p class="text-xs text-slate-500 mt-1">El bot busca por título y estas palabras clave. Nunca lee el contenido del archivo.</p>
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Descripción (uso interno, opcional)</label>
+                <textarea id="documentDescription" rows="2" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Segmentos (dejar todos sin marcar = público para cualquiera)</label>
+                <div id="documentSegmentsBox" class="flex flex-wrap gap-3 p-2 bg-slate-900/50 border border-slate-800 rounded-lg"></div>
+            </div>
+            <div id="documentFileBox">
+                <label class="text-xs text-slate-400 block mb-1">Archivo</label>
+                <div class="flex items-center gap-3">
+                    <button onclick="document.getElementById('documentFileInput').click()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-2">
+                        <i data-lucide="upload" class="w-3.5 h-3.5 text-sky-400"></i> Subir archivo
+                    </button>
+                    <span id="documentFileLabel" class="text-xs text-slate-500">Ningún archivo cargado</span>
+                </div>
+                <input type="file" id="documentFileInput" class="hidden" onchange="handleDocumentFileUpload(event)">
+                <p class="text-xs text-slate-500 mt-1">Primero guardá el documento (para obtener su ID) y luego subí el archivo.</p>
+            </div>
+            <p id="documentGDriveNote" class="text-xs text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded-lg p-2 hidden">
+                Este documento se sincroniza desde Google Drive — el archivo se trae directo de ahí, no se sube manualmente.
+            </p>
+            <label class="flex items-center gap-3 cursor-pointer p-2">
+                <input type="checkbox" id="documentIsActive" checked class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                <span class="text-sm text-white">Activo</span>
+            </label>
+        </div>
+        <div class="flex gap-3 mt-5">
+            <button onclick="closeModal('documentModal')" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="saveDocument()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Usuario de Biblioteca -->
+<div id="userModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-md animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white" id="userModalTitle">Nuevo Usuario de Biblioteca</h3>
+            <button onclick="closeModal('userModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="libUserId">
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Usuario</label>
+                <input type="text" id="libUsername" placeholder="jperez" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Clave (dejar vacío en edición para no cambiarla)</label>
+                <input type="text" id="libPassword" placeholder="••••••" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Nombre para mostrar (opcional)</label>
+                <input type="text" id="libFullName" placeholder="Juan Pérez" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Segmentos con acceso</label>
+                <div id="userSegmentsBox" class="flex flex-wrap gap-3 p-2 bg-slate-900/50 border border-slate-800 rounded-lg"></div>
+            </div>
+            <label class="flex items-center gap-3 cursor-pointer p-2">
+                <input type="checkbox" id="libIsActive" checked class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                <span class="text-sm text-white">Activo</span>
+            </label>
+        </div>
+        <div class="flex gap-3 mt-5">
+            <button onclick="closeModal('userModal')" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="saveLibraryUser()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let segmentsData = [];
+    let documentsData = [];
+    let usersData = [];
+
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    function openModalEl(id) { document.getElementById(id).classList.remove('hidden'); }
+
+    function cleanTitleFromFilename(filename) {
+        const withoutExt = filename.replace(/\.[^/.]+$/, '');
+        const spaced = withoutExt.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+        return spaced.replace(/\p{L}+/gu, w => w.charAt(0).toLocaleUpperCase() + w.slice(1).toLocaleLowerCase());
+    }
+
+    async function loadAll() {
+        const [segRes, docRes, userRes, settingsRes] = await Promise.all([
+            fetch('/api/admin/document_library/segments'),
+            fetch('/api/admin/document_library/documents'),
+            fetch('/api/admin/document_library/users'),
+            fetch('/api/admin/document_library/settings'),
+        ]);
+        segmentsData = await segRes.json();
+        documentsData = await docRes.json();
+        usersData = await userRes.json();
+        const settings = await settingsRes.json();
+
+        document.getElementById('triggerPhrasesInput').value = (settings.trigger_phrases || []).join(', ');
+
+        renderSegmentsTable();
+        renderDocumentsTable();
+        renderUsersTable();
+        if (window.lucide) lucide.createIcons();
+    }
+
+    async function saveSettings() {
+        const raw = document.getElementById('triggerPhrasesInput').value;
+        const phrases = raw.split(',').map(s => s.trim()).filter(Boolean);
+        await fetch('/api/admin/document_library/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trigger_phrases: phrases })
+        });
+    }
+
+    // ---------- SEGMENTOS ----------
+
+    function renderSegmentsTable() {
+        const body = document.getElementById('segmentsTableBody');
+        body.innerHTML = '';
+        document.getElementById('segmentsEmptyState').classList.toggle('hidden', segmentsData.length > 0);
+        segmentsData.forEach(s => {
+            const accessLabel = s.is_public
+                ? '<span class="text-emerald-400">Público</span>'
+                : `<span class="text-amber-400">Protegido (${s.auth_mode === 'individual' ? 'usuario y clave' : 'clave genérica'})</span>`;
+            const sessionLabel = s.is_public ? '-' : (s.session_expiry_days ? `${s.session_expiry_days} días` : 'Permanente');
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-slate-800/50';
+            tr.innerHTML = `
+                <td class="py-2 pr-3 text-white font-medium">${s.name}</td>
+                <td class="py-2 pr-3">${accessLabel}</td>
+                <td class="py-2 pr-3 text-slate-400">${sessionLabel}</td>
+                <td class="py-2 pr-3">${s.is_active ? '<span class="text-emerald-400">Sí</span>' : '<span class="text-slate-500">No</span>'}</td>
+                <td class="py-2 pr-3 text-right space-x-2">
+                    <button onclick="openSegmentModal(${s.id})" class="text-slate-400 hover:text-white"><i data-lucide="pencil" class="w-4 h-4 inline"></i></button>
+                    <button onclick="deleteSegment(${s.id})" class="text-slate-400 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4 inline"></i></button>
+                </td>`;
+            body.appendChild(tr);
+        });
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function onToggleSegmentPublic() {
+        document.getElementById('segmentAuthBox').classList.toggle('hidden', document.getElementById('segmentIsPublic').checked);
+    }
+    function onToggleSegmentAuthMode() {
+        const isGeneric = document.getElementById('segmentAuthMode').value === 'generic';
+        document.getElementById('segmentGenericPasswordBox').classList.toggle('hidden', !isGeneric);
+    }
+
+    function openSegmentModal(id = null) {
+        const s = id ? segmentsData.find(x => x.id === id) : null;
+        document.getElementById('segmentModalTitle').textContent = s ? 'Editar Segmento' : 'Nuevo Segmento';
+        document.getElementById('segmentId').value = s ? s.id : '';
+        document.getElementById('segmentName').value = s ? s.name : '';
+        document.getElementById('segmentIsPublic').checked = s ? s.is_public : true;
+        document.getElementById('segmentAuthMode').value = s ? s.auth_mode : 'generic';
+        document.getElementById('segmentGenericPassword').value = '';
+        document.getElementById('segmentExpiryDays').value = (s && s.session_expiry_days) ? s.session_expiry_days : '';
+        document.getElementById('segmentIsActive').checked = s ? s.is_active : true;
+        onToggleSegmentPublic();
+        onToggleSegmentAuthMode();
+        openModalEl('segmentModal');
+    }
+
+    async function saveSegment() {
+        const name = document.getElementById('segmentName').value.trim();
+        if (!name) { alert('El nombre del segmento es obligatorio.'); return; }
+        const expiryRaw = document.getElementById('segmentExpiryDays').value;
+        const payload = {
+            id: document.getElementById('segmentId').value ? parseInt(document.getElementById('segmentId').value) : null,
+            name: name,
+            is_public: document.getElementById('segmentIsPublic').checked,
+            auth_mode: document.getElementById('segmentAuthMode').value,
+            generic_password: document.getElementById('segmentGenericPassword').value || null,
+            session_expiry_days: expiryRaw ? parseInt(expiryRaw) : null,
+            is_active: document.getElementById('segmentIsActive').checked,
+        };
+        await fetch('/api/admin/document_library/segments/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        closeModal('segmentModal');
+        await loadAll();
+    }
+
+    async function deleteSegment(id) {
+        if (!confirm('¿Eliminar este segmento? Los documentos que lo tengan asignado dejarán de pedir acceso por este segmento.')) return;
+        await fetch(`/api/admin/document_library/segments/delete/${id}`, { method: 'DELETE' });
+        await loadAll();
+    }
+
+    // ---------- DOCUMENTOS ----------
+
+    function renderDocumentsTable() {
+        const body = document.getElementById('documentsTableBody');
+        body.innerHTML = '';
+        document.getElementById('documentsEmptyState').classList.toggle('hidden', documentsData.length > 0);
+        documentsData.forEach(d => {
+            const segNames = (d.segment_ids || []).map(sid => {
+                const s = segmentsData.find(x => x.id === sid);
+                return s ? s.name : null;
+            }).filter(Boolean).join(', ') || '<span class="text-slate-500">Todos (público)</span>';
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-slate-800/50';
+            tr.innerHTML = `
+                <td class="py-2 pr-3 text-white font-medium">${d.title}</td>
+                <td class="py-2 pr-3 text-slate-400 max-w-[220px] truncate">${d.keywords || ''}</td>
+                <td class="py-2 pr-3 text-slate-400">${segNames}</td>
+                <td class="py-2 pr-3">${d.source_type === 'gdrive' ? '<span class="text-sky-400 flex items-center gap-1"><i data-lucide="cloud" class="w-3.5 h-3.5 inline"></i> Google Drive</span>' : (d.file_path ? '<span class="text-emerald-400">Cargado</span>' : '<span class="text-red-400">Sin archivo</span>')}</td>
+                <td class="py-2 pr-3">${d.is_active ? '<span class="text-emerald-400">Sí</span>' : '<span class="text-slate-500">No</span>'}</td>
+                <td class="py-2 pr-3 text-right space-x-2">
+                    <button onclick="openDocumentModal(${d.id})" class="text-slate-400 hover:text-white"><i data-lucide="pencil" class="w-4 h-4 inline"></i></button>
+                    <button onclick="deleteDocument(${d.id})" class="text-slate-400 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4 inline"></i></button>
+                </td>`;
+            body.appendChild(tr);
+        });
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function renderSegmentCheckboxes(containerId, selectedIds) {
+        const box = document.getElementById(containerId);
+        box.innerHTML = '';
+        if (segmentsData.length === 0) {
+            box.innerHTML = '<span class="text-xs text-slate-500">Primero creá al menos un segmento.</span>';
+            return;
+        }
+        segmentsData.forEach(s => {
+            const label = document.createElement('label');
+            label.className = 'flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer';
+            label.innerHTML = `<input type="checkbox" class="segCheck" value="${s.id}" ${selectedIds.includes(s.id) ? 'checked' : ''}> ${s.name}`;
+            box.appendChild(label);
+        });
+    }
+
+    function openDocumentModal(id = null) {
+        const d = id ? documentsData.find(x => x.id === id) : null;
+        document.getElementById('documentModalTitle').textContent = d ? 'Editar Documento' : 'Nuevo Documento';
+        document.getElementById('documentId').value = d ? d.id : '';
+        document.getElementById('documentTitle').value = d ? d.title : '';
+        document.getElementById('documentKeywords').value = d ? d.keywords : '';
+        document.getElementById('documentDescription').value = d ? d.description : '';
+        document.getElementById('documentIsActive').checked = d ? d.is_active : true;
+        document.getElementById('documentFileLabel').textContent = (d && d.file_path) ? d.file_path.split('/').pop() : 'Ningún archivo cargado';
+        const isGDrive = d && d.source_type === 'gdrive';
+        document.getElementById('documentFileBox').classList.toggle('hidden', isGDrive);
+        document.getElementById('documentGDriveNote').classList.toggle('hidden', !isGDrive);
+        renderSegmentCheckboxes('documentSegmentsBox', d ? d.segment_ids : []);
+        openModalEl('documentModal');
+    }
+
+    async function saveDocument() {
+        const title = document.getElementById('documentTitle').value.trim();
+        if (!title) { alert('El título es obligatorio.'); return; }
+        const segmentIds = Array.from(document.querySelectorAll('#documentSegmentsBox .segCheck:checked')).map(el => parseInt(el.value));
+        const payload = {
+            id: document.getElementById('documentId').value ? parseInt(document.getElementById('documentId').value) : null,
+            title: title,
+            keywords: document.getElementById('documentKeywords').value || null,
+            description: document.getElementById('documentDescription').value || null,
+            segment_ids: segmentIds,
+            is_active: document.getElementById('documentIsActive').checked,
+        };
+        const res = await fetch('/api/admin/document_library/documents/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.id) document.getElementById('documentId').value = result.id;
+        await loadAll();
+    }
+
+    async function handleDocumentFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const titleInput = document.getElementById('documentTitle');
+        if (!titleInput.value.trim()) titleInput.value = cleanTitleFromFilename(file.name);
+
+        const docId = document.getElementById('documentId').value;
+        if (!docId) { alert('Primero guardá el documento (botón Guardar) y luego subí el archivo.'); return; }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`/api/admin/document_library/documents/upload_file/${docId}`, { method: 'POST', body: formData });
+        const result = await res.json();
+        if (result.file_path) {
+            document.getElementById('documentFileLabel').textContent = result.file_path.split('/').pop();
+        }
+        await loadAll();
+    }
+
+    async function handleBulkDocumentUpload(event) {
+        const files = Array.from(event.target.files || []);
+        if (files.length === 0) return;
+        const progressEl = document.getElementById('bulkUploadProgress');
+        progressEl.classList.remove('hidden');
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            progressEl.textContent = `Subiendo ${i + 1}/${files.length}: ${file.name}...`;
+            try {
+                const saveRes = await fetch('/api/admin/document_library/documents/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: cleanTitleFromFilename(file.name),
+                        segment_ids: [],
+                        is_active: true,
+                    })
+                });
+                const saveResult = await saveRes.json();
+                if (!saveResult.id) continue;
+
+                const formData = new FormData();
+                formData.append('file', file);
+                await fetch(`/api/admin/document_library/documents/upload_file/${saveResult.id}`, { method: 'POST', body: formData });
+            } catch (e) {
+                console.error('Error subiendo', file.name, e);
+            }
+        }
+
+        progressEl.textContent = `Listo: ${files.length} documento(s) cargado(s).`;
+        setTimeout(() => progressEl.classList.add('hidden'), 4000);
+        event.target.value = '';
+        await loadAll();
+    }
+
+    async function deleteDocument(id) {
+        if (!confirm('¿Eliminar este documento? También se borra el archivo del servidor.')) return;
+        await fetch(`/api/admin/document_library/documents/delete/${id}`, { method: 'DELETE' });
+        await loadAll();
+    }
+
+    // ---------- USUARIOS DE BIBLIOTECA ----------
+
+    function renderUsersTable() {
+        const body = document.getElementById('usersTableBody');
+        body.innerHTML = '';
+        document.getElementById('usersEmptyState').classList.toggle('hidden', usersData.length > 0);
+        usersData.forEach(u => {
+            const segNames = (u.segment_ids || []).map(sid => {
+                const s = segmentsData.find(x => x.id === sid);
+                return s ? s.name : null;
+            }).filter(Boolean).join(', ') || '<span class="text-slate-500">Ninguno</span>';
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-slate-800/50';
+            tr.innerHTML = `
+                <td class="py-2 pr-3 text-white font-medium">${u.username}</td>
+                <td class="py-2 pr-3 text-slate-400">${u.full_name || ''}</td>
+                <td class="py-2 pr-3 text-slate-400">${segNames}</td>
+                <td class="py-2 pr-3">${u.is_active ? '<span class="text-emerald-400">Sí</span>' : '<span class="text-slate-500">No</span>'}</td>
+                <td class="py-2 pr-3 text-right space-x-2">
+                    <button onclick="openUserModal(${u.id})" class="text-slate-400 hover:text-white"><i data-lucide="pencil" class="w-4 h-4 inline"></i></button>
+                    <button onclick="deleteLibraryUser(${u.id})" class="text-slate-400 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4 inline"></i></button>
+                </td>`;
+            body.appendChild(tr);
+        });
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function openUserModal(id = null) {
+        const u = id ? usersData.find(x => x.id === id) : null;
+        document.getElementById('userModalTitle').textContent = u ? 'Editar Usuario de Biblioteca' : 'Nuevo Usuario de Biblioteca';
+        document.getElementById('libUserId').value = u ? u.id : '';
+        document.getElementById('libUsername').value = u ? u.username : '';
+        document.getElementById('libPassword').value = '';
+        document.getElementById('libFullName').value = u ? u.full_name : '';
+        document.getElementById('libIsActive').checked = u ? u.is_active : true;
+        renderSegmentCheckboxes('userSegmentsBox', u ? u.segment_ids : []);
+        openModalEl('userModal');
+    }
+
+    async function saveLibraryUser() {
+        const username = document.getElementById('libUsername').value.trim();
+        if (!username) { alert('El usuario es obligatorio.'); return; }
+        const isNew = !document.getElementById('libUserId').value;
+        const password = document.getElementById('libPassword').value;
+        if (isNew && !password) { alert('La contraseña es obligatoria para un usuario nuevo.'); return; }
+        const segmentIds = Array.from(document.querySelectorAll('#userSegmentsBox .segCheck:checked')).map(el => parseInt(el.value));
+        const payload = {
+            id: isNew ? null : parseInt(document.getElementById('libUserId').value),
+            username: username,
+            password: password || null,
+            full_name: document.getElementById('libFullName').value || null,
+            segment_ids: segmentIds,
+            is_active: document.getElementById('libIsActive').checked,
+        };
+        const res = await fetch('/api/admin/document_library/users/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.status === 400) {
+            const err = await res.json();
+            alert(err.error || 'No se pudo guardar el usuario.');
+            return;
+        }
+        closeModal('userModal');
+        await loadAll();
+    }
+
+    async function deleteLibraryUser(id) {
+        if (!confirm('¿Eliminar este usuario de biblioteca?')) return;
+        await fetch(`/api/admin/document_library/users/delete/${id}`, { method: 'DELETE' });
+        await loadAll();
+    }
+
+    // ---------- GOOGLE DRIVE ----------
+
+    function timeAgo(isoString) {
+        if (!isoString) return 'nunca';
+        const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
+        const mins = Math.floor(diffMs / 60000);
+        if (mins < 1) return 'recién';
+        if (mins < 60) return `hace ${mins} min`;
+        const hs = Math.floor(mins / 60);
+        if (hs < 24) return `hace ${hs} hs`;
+        return `hace ${Math.floor(hs / 24)} días`;
+    }
+
+    async function loadGDriveStatus() {
+        const res = await fetch('/api/admin/gdrive/status');
+        const status = await res.json();
+
+        document.getElementById('gdriveNotConnectedBox').classList.toggle('hidden', !!status.connected);
+        document.getElementById('gdriveConnectedBox').classList.toggle('hidden', !status.connected);
+        if (!status.connected) return;
+
+        document.getElementById('gdriveEmail').textContent = status.email || '';
+        document.getElementById('gdriveNeedsReconnect').classList.toggle('hidden', !status.needs_reconnect);
+        document.getElementById('gdriveRootFolderName').textContent = status.root_folder_name || 'Ninguna configurada';
+        document.getElementById('gdriveLastSync').textContent = status.last_sync_at ? `Última sincronización: ${timeAgo(status.last_sync_at)}` : 'Todavía no se sincronizó';
+
+        const summaryEl = document.getElementById('gdriveSyncSummary');
+        if (status.last_sync_summary) {
+            const s = status.last_sync_summary;
+            const parts = [`${s.created ?? 0} nuevo(s)`];
+            if (s.unmapped_folders && s.unmapped_folders.length) parts.push(`${s.unmapped_folders.length} carpeta(s) sin segmento: ${s.unmapped_folders.join(', ')}`);
+            if (s.missing_in_drive) parts.push(`${s.missing_in_drive} ya no visto(s) en Drive`);
+            summaryEl.textContent = parts.join(' · ');
+            summaryEl.classList.remove('hidden');
+        } else {
+            summaryEl.classList.add('hidden');
+        }
+    }
+
+    async function disconnectGDrive() {
+        if (!confirm('¿Desconectar Google Drive? Los documentos ya sincronizados quedan en la biblioteca, pero dejan de poder enviarse hasta reconectar.')) return;
+        await fetch('/api/admin/gdrive/disconnect', { method: 'POST' });
+        await loadGDriveStatus();
+    }
+
+    async function setGDriveRootFolder() {
+        const folderId = document.getElementById('gdriveFolderInput').value.trim();
+        if (!folderId) { alert('Pegá el link o ID de la carpeta primero.'); return; }
+        const res = await fetch('/api/admin/gdrive/set_root_folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_id: folderId })
+        });
+        const result = await res.json();
+        if (!res.ok) { alert(result.error || 'No se pudo configurar la carpeta.'); return; }
+        document.getElementById('gdriveFolderInput').value = '';
+        await loadGDriveStatus();
+    }
+
+    async function syncGDriveNow() {
+        const btn = document.getElementById('gdriveSyncBtn');
+        btn.disabled = true;
+        btn.textContent = 'Sincronizando...';
+        try {
+            const res = await fetch('/api/admin/gdrive/sync_now', { method: 'POST' });
+            const summary = await res.json();
+            if (summary.needs_reconnect) alert('Necesitás reconectar Google Drive para sincronizar.');
+            else if (summary.error) alert(`Error al sincronizar: ${summary.error}`);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sincronizar ahora';
+            if (window.lucide) lucide.createIcons();
+        }
+        await loadGDriveStatus();
+        await loadAll();
+    }
+
+    document.getElementById('gdriveRedirectUriHint').textContent = window.location.origin + '/api/admin/gdrive/oauth/callback';
+
+    (function showGDriveOauthFeedback() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('gdrive_error')) document.getElementById('gdriveOauthErrorBanner').classList.remove('hidden');
+        if (params.get('gdrive') === 'connected') document.getElementById('gdriveOauthOkBanner').classList.remove('hidden');
+        if (params.has('gdrive_error') || params.has('gdrive')) {
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    })();
+
+    loadAll();
+    loadGDriveStatus();
+</script>
+{% endblock %}
