@@ -3768,7 +3768,7 @@ async def gdrive_sync_loop():
             db = SessionLocal()
             clients = db.query(ClientSettings).filter(
                 ClientSettings.gdrive_refresh_token_encrypted.isnot(None),
-                ClientSettings.gdrive_needs_reconnect.is_(False)
+                ClientSettings.gdrive_needs_reconnect == False
             ).all()
             client_ids = [c.client_id for c in clients]
             db.close()
