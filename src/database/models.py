@@ -472,3 +472,28 @@ class DocSearchLog(Base):
     document_title = Column(String(255), nullable=True)
     auth_blocked = Column(Boolean, default=False)  # hubo match pero bloqueado por falta de acceso
     created_at = Column(DateTime, default=datetime.utcnow)
+
+# ==========================================
+# CAPA 5: MENSAJES DE SEGUIMIENTO POR INACTIVIDAD
+# ==========================================
+
+class FollowupContent(Base):
+    __tablename__ = "data_followup_content"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)
+    message_text = Column(Text, nullable=False)
+    media_path = Column(String(255), nullable=True)
+    interval_minutes = Column(Integer, nullable=False, default=120)
+    valid_from = Column(String(20), nullable=False)  # YYYY-MM-DD
+    valid_until = Column(String(20), nullable=False)  # YYYY-MM-DD
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class FollowupLog(Base):
+    __tablename__ = "bot_followup_log"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    content_id = Column(Integer, ForeignKey("data_followup_content.id", ondelete="CASCADE"), nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow)

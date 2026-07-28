@@ -1310,9 +1310,14 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
     from src.database.models import SchedulingException
     exceptions_raw = db.query(SchedulingException).filter_by(client_id=target_client_id).order_by(SchedulingException.date.asc()).all()
     exceptions = [{"id": e.id, "date": e.date, "start_time": e.start_time, "end_time": e.end_time, "description": e.description} for e in exceptions_raw]
-    
+
+    from src.database.models import FollowupContent
+    followup_raw = db.query(FollowupContent).filter_by(client_id=target_client_id).order_by(FollowupContent.valid_from.asc()).all()
+    followup_items = [{"id": f.id, "name": f.name, "message_text": f.message_text, "media_path": f.media_path, "interval_minutes": f.interval_minutes, "valid_from": f.valid_from, "valid_until": f.valid_until, "is_active": f.is_active} for f in followup_raw]
+
     return templates.TemplateResponse(request=request, name="admin/config.html", context={
         "config": config, "external": {}, "knowledge_items": knowledge_items, "exceptions": exceptions,
+        "followup_items": followup_items,
         "data_files": [], "sync_needed": request.query_params.get("sync_needed") == "1", "success_reset": False,
         "error_reset": False, "external_env": {}, "active_tab": active_tab, "active_section": active_section,
         "ai_config": {}, "user": user_mock, "is_impersonating": is_impersonating
@@ -1594,6 +1599,129 @@ async def remove_knowledge_media(request: Request, item_id: int, index: int = -1
             k.media_path = None
         db.commit()
     return RedirectResponse(url="/admin/config?active_tab=conocimiento&sync_needed=1&success=1", status_code=303)
+
+def _followup_dates_overlap(a_from: str, a_until: str, b_from: str, b_until: str) -> bool:
+    """True si los rangos [a_from, a_until] y [b_from, b_until] (YYYY-MM-DD) se solapan."""
+    return not (a_until < b_from or a_from > b_until)
+
+@app.post("/admin/followup/add")
+async def add_followup(
+    request: Request,
+    name: str = Form(...), message_text: str = Form(...),
+    interval_minutes: int = Form(120), valid_from: str = Form(...), valid_until: str = Form(...),
+    is_active: int = Form(0), media: UploadFile = File(None),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import FollowupContent
+    active_flag = bool(is_active)
+
+    if active_flag:
+        others = db.query(FollowupContent).filter_by(client_id=target_client_id, is_active=True).all()
+        for o in others:
+            if _followup_dates_overlap(valid_from, valid_until, o.valid_from, o.valid_until):
+                return RedirectResponse(url="/admin/config?active_tab=seguimiento&error_overlap=1", status_code=303)
+
+    media_path_str = None
+    if media and media.filename:
+        import re, os, shutil
+        uploads_dir = os.path.join("uploads", f"client_{target_client_id}")
+        if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', media.filename)
+        file_path = os.path.join(uploads_dir, f"followup_{clean_name}")
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(media.file, f)
+        media_path_str = f"/uploads/client_{target_client_id}/followup_{clean_name}"
+
+    f = FollowupContent(
+        client_id=target_client_id, name=name, message_text=message_text,
+        media_path=media_path_str, interval_minutes=interval_minutes,
+        valid_from=valid_from, valid_until=valid_until, is_active=active_flag
+    )
+    db.add(f)
+    db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=seguimiento&success=1", status_code=303)
+
+@app.post("/admin/followup/update")
+async def update_followup(
+    request: Request,
+    item_id: int = Form(...), name: str = Form(...), message_text: str = Form(...),
+    interval_minutes: int = Form(120), valid_from: str = Form(...), valid_until: str = Form(...),
+    is_active: int = Form(0), media: UploadFile = File(None),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import FollowupContent
+    f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
+    if not f: return RedirectResponse(url="/admin/config?active_tab=seguimiento&error=1", status_code=303)
+
+    active_flag = bool(is_active)
+    if active_flag:
+        others = db.query(FollowupContent).filter_by(client_id=target_client_id, is_active=True).filter(FollowupContent.id != item_id).all()
+        for o in others:
+            if _followup_dates_overlap(valid_from, valid_until, o.valid_from, o.valid_until):
+                return RedirectResponse(url="/admin/config?active_tab=seguimiento&error_overlap=1", status_code=303)
+
+    if media and media.filename:
+        import re, os, shutil
+        uploads_dir = os.path.join("uploads", f"client_{target_client_id}")
+        if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', media.filename)
+        file_path = os.path.join(uploads_dir, f"followup_{clean_name}")
+        with open(file_path, "wb") as f_out:
+            shutil.copyfileobj(media.file, f_out)
+        f.media_path = f"/uploads/client_{target_client_id}/followup_{clean_name}"
+
+    f.name = name
+    f.message_text = message_text
+    f.interval_minutes = interval_minutes
+    f.valid_from = valid_from
+    f.valid_until = valid_until
+    f.is_active = active_flag
+
+    db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=seguimiento&success=1", status_code=303)
+
+@app.get("/admin/followup/delete/{item_id}")
+async def delete_followup(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import FollowupContent
+    db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).delete()
+    db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=seguimiento&success=1", status_code=303)
+
+@app.get("/admin/followup/get/{item_id}")
+async def get_followup(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+    from src.database.models import FollowupContent
+    f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
+    if not f: return JSONResponse(content={"error": "No encontrado"}, status_code=404)
+
+    return JSONResponse(content={
+        "id": f.id, "name": f.name, "message_text": f.message_text, "media_path": f.media_path,
+        "interval_minutes": f.interval_minutes, "valid_from": f.valid_from, "valid_until": f.valid_until,
+        "is_active": f.is_active
+    })
+
+@app.get("/admin/followup/remove-media/{item_id}")
+async def remove_followup_media(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import FollowupContent
+    f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
+    if f:
+        f.media_path = None
+        db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=seguimiento&success=1", status_code=303)
 
 @app.post("/admin/config/sync")
 async def sync_knowledge_saas(
@@ -3216,6 +3344,46 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             await send_telegram_message_saas(client_id, user_id, welcome_text)
                     
                     log_message(client_id, user_id, "bot", welcome_text + (f" [Media: {welcome_media}]" if welcome_media else ""))
+
+            # --- Lógica de Seguimiento por Inactividad (piezas programadas, solo WhatsApp) ---
+            if platform == "whatsapp":
+                try:
+                    from src.database.models import FollowupContent, FollowupLog
+                    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+                    pieces = db_local.query(FollowupContent).filter_by(client_id=client_id, is_active=True).all()
+                    active_piece = next((p for p in pieces if p.valid_from <= today_str <= p.valid_until), None)
+
+                    if active_piece:
+                        last_user_msg = db_local.query(Message).filter(
+                            Message.client_id == client_id,
+                            Message.thread_id == user_id,
+                            Message.role == 'user'
+                        ).order_by(Message.timestamp.desc()).first()
+
+                        if last_user_msg and datetime.datetime.utcnow() >= last_user_msg.timestamp + datetime.timedelta(minutes=active_piece.interval_minutes):
+                            already_sent = db_local.query(FollowupLog).filter_by(
+                                client_id=client_id, thread_id=user_id, content_id=active_piece.id
+                            ).first()
+
+                            if not already_sent:
+                                followup_text = active_piece.message_text
+                                followup_media = active_piece.media_path
+                                base_url = (settings.webhook_base_url or "").rstrip('/') if settings else ""
+
+                                if followup_media and base_url:
+                                    media_path = followup_media if followup_media.startswith('/') else f"/{followup_media}"
+                                    public_media_url = f"{base_url}{media_path}"
+                                    import os
+                                    filename = os.path.basename(media_path)
+                                    await send_whatsapp_file_saas(client_id, user_id, public_media_url, filename, followup_text)
+                                else:
+                                    await send_whatsapp_message_saas(client_id, user_id, followup_text)
+
+                                db_local.add(FollowupLog(client_id=client_id, thread_id=user_id, content_id=active_piece.id))
+                                db_local.commit()
+                                log_message(client_id, user_id, "bot", followup_text + (f" [Media: {followup_media}]" if followup_media else ""))
+                except Exception as fe:
+                    logging.error(f"[Followup] Error procesando seguimiento por inactividad: {fe}")
 
             # --- Lógica de Fuera de Horario (OOO) ---
             if settings and settings.out_of_office_enabled:
