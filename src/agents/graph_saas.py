@@ -1207,6 +1207,7 @@ def registrar_fecha_entrega_pedido(fecha: str, config: RunnableConfig):
         db.close()
 
 DOC_LOGIN_TOPIC_PREFIX = "Login Documento: "
+DOC_SEARCH_TOPIC_PREFIX = "Búsqueda Documento: "
 
 @tool
 def buscar_documento(query: str, config: RunnableConfig):
@@ -1296,7 +1297,45 @@ def registrar_clave_documento(segmento: str, clave: str, config: RunnableConfig,
 
     return json.dumps({"status": "recorded", "campo": "Contraseña", "valor": "••••••"})
 
-tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento]
+@tool
+def iniciar_busqueda_documento_segmento(query: str, segmento: str, config: RunnableConfig):
+    """Activa la recolección de los datos configurados para buscar documentos de un segmento
+    específico. Usala SOLO cuando el sistema te lo indique con un 'REFUERZO DE BÚSQUEDA POR
+    SEGMENTO'. NO llames a 'buscar_documento' en ese mismo turno: una vez recolectados todos los
+    datos, el sistema te va a pedir que la llames con la consulta combinada."""
+    client_id = config.get("configurable", {}).get("client_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    from src.database.document_library import get_segment_by_name
+    db = SessionLocal()
+    try:
+        segment = get_segment_by_name(db, client_id, segmento)
+        if not segment:
+            return json.dumps({"status": "error", "message": f"No encontré el segmento '{segmento}'."})
+        try:
+            fields = [f.strip() for f in json.loads(segment.search_fields) if f and f.strip()] if segment.search_fields else []
+        except Exception:
+            fields = []
+        if not fields:
+            return json.dumps({"status": "error", "message": f"El segmento '{segmento}' no tiene datos configurados para pedir."})
+        segment_name = segment.name
+    finally:
+        db.close()
+
+    return json.dumps({
+        "status": "activated",
+        "topic": f"{DOC_SEARCH_TOPIC_PREFIX}{segment_name}",
+        "fields": fields,
+        "storage": "database",
+        "documento_consulta": query,
+        "message": (
+            f"Para buscar el documento del segmento '{segment_name}' pedile estos datos al usuario, uno "
+            f"por vez o todos juntos: {', '.join(fields)}. Usá 'registrar_dato_tramite' para cada uno. "
+            f"La consulta original era: '{query}'."
+        )
+    })
+
+tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento]
 tool_node = ToolNode(tools)
 
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
@@ -1424,6 +1463,7 @@ def call_model(state: AgentState):
             missing = [f for f in fields_to_collect if f not in collected_data]
             is_pedido_topic = str(state.get('form_topic') or '').startswith("Pedido: ")
             is_doc_login_topic = str(state.get('form_topic') or '').startswith(DOC_LOGIN_TOPIC_PREFIX)
+            is_doc_search_topic = str(state.get('form_topic') or '').startswith(DOC_SEARCH_TOPIC_PREFIX)
             if missing:
                 current_field = missing[0]
                 system_prompt += f"\n### 📝 GESTIÓN DE TRÁMITE: {state.get('form_topic')}\n"
@@ -1460,6 +1500,17 @@ def call_model(state: AgentState):
                         "El usuario ya se autenticó correctamente. Ahora DEBÉS continuar respondiendo su consulta "
                         "original sobre el documento que había pedido, volviendo a llamar a la herramienta "
                         "'buscar_documento' con esa misma consulta.\n"
+                    )
+                elif is_doc_search_topic:
+                    from src.database.document_library import build_segment_search_query
+                    segment_fields = [f for f in fields_to_collect if f != "Nombre del Cliente"]
+                    base_query = collected_data.get("Consulta de Documento", "")
+                    combined_query = build_segment_search_query(base_query, collected_data, segment_fields)
+                    system_prompt += (
+                        "\n### ✅ DATOS DE BÚSQUEDA COMPLETADOS\n"
+                        "Ya tenés los datos para buscar el documento. Ahora DEBÉS llamar a la herramienta "
+                        f"'buscar_documento' con este texto EXACTO como parámetro 'query' (no lo reformules ni "
+                        f"lo resumas): '{combined_query}'.\n"
                     )
                 else:
                     system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
@@ -1574,19 +1625,32 @@ def call_model(state: AgentState):
         messages.append(SystemMessage(content="REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno (ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la herramienta primero."))
 
     user_doc_intent = False
+    matched_segment = None
+    matched_segment_fields = None
     if last_human_msg and settings and settings.feat_document_library:
         try:
             db_kw = SessionLocal()
-            from src.database.document_library import get_doc_trigger_keywords
+            from src.database.document_library import get_doc_trigger_keywords, get_segment_by_trigger
+            seg_match = get_segment_by_trigger(db_kw, client_id, last_human_msg)
+            if seg_match:
+                matched_segment, matched_segment_fields = seg_match
             doc_keywords = get_doc_trigger_keywords(db_kw, client_id, settings)
             db_kw.close()
         except Exception as kw_err:
             logging.error(f"Error obteniendo frases gatillo de la biblioteca de documentos: {kw_err}")
             doc_keywords = []
-        if doc_keywords and any(dk in last_human_msg.lower() for dk in doc_keywords):
+        if not matched_segment and doc_keywords and any(dk in last_human_msg.lower() for dk in doc_keywords):
             user_doc_intent = True
 
-    if user_doc_intent and not onboarding_active:
+    if matched_segment and not onboarding_active:
+        messages.append(SystemMessage(content=(
+            f"REFUERZO DE BÚSQUEDA POR SEGMENTO: El usuario está pidiendo un documento del segmento "
+            f"'{matched_segment.name}', que requiere estos datos antes de buscar: "
+            f"{', '.join(matched_segment_fields)}. DEBES llamar obligatoriamente a "
+            f"`iniciar_busqueda_documento_segmento` en esta misma respuesta (query=la consulta del usuario, "
+            f"segmento='{matched_segment.name}'). NO llames a `buscar_documento` en este turno."
+        )))
+    elif user_doc_intent and not onboarding_active:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
 
     if user_product_intent and settings and settings.feat_catalog and not onboarding_active:
@@ -1701,6 +1765,7 @@ def state_manager(state: AgentState):
             storage_dest = new_state.get("storage_dest", state.get("storage_dest", "database"))
             is_catalog_topic = topic == CATALOG_LEAD_TOPIC or str(topic or "").startswith("Pedido: ")
             is_doc_login_topic = str(topic or "").startswith(DOC_LOGIN_TOPIC_PREFIX)
+            is_doc_search_topic = str(topic or "").startswith(DOC_SEARCH_TOPIC_PREFIX)
 
             pdf_path = None
             if is_catalog_topic:
@@ -1724,6 +1789,12 @@ def state_manager(state: AgentState):
                     thread_id=final_thread_id,
                     topic=topic
                 )
+            elif is_doc_search_topic:
+                # Los valores de los campos son insumos efímeros para armar la query de búsqueda,
+                # no un trámite: no hay nada que persistir acá. La búsqueda real (y su auditoría vía
+                # log_document_search) ocurre cuando buscar_documento se vuelva a llamar con la
+                # consulta combinada, en la próxima respuesta del agente.
+                pass
             else:
                 process_form_completion(
                     client_id=client_id,

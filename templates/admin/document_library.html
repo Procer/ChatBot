@@ -199,6 +199,20 @@
                     <input type="number" id="segmentExpiryDays" min="0" placeholder="Permanente" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
                 </div>
             </div>
+            <div class="space-y-3 pt-2 border-t border-slate-800">
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Frases gatillo del segmento (opcional, separadas por coma)</label>
+                    <input type="text" id="segmentSearchTriggerPhrases" placeholder="factura, comprobante de pago" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <p class="text-xs text-slate-500 mt-1">Si el mensaje del usuario contiene alguna de estas frases, el bot pide primero los datos de abajo antes de buscar. Dejar vacío para que la búsqueda funcione como siempre (texto libre, sin pedir nada extra).</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Datos a pedir antes de buscar</label>
+                    <div id="segmentSearchFieldsBox" class="space-y-2"></div>
+                    <button type="button" onclick="addSegmentSearchFieldRow()" class="mt-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar dato
+                    </button>
+                </div>
+            </div>
             <label class="flex items-center gap-3 cursor-pointer p-2">
                 <input type="checkbox" id="segmentIsActive" checked class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
                 <span class="text-sm text-white">Activo</span>
@@ -379,6 +393,26 @@
         document.getElementById('segmentGenericPasswordBox').classList.toggle('hidden', !isGeneric);
     }
 
+    function addSegmentSearchFieldRow(value = '') {
+        const box = document.getElementById('segmentSearchFieldsBox');
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = value;
+        input.placeholder = 'Ej: Número de factura';
+        input.className = 'segmentSearchFieldInput flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none';
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'text-slate-400 hover:text-red-400';
+        removeBtn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
+        removeBtn.onclick = () => row.remove();
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        box.appendChild(row);
+        if (window.lucide) lucide.createIcons();
+    }
+
     function openSegmentModal(id = null) {
         const s = id ? segmentsData.find(x => x.id === id) : null;
         document.getElementById('segmentModalTitle').textContent = s ? 'Editar Segmento' : 'Nuevo Segmento';
@@ -389,6 +423,9 @@
         document.getElementById('segmentGenericPassword').value = '';
         document.getElementById('segmentExpiryDays').value = (s && s.session_expiry_days) ? s.session_expiry_days : '';
         document.getElementById('segmentIsActive').checked = s ? s.is_active : true;
+        document.getElementById('segmentSearchTriggerPhrases').value = (s && s.search_trigger_phrases) ? s.search_trigger_phrases.join(', ') : '';
+        document.getElementById('segmentSearchFieldsBox').innerHTML = '';
+        ((s && s.search_fields) || []).forEach(f => addSegmentSearchFieldRow(f));
         onToggleSegmentPublic();
         onToggleSegmentAuthMode();
         openModalEl('segmentModal');
@@ -406,6 +443,8 @@
             generic_password: document.getElementById('segmentGenericPassword').value || null,
             session_expiry_days: expiryRaw ? parseInt(expiryRaw) : null,
             is_active: document.getElementById('segmentIsActive').checked,
+            search_trigger_phrases: document.getElementById('segmentSearchTriggerPhrases').value.split(',').map(s => s.trim()).filter(Boolean),
+            search_fields: Array.from(document.querySelectorAll('.segmentSearchFieldInput')).map(el => el.value.trim()).filter(Boolean),
         };
         await fetch('/api/admin/document_library/segments/save', {
             method: 'POST',

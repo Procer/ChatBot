@@ -405,6 +405,11 @@ class DocSegment(Base):
     generic_password_hash = Column(String(255), nullable=True)
     session_expiry_days = Column(Integer, nullable=True)  # NULL = sesión permanente
     is_active = Column(Boolean, default=True)
+    # Independiente de is_public/auth_mode: datos a pedir ANTES de buscar (enriquecen la query de
+    # texto libre, no filtran metadata estructurada). Ambas son listas JSON; NULL = comportamiento
+    # de búsqueda libre de siempre, sin ningún dato extra.
+    search_trigger_phrases = Column(Text, nullable=True)
+    search_fields = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class DocLibraryUser(Base):

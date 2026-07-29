@@ -2170,6 +2170,8 @@ class DocSegmentPayload(BaseModel):
     generic_password: str | None = None  # se hashea acá; si se deja vacío en una edición, se conserva la clave existente
     session_expiry_days: int | None = None  # None = sesión permanente
     is_active: bool = True
+    search_trigger_phrases: list[str] = []  # frases gatillo propias del segmento (independiente de is_public/auth_mode)
+    search_fields: list[str] = []  # datos a pedir antes de buscar; enriquecen la query, no filtran metadata
 
 class DocumentPayload(BaseModel):
     id: int | None = None
@@ -2249,6 +2251,8 @@ async def api_get_doc_segments(request: Request, db: Session = Depends(get_db), 
         "has_generic_password": bool(s.generic_password_hash),
         "session_expiry_days": s.session_expiry_days,
         "is_active": s.is_active,
+        "search_trigger_phrases": json.loads(s.search_trigger_phrases) if s.search_trigger_phrases else [],
+        "search_fields": json.loads(s.search_fields) if s.search_fields else [],
     } for s in segments]
 
 @app.post("/api/admin/document_library/segments/save")
@@ -2274,6 +2278,8 @@ async def api_save_doc_segment(request: Request, payload: DocSegmentPayload, db:
     s.is_active = payload.is_active
     if not payload.is_public and payload.auth_mode == "generic" and payload.generic_password:
         s.generic_password_hash = hash_password(payload.generic_password)
+    s.search_trigger_phrases = json.dumps(payload.search_trigger_phrases) if payload.search_trigger_phrases else None
+    s.search_fields = json.dumps(payload.search_fields) if payload.search_fields else None
 
     db.commit()
     db.refresh(s)
