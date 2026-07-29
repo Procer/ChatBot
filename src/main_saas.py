@@ -2985,7 +2985,7 @@ async def green_api_webhook(client_slug: str, request: Request, background_tasks
         if not client:
             logging.warning(f"[SaaS Webhook] Ignorado: Cliente '{client_slug}' no encontrado o inactivo.")
             return JSONResponse({"status": "ignored", "reason": "Client not found"})
-            
+
         client_id = client.id
 
         from src.database.models import ClientSettings, Message
@@ -2994,28 +2994,36 @@ async def green_api_webhook(client_slug: str, request: Request, background_tasks
         # 2. Ignorar eventos que no sean mensajes entrantes (Simplificado)
         if type_webhook != 'incomingMessageReceived':
             return JSONResponse({"status": "ignored"})
-            
+
         # 3. Extracción de Datos
+        id_message = data.get("idMessage")
         user_id = data.get("senderData", {}).get("chatId", "")
         message_data = data.get("messageData", {})
         type_msg = message_data.get("typeMessage")
-        
+
         user_text = ""
         attachment = None
-        
+
         if type_msg == "textMessage":
             user_text = message_data.get("textMessageData", {}).get("textMessage", "")
         elif type_msg == "extendedTextMessage":
             user_text = message_data.get("extendedTextMessageData", {}).get("text", "")
-            
+
         if not user_id or not user_text:
             return JSONResponse({"status": "incomplete_data"})
 
+        # Green-API puede reintentar la entrega del mismo webhook (instancia reconectando, timeouts,
+        # etc.); sin este chequeo, cada reintento se procesaba como un mensaje nuevo y el bot
+        # terminaba respondiendo varias veces al mismo mensaje del usuario cada ~1-2 minutos.
+        if id_message and db.query(Message).filter_by(client_id=client_id, whatsapp_id=id_message).first():
+            logging.info(f"[SaaS Webhook] Ignorado: idMessage {id_message} ya procesado (reintento de Green-API)")
+            return JSONResponse({"status": "duplicate_ignored"})
+
         logging.info(f"[SaaS Webhook] Mensaje recibido de {user_id} para cliente {client_slug}")
-        
+
         # 4. Procesamiento Asíncrono
-        background_tasks.add_task(process_bot_response, client_id, user_id, user_text, "whatsapp", attachment)
-        
+        background_tasks.add_task(process_bot_response, client_id, user_id, user_text, "whatsapp", attachment, id_message)
+
         return JSONResponse({"status": "ok"})
     except Exception as e:
         logging.error(f"[SaaS Webhook] Error: {e}")
@@ -3160,7 +3168,7 @@ async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, f
     finally:
         db.close()
 
-async def process_bot_response(client_id: int, user_id: str, user_text: str, platform: str, attachment_data: dict = None):
+async def process_bot_response(client_id: int, user_id: str, user_text: str, platform: str, attachment_data: dict = None, whatsapp_message_id: str = None):
     """Orquestador principal que conecta el Webhook con LangGraph."""
     async with get_user_lock(user_id):
         # --- Modo Prueba: si está activo, ignorar a cualquiera que no esté en test_numbers ---
@@ -3364,7 +3372,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             db_local.close()
 
             # 1. Registrar Mensaje de Usuario
-            log_message(client_id, user_id, "user", user_text)
+            log_message(client_id, user_id, "user", user_text, whatsapp_id=whatsapp_message_id)
             
             # 2. Configuración para LangGraph (El Muro Multi-Cliente)
             config = {"configurable": {"thread_id": user_id, "client_id": client_id}}
