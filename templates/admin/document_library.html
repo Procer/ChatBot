@@ -668,7 +668,7 @@
         if (status.last_sync_summary) {
             const s = status.last_sync_summary;
             const parts = [`${s.created ?? 0} nuevo(s)`];
-            if (s.unmapped_folders && s.unmapped_folders.length) parts.push(`${s.unmapped_folders.length} carpeta(s) sin segmento: ${s.unmapped_folders.join(', ')}`);
+            if (s.unmapped_folders && s.unmapped_folders.length) parts.push(`${s.unmapped_folders.length} carpeta(s) sin segmento (creá un Segmento con el mismo nombre para incluirlas): ${s.unmapped_folders.join(', ')}`);
             if (s.missing_in_drive) parts.push(`${s.missing_in_drive} ya no visto(s) en Drive`);
             summaryEl.textContent = parts.join(' · ');
             summaryEl.classList.remove('hidden');

@@ -293,6 +293,13 @@ def sync_client_drive(client_id: int) -> dict:
 
         settings.gdrive_share_revoked = False
 
+        # El mapeo carpeta→segmento es por NOMBRE (case-insensitive, sin espacios extra), no por ID:
+        # una subcarpeta de la raíz solo se sincroniza si existe un Segmento activo con ese mismo
+        # nombre (ver get_segment_by_name). Si no hay match, la carpeta entera queda en
+        # "unmapped_folders" y sus archivos NO se sincronizan — no es un error, es la forma en la
+        # que se decide qué carpetas entran a la Biblioteca. Para incluirla, crear un Segmento con
+        # el nombre exacto de la carpeta desde el panel admin (sección "Segmentos") y sincronizar
+        # de nuevo.
         for folder in subfolders:
             segment = get_segment_by_name(db, client_id, folder["name"])
             if not segment:
