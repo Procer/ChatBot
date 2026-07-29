@@ -85,7 +85,7 @@
 
             <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
                 <input type="text" id="gdriveFolderInput" placeholder="Pegá el link o ID de la carpeta raíz en Drive" class="flex-1 w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
-                <button onclick="setGDriveRootFolder()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 whitespace-nowrap">Usar esta carpeta</button>
+                <button id="gdriveSetFolderBtn" onclick="setGDriveRootFolder()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 whitespace-nowrap">Usar esta carpeta</button>
             </div>
             <p class="text-xs text-slate-500">Carpeta actual: <span id="gdriveRootFolderName" class="text-slate-300">Ninguna configurada</span>
                 <button onclick="disconnectGDrive()" class="ml-2 text-xs text-red-400 hover:text-red-300">Quitar carpeta</button>
@@ -691,6 +691,7 @@
     async function setGDriveRootFolder() {
         const folderId = document.getElementById('gdriveFolderInput').value.trim();
         if (!folderId) { alert('Pegá el link o ID de la carpeta primero.'); return; }
+        const btn = document.getElementById('gdriveSetFolderBtn');
         const res = await fetch('/api/admin/gdrive/set_root_folder', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -698,7 +699,11 @@
         });
         const result = await res.json();
         if (!res.ok) { alert(result.error || 'No se pudo configurar la carpeta.'); return; }
-        document.getElementById('gdriveFolderInput').value = '';
+        // El link se deja tal cual en el campo (no se vacía): confirmar con el botón evita que
+        // parezca que se perdió lo pegado.
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Guardada';
+        setTimeout(() => { btn.textContent = originalText; }, 1500);
         await loadGDriveStatus();
     }
 
