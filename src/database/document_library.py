@@ -363,9 +363,9 @@ def build_segment_search_query(base_query: str, collected_data: dict, fields: li
     if base_query and base_query.strip():
         parts.append(base_query.strip())
     for f in fields:
-        val = collected_data.get(f)
-        if val and str(val).strip():
-            parts.append(f"{f}: {str(val).strip()}")
+        val = str(collected_data.get(f) or "").strip()
+        if val and val.lower() not in ("n/a", "na", "no tiene", "no sabe", "no disponible"):
+            parts.append(f"{f}: {val}")
     return " ".join(parts).strip()
 
 

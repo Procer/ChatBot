@@ -1479,6 +1479,8 @@ def call_model(state: AgentState):
                     system_prompt += "4. **CAMPOS ESPECIALES DEL PEDIDO:** Para 'Cantidad' usá SIEMPRE 'registrar_cantidad_pedido' (nunca 'registrar_dato_tramite'). Para 'Fecha de Entrega' usá SIEMPRE 'registrar_fecha_entrega_pedido'. Si alguna de esas herramientas devuelve un error (cantidad o fecha inválida), NO uses 'registrar_dato_tramite' como respaldo: explicale el motivo al usuario y pedile un valor válido.\n"
                 elif is_doc_login_topic:
                     system_prompt += "4. **CAMPO ESPECIAL DE LOGIN:** Para 'Contraseña' usá SIEMPRE 'registrar_clave_documento' (nunca 'registrar_dato_tramite'), pasándole el nombre del segmento. Si devuelve un error (usuario/clave incorrectos), NO la registres como si fuera válida: explicale el motivo al usuario y pedile que la vuelva a escribir.\n"
+                elif is_doc_search_topic:
+                    system_prompt += "4. **ESTOS DATOS SON PARA MEJORAR LA BÚSQUEDA, NO SON UN REQUISITO ESTRICTO:** si el usuario no tiene o no sabe alguno de estos datos (por ejemplo dice 'no tengo ese número' o te da información distinta a la pedida), NO insistas más de una vez ni lo bloquees. Registrá ese campo igual con 'registrar_dato_tramite' usando el texto que sí te haya dado (aunque no tenga el formato exacto pedido), o con el valor 'N/A' si no dio nada útil, y seguí con el próximo dato. Si ya no quedan más datos por pedir, avisale amablemente que vas a buscar con lo que tenés.\n"
             else:
                 if state.get('form_topic') == CATALOG_LEAD_TOPIC:
                     system_prompt += (
