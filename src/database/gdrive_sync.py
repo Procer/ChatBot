@@ -15,11 +15,9 @@ if BASE_DIR not in sys.path:
 
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-from google.auth.exceptions import RefreshError
-from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 load_dotenv()
@@ -27,17 +25,15 @@ load_dotenv()
 from src.database.session import SessionLocal
 from src.database.models import ClientSettings, Document, DocumentSegmentLink
 
-GOOGLE_OAUTH_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")  # opcional; si falta, se deriva de request.base_url
 GDRIVE_TOKEN_ENCRYPTION_KEY = os.getenv("GDRIVE_TOKEN_ENCRYPTION_KEY")
 
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _GOOGLE_NATIVE_MIME_PREFIX = "application/vnd.google-apps."
 _GOOGLE_NATIVE_EXPORT_MIME = "application/pdf"
+_SHARE_DENIED_STATUSES = (403, 404)
 
-_STATE_TTL = 600
 _DOWNLOAD_TOKEN_TTL = 600
-_oauth_states = {}    # state -> {"client_id": int, "expires_at": float}
 _download_tokens = {}  # token -> {"client_id", "thread_id", "document_id", "expires_at"}
 
 
@@ -50,10 +46,10 @@ def clean_filename_to_title(filename: str) -> str:
     return " ".join(w.capitalize() for w in name.split(" "))
 
 
-# --- ENCRIPTACIÓN DEL REFRESH TOKEN ---
-# A diferencia de whatsapp_token/telegram_token (texto plano en ClientSettings), un refresh_token
-# de Drive da acceso de lectura permanente a todo el Drive de la cuenta que lo autorizó: amerita
-# encriptación en reposo aunque el resto del proyecto no la use.
+# --- ENCRIPTACIÓN DE LA CLAVE DE LA CUENTA DE SERVICIO ---
+# A diferencia de whatsapp_token/telegram_token (texto plano en ClientSettings), la clave JSON
+# de una cuenta de servicio da acceso de lectura permanente a todo lo compartido con ella:
+# amerita encriptación en reposo aunque el resto del proyecto no la use.
 
 def _fernet() -> Fernet:
     if not GDRIVE_TOKEN_ENCRYPTION_KEY:
@@ -70,89 +66,83 @@ def decrypt_token(enc: str) -> str:
     return _fernet().decrypt(enc.encode("utf-8")).decode("utf-8")
 
 
-# --- CREDENCIALES DE LA APP OAUTH (propias de cada cliente/tenant) ---
-# Cada cliente registra su propio proyecto/app en Google Cloud y carga acá su Client ID/Secret
-# (panel Super Admin → Configuración del Cliente). Esto es DISTINTO de la cuenta de Drive que
-# el cliente conecta después (ClientSettings.gdrive_refresh_token_encrypted) — una cosa es
-# "qué app pide permiso" y otra "a qué cuenta de Drive se le pide permiso".
+# --- CUENTA DE SERVICIO (propia de cada cliente/tenant) ---
+# Cada cliente tiene su propia cuenta de servicio (dentro de un único proyecto de Google Cloud
+# nuestro) y comparte su carpeta de Drive con el email de esa cuenta, como se comparte con
+# cualquier persona. No hay pantalla de consentimiento ni vencimiento de token: la clave solo
+# deja de funcionar si se revoca a mano o se le saca el acceso a la carpeta.
 
-def get_google_oauth_credentials(tenant_client_id: int):
-    """Devuelve (oauth_client_id, oauth_client_secret) del cliente/tenant, o (None, None) si no configuró la app."""
+def save_service_account_key(client_id: int, sa_json_raw: str) -> str:
+    """Valida y guarda la clave JSON de la cuenta de servicio. Devuelve el client_email cacheado."""
+    try:
+        sa_info = json.loads(sa_json_raw)
+    except json.JSONDecodeError:
+        raise ValueError("El archivo pegado no es un JSON válido")
+    if sa_info.get("type") != "service_account" or not sa_info.get("client_email"):
+        raise ValueError("El JSON no corresponde a una clave de cuenta de servicio de Google")
+
     db = SessionLocal()
     try:
-        settings = db.query(ClientSettings).filter_by(client_id=tenant_client_id).first()
-        if not settings or not settings.google_oauth_client_id or not settings.google_oauth_client_secret_encrypted:
-            return None, None
-        try:
-            return settings.google_oauth_client_id, decrypt_token(settings.google_oauth_client_secret_encrypted)
-        except Exception as e:
-            logging.error(f"[GDrive] Error desencriptando google_oauth_client_secret (client_id={tenant_client_id}): {e}")
-            return None, None
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings:
+            raise RuntimeError(f"No existe ClientSettings para client_id={client_id}")
+        settings.gdrive_service_account_json_encrypted = encrypt_token(sa_json_raw)
+        settings.gdrive_service_account_email = sa_info["client_email"]
+        settings.gdrive_share_revoked = False
+        db.commit()
+        return sa_info["client_email"]
     finally:
         db.close()
 
 
-def save_google_oauth_credentials(tenant_client_id: int, oauth_client_id: str, oauth_client_secret: str = None) -> None:
-    """oauth_client_secret=None deja el secreto ya guardado sin cambios (para poder actualizar solo el client_id)."""
+def clear_service_account_key(client_id: int) -> None:
     db = SessionLocal()
     try:
-        settings = db.query(ClientSettings).filter_by(client_id=tenant_client_id).first()
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
         if not settings:
-            raise RuntimeError(f"No existe ClientSettings para client_id={tenant_client_id}")
-        settings.google_oauth_client_id = oauth_client_id
-        if oauth_client_secret:
-            settings.google_oauth_client_secret_encrypted = encrypt_token(oauth_client_secret)
+            return
+        settings.gdrive_service_account_json_encrypted = None
+        settings.gdrive_service_account_email = None
+        settings.gdrive_share_revoked = False
+        settings.gdrive_root_folder_id = None
+        settings.gdrive_root_folder_name = None
         db.commit()
     finally:
         db.close()
 
 
-def get_google_oauth_status(tenant_client_id: int) -> dict:
-    oauth_client_id, oauth_client_secret = get_google_oauth_credentials(tenant_client_id)
-    return {"client_id": oauth_client_id or "", "configured": bool(oauth_client_id and oauth_client_secret)}
-
-
-# --- OAUTH ---
-
-def build_oauth_flow(redirect_uri: str, tenant_client_id: int) -> Flow:
-    oauth_client_id, oauth_client_secret = get_google_oauth_credentials(tenant_client_id)
-    if not oauth_client_id or not oauth_client_secret:
-        raise RuntimeError("Este cliente todavía no cargó las credenciales de su app OAuth de Google")
-    client_config = {
-        "web": {
-            "client_id": oauth_client_id,
-            "client_secret": oauth_client_secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
+def get_service_account_status(client_id: int) -> dict:
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        configured = bool(settings and settings.gdrive_service_account_json_encrypted)
+        return {
+            "configured": configured,
+            "email": settings.gdrive_service_account_email if settings else None,
+            "share_revoked": bool(settings and settings.gdrive_share_revoked),
         }
-    }
-    return Flow.from_client_config(client_config, scopes=DRIVE_SCOPES, redirect_uri=redirect_uri)
+    finally:
+        db.close()
 
 
-def get_oauth_redirect_uri(request_base_url: str) -> str:
-    if GOOGLE_OAUTH_REDIRECT_URI:
-        return GOOGLE_OAUTH_REDIRECT_URI
-    return f"{str(request_base_url).rstrip('/')}/api/admin/gdrive/oauth/callback"
+def clear_root_folder(client_id: int) -> None:
+    """Acción del cliente sobre SU selección de carpeta (no borra la cuenta de servicio en sí)."""
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings:
+            return
+        settings.gdrive_root_folder_id = None
+        settings.gdrive_root_folder_name = None
+        db.commit()
+    finally:
+        db.close()
 
 
 def _sweep_expired(cache: dict):
     now = time.time()
     for k in [k for k, v in cache.items() if v.get("expires_at", 0) < now]:
         cache.pop(k, None)
-
-
-def generate_oauth_state(client_id: int) -> str:
-    _sweep_expired(_oauth_states)
-    state = secrets.token_urlsafe(24)
-    _oauth_states[state] = {"client_id": client_id, "expires_at": time.time() + _STATE_TTL}
-    return state
-
-
-def pop_oauth_state(state: str):
-    entry = _oauth_states.pop(state, None)
-    if not entry or entry["expires_at"] < time.time():
-        return None
-    return entry["client_id"]
 
 
 def create_download_token(client_id: int, thread_id: str, document_id: int, ttl_seconds: int = _DOWNLOAD_TOKEN_TTL) -> str:
@@ -173,91 +163,29 @@ def peek_download_token(token: str):
     return entry
 
 
-def save_oauth_tokens(client_id: int, credentials) -> None:
+def _mark_share_revoked(client_id: int, revoked: bool) -> None:
     db = SessionLocal()
     try:
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        if not settings:
-            return
-        if not credentials.refresh_token:
-            logging.warning(f"[GDrive] No se recibió refresh_token para client_id={client_id} (¿ya estaba autorizado sin revocar?)")
-            return
-
-        settings.gdrive_refresh_token_encrypted = encrypt_token(credentials.refresh_token)
-        settings.gdrive_connected_at = datetime.utcnow()
-        settings.gdrive_needs_reconnect = False
-
-        try:
-            service = build("drive", "v3", credentials=credentials)
-            about = service.about().get(fields="user").execute()
-            settings.gdrive_connected_email = about.get("user", {}).get("emailAddress")
-        except Exception as e:
-            logging.error(f"[GDrive] Error obteniendo email de la cuenta conectada (client_id={client_id}): {e}")
-
-        db.commit()
+        if settings and settings.gdrive_share_revoked != revoked:
+            settings.gdrive_share_revoked = revoked
+            db.commit()
     finally:
         db.close()
-
-
-def disconnect_drive(client_id: int) -> None:
-    db = SessionLocal()
-    refresh_token = None
-    try:
-        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        if not settings:
-            return
-        if settings.gdrive_refresh_token_encrypted:
-            try:
-                refresh_token = decrypt_token(settings.gdrive_refresh_token_encrypted)
-            except Exception:
-                pass
-        settings.gdrive_refresh_token_encrypted = None
-        settings.gdrive_connected_email = None
-        settings.gdrive_connected_at = None
-        settings.gdrive_root_folder_id = None
-        settings.gdrive_root_folder_name = None
-        settings.gdrive_needs_reconnect = False
-        db.commit()
-    finally:
-        db.close()
-
-    if refresh_token:
-        try:
-            import requests
-            requests.post("https://oauth2.googleapis.com/revoke", params={"token": refresh_token}, timeout=5)
-        except Exception as e:
-            logging.warning(f"[GDrive] No se pudo revocar el token en Google (client_id={client_id}): {e}")
 
 
 def get_drive_service(client_id: int):
     db = SessionLocal()
     try:
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        if not settings or not settings.gdrive_refresh_token_encrypted:
+        if not settings or not settings.gdrive_service_account_json_encrypted:
             return None
         try:
-            refresh_token = decrypt_token(settings.gdrive_refresh_token_encrypted)
+            sa_info = json.loads(decrypt_token(settings.gdrive_service_account_json_encrypted))
+            creds = service_account.Credentials.from_service_account_info(sa_info, scopes=DRIVE_SCOPES)
         except Exception as e:
-            logging.error(f"[GDrive] Error desencriptando refresh_token (client_id={client_id}): {e}")
+            logging.error(f"[GDrive] Error construyendo credenciales de cuenta de servicio (client_id={client_id}): {e}")
             return None
-
-        oauth_client_id, oauth_client_secret = get_google_oauth_credentials(client_id)
-        creds = Credentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=oauth_client_id,
-            client_secret=oauth_client_secret,
-            scopes=DRIVE_SCOPES,
-        )
-        try:
-            creds.refresh(GoogleAuthRequest())
-        except RefreshError as e:
-            logging.error(f"[GDrive] Refresh token inválido/revocado (client_id={client_id}): {e}")
-            settings.gdrive_needs_reconnect = True
-            db.commit()
-            return None
-
         return build("drive", "v3", credentials=creds)
     finally:
         db.close()
@@ -328,11 +256,11 @@ def get_folder_info(client_id: int, folder_id: str):
 def sync_client_drive(client_id: int) -> dict:
     from src.database.document_library import get_segment_by_name, sync_document_to_chroma
 
-    summary = {"created": 0, "unmapped_folders": [], "root_files_skipped": 0, "missing_in_drive": 0, "needs_reconnect": False}
+    summary = {"created": 0, "unmapped_folders": [], "root_files_skipped": 0, "missing_in_drive": 0, "share_revoked": False}
 
     service = get_drive_service(client_id)
     if not service:
-        summary["needs_reconnect"] = True
+        summary["error"] = "No hay cuenta de servicio configurada para este cliente"
         return summary
 
     db = SessionLocal()
@@ -348,10 +276,22 @@ def sync_client_drive(client_id: int) -> dict:
             subfolders = list_subfolders(service, settings.gdrive_root_folder_id)
             root_files = list_files_in_folder(service, settings.gdrive_root_folder_id)
             summary["root_files_skipped"] = len(root_files)
+        except HttpError as e:
+            if e.resp is not None and e.resp.status in _SHARE_DENIED_STATUSES:
+                settings.gdrive_share_revoked = True
+                db.commit()
+                summary["share_revoked"] = True
+                summary["error"] = "La carpeta ya no está compartida con la cuenta de servicio"
+            else:
+                summary["error"] = str(e)
+            logging.error(f"[GDrive] Error listando la carpeta raíz (client_id={client_id}): {e}")
+            return summary
         except Exception as e:
             logging.error(f"[GDrive] Error listando la carpeta raíz (client_id={client_id}): {e}")
             summary["error"] = str(e)
             return summary
+
+        settings.gdrive_share_revoked = False
 
         for folder in subfolders:
             segment = get_segment_by_name(db, client_id, folder["name"])
@@ -415,7 +355,12 @@ def check_file_available(client_id: int, external_file_id: str) -> bool:
         return False
     try:
         meta = service.files().get(fileId=external_file_id, fields="id, trashed").execute()
+        _mark_share_revoked(client_id, False)
         return not meta.get("trashed", False)
+    except HttpError as e:
+        if e.resp is not None and e.resp.status in _SHARE_DENIED_STATUSES:
+            _mark_share_revoked(client_id, True)
+        return False
     except Exception:
         return False
 
@@ -424,9 +369,16 @@ def resolve_file_download(client_id: int, external_file_id: str):
     """Devuelve (bytes, filename, mimetype). El mimeType se resuelve acá, nunca se persiste en DB."""
     service = get_drive_service(client_id)
     if not service:
-        raise RuntimeError("No se pudo obtener el servicio de Drive (revisar conexión del cliente)")
+        raise RuntimeError("No se pudo obtener el servicio de Drive (revisar la cuenta de servicio del cliente)")
 
-    meta = service.files().get(fileId=external_file_id, fields="name, mimeType, trashed").execute()
+    try:
+        meta = service.files().get(fileId=external_file_id, fields="name, mimeType, trashed").execute()
+    except HttpError as e:
+        if e.resp is not None and e.resp.status in _SHARE_DENIED_STATUSES:
+            _mark_share_revoked(client_id, True)
+        raise
+    _mark_share_revoked(client_id, False)
+
     if meta.get("trashed"):
         raise RuntimeError("El archivo fue eliminado en Drive")
 

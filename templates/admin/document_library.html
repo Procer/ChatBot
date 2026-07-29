@@ -17,15 +17,6 @@
         </div>
     </div>
 
-    <div id="gdriveOauthErrorBanner" class="hidden bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm rounded-lg p-3 mb-6 flex items-start gap-2">
-        <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0"></i>
-        <span>No se pudo conectar con Google Drive. Es probable que la app OAuth de Google no esté configurada todavía — pedile a un Súper Admin que la cargue en el panel Modo Dios (Integraciones Globales).</span>
-    </div>
-    <div id="gdriveOauthOkBanner" class="hidden bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm rounded-lg p-3 mb-6 flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
-        <span>Google Drive conectado correctamente.</span>
-    </div>
-
     <!-- Configuración: frases gatillo -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
@@ -76,100 +67,29 @@
             Sincronizá documentos directo desde una carpeta de Drive: una subcarpeta por segmento (ej. "Choferes"), mismo nombre que el segmento ya creado arriba. El bot indexa título y palabras clave; el archivo se trae fresco desde Drive recién al momento de enviarlo, sin guardar copia permanente.
         </p>
 
-        <details id="gdriveSetupInstructions" class="mb-4 bg-slate-900/50 border border-slate-800 rounded-lg text-xs text-slate-400">
-            <summary class="cursor-pointer select-none px-3 py-2 font-semibold text-slate-300 flex items-center gap-2">
-                <i data-lucide="info" class="w-3.5 h-3.5 text-brand-500"></i> Paso a paso: cómo configurar la conexión con Google Drive
-            </summary>
-            <div class="px-3 pb-3 pt-1 space-y-4 border-t border-slate-800 pt-3">
-                <p>Esto se configura <strong class="text-slate-300">una vez por cliente</strong>: cada cliente tiene su propio proyecto y su propia app OAuth en Google Cloud (no se comparte con otros clientes del sistema). El Client ID/Secret se cargan desde <a href="/super-admin" class="text-brand-400 hover:underline">el panel Súper Admin</a> (botón de engranaje de este cliente → sección "Google Drive"), pero acá te dejamos la guía completa.</p>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">1. Crear el proyecto en Google Cloud</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Entrá a <a href="https://console.cloud.google.com/" target="_blank" rel="noopener" class="text-brand-400 hover:underline">console.cloud.google.com</a> logueado con la cuenta de Google del cliente (o la que administre su Drive).</li>
-                        <li>Arriba a la izquierda, al lado del logo de Google Cloud, click en el selector de proyecto (dice "Seleccionar un proyecto" o el nombre de otro proyecto).</li>
-                        <li>Click en <strong class="text-slate-300">"Proyecto nuevo"</strong>, poné un nombre (ej: "Bot Documentos - [Nombre del Cliente]") y click en <strong class="text-slate-300">"Crear"</strong>.</li>
-                        <li>Esperá unos segundos y volvé a abrir el selector de proyecto para elegir el que acabás de crear (tiene que quedar seleccionado antes de seguir).</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">2. Habilitar la Google Drive API</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Menú de tres líneas (☰) arriba a la izquierda → <strong class="text-slate-300">"APIs y servicios"</strong> → <strong class="text-slate-300">"Biblioteca"</strong>.</li>
-                        <li>En el buscador escribí <strong class="text-slate-300">"Google Drive API"</strong> y hacé click en el resultado.</li>
-                        <li>Click en el botón azul <strong class="text-slate-300">"Habilitar"</strong>.</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">3. Configurar la pantalla de consentimiento</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Pantalla de consentimiento de OAuth"</strong>.</li>
-                        <li>Tipo de usuario: elegí <strong class="text-slate-300">"Externo"</strong> → "Crear".</li>
-                        <li>Completá "Nombre de la aplicación" (ej: el nombre del bot), tu email en "Correo electrónico de asistencia al usuario" y en "Datos de contacto del desarrollador" → "Guardar y continuar".</li>
-                        <li>En la pantalla de "Permisos"/Scopes no hace falta tocar nada → "Guardar y continuar".</li>
-                        <li>En <strong class="text-slate-300">"Usuarios de prueba"</strong> → "+ Add Users" → agregá el email de Gmail/Workspace de la cuenta cuyo Drive se va a conectar (mientras la app esté en modo "Prueba", SOLO esa cuenta va a poder conectarse) → "Guardar y continuar".</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">4. Crear las credenciales OAuth</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Menú (☰) → "APIs y servicios" → <strong class="text-slate-300">"Credenciales"</strong>.</li>
-                        <li>Click en <strong class="text-slate-300">"+ Crear credenciales"</strong> (arriba) → <strong class="text-slate-300">"ID de cliente de OAuth"</strong>.</li>
-                        <li>En "Tipo de aplicación" elegí <strong class="text-slate-300">"Aplicación web"</strong>. Nombre: el que quieras (ej: "Bot WhatsApp").</li>
-                        <li>Bajá hasta <strong class="text-slate-300">"URI de redireccionamiento autorizados"</strong> → "+ Añadir URI" → pegá exactamente esta URL (copiala tal cual, sin espacios):
-                            <code id="gdriveRedirectUriHint" class="block mt-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-slate-300 break-all select-all"></code>
-                        </li>
-                        <li>Click en <strong class="text-slate-300">"Crear"</strong>.</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">5. Copiar y pegar en el panel Súper Admin</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Google va a mostrar un cuadro con <strong class="text-slate-300">"Tu ID de cliente"</strong> y <strong class="text-slate-300">"Tu secreto de cliente"</strong>. Copiá cada uno.</li>
-                        <li>Andá a <a href="/super-admin" class="text-brand-400 hover:underline">/super-admin</a>, click en el ícono de engranaje de este cliente, sección "Google Drive", pegá el Client ID y el Client Secret y guardá con "Guardar Configuración".</li>
-                        <li>Si cerraste ese cuadro sin copiar el secreto, volvé a "Credenciales" en Google Cloud, hacé click en el nombre de la credencial creada y ahí podés volver a verlo (o generar uno nuevo con "Restablecer secreto").</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="font-bold text-slate-300 mb-1">6. Conectar la cuenta de Drive</p>
-                    <ul class="list-disc list-inside space-y-1 pl-1">
-                        <li>Volvé a esta página y apretá <strong class="text-slate-300">"Conectar con Google Drive"</strong> más abajo.</li>
-                        <li>Elegí la cuenta de Google que agregaste como "usuario de prueba" en el paso 3.</li>
-                        <li>Es normal que Google muestre un aviso <strong class="text-slate-300">"Google no verificó esta app"</strong> (porque la app está en modo prueba, no publicada) → click en "Avanzado" → "Ir a [nombre de tu app] (no seguro)". No es un problema real, es tu propia app.</li>
-                        <li>Aceptá el permiso de solo lectura de Drive y listo.</li>
-                    </ul>
-                </div>
-            </div>
-        </details>
-
-        <div id="gdriveNotConnectedBox" class="hidden">
-            <a href="/api/admin/gdrive/oauth/start" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">
-                <i data-lucide="link" class="w-4 h-4"></i> Conectar con Google Drive
-            </a>
+        <div id="gdriveNotConfiguredBox" class="hidden text-sm text-slate-400 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+            Todavía no hay una cuenta de servicio de Google Drive configurada para este cliente. Pedile a un Súper Admin que la cargue desde <a href="/super-admin" class="text-brand-400 hover:underline">el panel Súper Admin</a> (ícono de engranaje de este cliente → sección "Google Drive").
         </div>
 
         <div id="gdriveConnectedBox" class="hidden space-y-3">
-            <div class="flex items-center justify-between flex-wrap gap-2">
-                <span class="text-sm text-emerald-400 flex items-center gap-2">
-                    <i data-lucide="check-circle" class="w-4 h-4"></i>
-                    Conectado como <span id="gdriveEmail" class="text-white font-medium"></span>
-                </span>
-                <button onclick="disconnectGDrive()" class="text-xs text-red-400 hover:text-red-300">Desconectar</button>
+            <div class="text-sm text-slate-300 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+                Compartí tu carpeta de Drive con este email (rol <strong class="text-slate-300">Lector</strong>), igual que se comparte con cualquier persona desde el botón "Compartir" de Drive:
+                <div class="flex items-center gap-2 mt-2">
+                    <code id="gdriveServiceAccountEmail" class="flex-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-brand-300 break-all select-all"></code>
+                    <button onclick="copyGDriveEmail()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs border border-slate-700 whitespace-nowrap">Copiar</button>
+                </div>
             </div>
-            <div id="gdriveNeedsReconnect" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-2">
-                El acceso fue revocado o expiró. Reconectá para seguir sincronizando.
+            <div id="gdriveShareRevoked" class="hidden text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-2">
+                El acceso a la carpeta fue revocado — verificá que sigue compartida con el email de arriba (rol Lector).
             </div>
 
             <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
                 <input type="text" id="gdriveFolderInput" placeholder="Pegá el link o ID de la carpeta raíz en Drive" class="flex-1 w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
                 <button onclick="setGDriveRootFolder()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 whitespace-nowrap">Usar esta carpeta</button>
             </div>
-            <p class="text-xs text-slate-500">Carpeta actual: <span id="gdriveRootFolderName" class="text-slate-300">Ninguna configurada</span></p>
+            <p class="text-xs text-slate-500">Carpeta actual: <span id="gdriveRootFolderName" class="text-slate-300">Ninguna configurada</span>
+                <button onclick="disconnectGDrive()" class="ml-2 text-xs text-red-400 hover:text-red-300">Quitar carpeta</button>
+            </p>
 
             <div class="flex items-center gap-3">
                 <button onclick="syncGDriveNow()" id="gdriveSyncBtn" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
@@ -735,12 +655,12 @@
         const res = await fetch('/api/admin/gdrive/status');
         const status = await res.json();
 
-        document.getElementById('gdriveNotConnectedBox').classList.toggle('hidden', !!status.connected);
-        document.getElementById('gdriveConnectedBox').classList.toggle('hidden', !status.connected);
-        if (!status.connected) return;
+        document.getElementById('gdriveNotConfiguredBox').classList.toggle('hidden', !!status.service_account_configured);
+        document.getElementById('gdriveConnectedBox').classList.toggle('hidden', !status.service_account_configured);
+        if (!status.service_account_configured) return;
 
-        document.getElementById('gdriveEmail').textContent = status.email || '';
-        document.getElementById('gdriveNeedsReconnect').classList.toggle('hidden', !status.needs_reconnect);
+        document.getElementById('gdriveServiceAccountEmail').textContent = status.service_account_email || '';
+        document.getElementById('gdriveShareRevoked').classList.toggle('hidden', !status.share_revoked);
         document.getElementById('gdriveRootFolderName').textContent = status.root_folder_name || 'Ninguna configurada';
         document.getElementById('gdriveLastSync').textContent = status.last_sync_at ? `Última sincronización: ${timeAgo(status.last_sync_at)}` : 'Todavía no se sincronizó';
 
@@ -757,8 +677,13 @@
         }
     }
 
+    async function copyGDriveEmail() {
+        const email = document.getElementById('gdriveServiceAccountEmail').textContent;
+        if (email) await navigator.clipboard.writeText(email);
+    }
+
     async function disconnectGDrive() {
-        if (!confirm('¿Desconectar Google Drive? Los documentos ya sincronizados quedan en la biblioteca, pero dejan de poder enviarse hasta reconectar.')) return;
+        if (!confirm('¿Quitar la carpeta configurada? Los documentos ya sincronizados quedan en la biblioteca, pero dejan de poder enviarse hasta configurar una carpeta de nuevo.')) return;
         await fetch('/api/admin/gdrive/disconnect', { method: 'POST' });
         await loadGDriveStatus();
     }
@@ -784,7 +709,7 @@
         try {
             const res = await fetch('/api/admin/gdrive/sync_now', { method: 'POST' });
             const summary = await res.json();
-            if (summary.needs_reconnect) alert('Necesitás reconectar Google Drive para sincronizar.');
+            if (summary.share_revoked) alert('La carpeta ya no está compartida con la cuenta de servicio. Volvé a compartirla y sincronizá de nuevo.');
             else if (summary.error) alert(`Error al sincronizar: ${summary.error}`);
         } finally {
             btn.disabled = false;
@@ -794,17 +719,6 @@
         await loadGDriveStatus();
         await loadAll();
     }
-
-    document.getElementById('gdriveRedirectUriHint').textContent = window.location.origin + '/api/admin/gdrive/oauth/callback';
-
-    (function showGDriveOauthFeedback() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('gdrive_error')) document.getElementById('gdriveOauthErrorBanner').classList.remove('hidden');
-        if (params.get('gdrive') === 'connected') document.getElementById('gdriveOauthOkBanner').classList.remove('hidden');
-        if (params.has('gdrive_error') || params.has('gdrive')) {
-            window.history.replaceState({}, '', window.location.pathname);
-        }
-    })();
 
     loadAll();
     loadGDriveStatus();

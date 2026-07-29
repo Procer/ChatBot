@@ -109,8 +109,7 @@ class ClientSettingsUpdate(BaseModel):
     feat_catalog: bool = False
     feat_catalog_dynamic_fields: bool = False
     feat_document_library: bool = False
-    google_oauth_client_id: str = None
-    google_oauth_client_secret: str = None  # vacío/None = no tocar el secreto ya guardado
+    gdrive_service_account_json: str = None  # vacío/None = no tocar la clave ya guardada
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -2506,55 +2505,15 @@ async def api_save_doc_library_settings(request: Request, payload: DocLibrarySet
 class GDriveSetFolderPayload(BaseModel):
     folder_id: str
 
-@app.get("/api/admin/gdrive/oauth/start")
-async def api_gdrive_oauth_start(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
-
-    from src.database.gdrive_sync import build_oauth_flow, get_oauth_redirect_uri, generate_oauth_state
-    try:
-        redirect_uri = get_oauth_redirect_uri(str(request.base_url))
-        flow = build_oauth_flow(redirect_uri, target_client_id)
-        state = generate_oauth_state(target_client_id)
-        auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent", state=state)
-        return RedirectResponse(url=auth_url)
-    except Exception as e:
-        logging.error(f"[GDrive] Error iniciando OAuth: {e}")
-        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
-
-@app.get("/api/admin/gdrive/oauth/callback")
-async def api_gdrive_oauth_callback(request: Request, current_user: User = Depends(get_current_user)):
-    from src.database.gdrive_sync import build_oauth_flow, get_oauth_redirect_uri, pop_oauth_state, save_oauth_tokens
-
-    state = request.query_params.get("state")
-    code = request.query_params.get("code")
-    client_id = pop_oauth_state(state) if state else None
-    if not client_id or not code:
-        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
-
-    # Defensa en profundidad: el admin logueado debe seguir teniendo permiso sobre ese cliente
-    # (respeta impersonación de super-admin, pero no confía únicamente en la cookie de sesión).
-    if current_user.client_id is not None and current_user.client_id != client_id:
-        return JSONResponse(status_code=403, content={"error": "No autorizado para este cliente"})
-
-    try:
-        redirect_uri = get_oauth_redirect_uri(str(request.base_url))
-        flow = build_oauth_flow(redirect_uri, client_id)
-        flow.fetch_token(code=code)
-        save_oauth_tokens(client_id, flow.credentials)
-    except Exception as e:
-        logging.error(f"[GDrive] Error en callback OAuth (client_id={client_id}): {e}")
-        return RedirectResponse(url="/admin/document-library?gdrive_error=1")
-
-    return RedirectResponse(url="/admin/document-library?gdrive=connected")
-
 @app.post("/api/admin/gdrive/disconnect")
 async def api_gdrive_disconnect(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Acción del cliente sobre SU selección de carpeta. No borra la cuenta de servicio en sí
+    (eso es exclusivo de Super Admin, ver PUT /api/superadmin/clients/{id}/settings)."""
     target_client_id, _, _ = get_admin_context(request, current_user, db)
     if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
 
-    from src.database.gdrive_sync import disconnect_drive
-    disconnect_drive(target_client_id)
+    from src.database.gdrive_sync import clear_root_folder
+    clear_root_folder(target_client_id)
     return {"status": "ok"}
 
 @app.get("/api/admin/gdrive/status")
@@ -2564,7 +2523,7 @@ async def api_gdrive_status(request: Request, db: Session = Depends(get_db), cur
 
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings:
-        return {"connected": False}
+        return {"service_account_configured": False}
 
     summary = None
     if settings.gdrive_last_sync_summary:
@@ -2574,12 +2533,12 @@ async def api_gdrive_status(request: Request, db: Session = Depends(get_db), cur
             summary = None
 
     return {
-        "connected": bool(settings.gdrive_refresh_token_encrypted),
-        "email": settings.gdrive_connected_email,
+        "service_account_configured": bool(settings.gdrive_service_account_json_encrypted),
+        "service_account_email": settings.gdrive_service_account_email,
         "root_folder_name": settings.gdrive_root_folder_name,
         "last_sync_at": settings.gdrive_last_sync_at.isoformat() if settings.gdrive_last_sync_at else None,
         "last_sync_summary": summary,
-        "needs_reconnect": bool(settings.gdrive_needs_reconnect),
+        "share_revoked": bool(settings.gdrive_share_revoked),
     }
 
 @app.get("/api/admin/gdrive/folders")
@@ -2590,7 +2549,7 @@ async def api_gdrive_folders(request: Request, parent_id: str = None, db: Sessio
     from src.database.gdrive_sync import list_folder_contents_for_picker
     folders = list_folder_contents_for_picker(target_client_id, parent_id)
     if folders is None:
-        return JSONResponse(status_code=400, content={"error": "Google Drive no está conectado"})
+        return JSONResponse(status_code=400, content={"error": "No hay cuenta de servicio de Google Drive configurada para este cliente"})
     return {"folders": folders}
 
 @app.post("/api/admin/gdrive/set_root_folder")
@@ -2602,7 +2561,7 @@ async def api_gdrive_set_root_folder(request: Request, payload: GDriveSetFolderP
     folder_id = parse_folder_id_from_input(payload.folder_id)
     info = get_folder_info(target_client_id, folder_id)
     if not info:
-        return JSONResponse(status_code=400, content={"error": "No se pudo acceder a esa carpeta. Verificá el link/ID y que la cuenta conectada tenga acceso."})
+        return JSONResponse(status_code=400, content={"error": "No se pudo acceder a esa carpeta. Verificá el link/ID y que la hayas compartido con el email de la cuenta de servicio."})
 
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     settings.gdrive_root_folder_id = info["id"]
@@ -3710,8 +3669,8 @@ async def get_client(client_id: int, db: Session = Depends(get_db)):
             "feat_catalog": getattr(client.settings, 'feat_catalog', False),
             "feat_catalog_dynamic_fields": getattr(client.settings, 'feat_catalog_dynamic_fields', False),
             "feat_document_library": getattr(client.settings, 'feat_document_library', False),
-            "google_oauth_client_id": getattr(client.settings, 'google_oauth_client_id', None) or '',
-            "google_oauth_configured": bool(getattr(client.settings, 'google_oauth_client_id', None) and getattr(client.settings, 'google_oauth_client_secret_encrypted', None))
+            "gdrive_service_account_email": getattr(client.settings, 'gdrive_service_account_email', None) or '',
+            "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None))
         }
         
     return {
@@ -3747,16 +3706,15 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_catalog_dynamic_fields = settings_data.feat_catalog_dynamic_fields
     settings.feat_document_library = settings_data.feat_document_library
 
-    oauth_client_id = (settings_data.google_oauth_client_id or "").strip()
-    if oauth_client_id:
-        from src.database.gdrive_sync import encrypt_token
-        settings.google_oauth_client_id = oauth_client_id
-        oauth_secret = (settings_data.google_oauth_client_secret or "").strip()
-        if oauth_secret:
-            try:
-                settings.google_oauth_client_secret_encrypted = encrypt_token(oauth_secret)
-            except RuntimeError as e:
-                return JSONResponse(status_code=500, content={"error": f"No se pudo guardar el Client Secret: {e}. Configurá GDRIVE_TOKEN_ENCRYPTION_KEY en el .env del servidor y reiniciá."})
+    sa_json_raw = (settings_data.gdrive_service_account_json or "").strip()
+    if sa_json_raw:
+        from src.database.gdrive_sync import save_service_account_key
+        try:
+            save_service_account_key(client_id, sa_json_raw)
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        except RuntimeError as e:
+            return JSONResponse(status_code=500, content={"error": f"No se pudo guardar la clave de la cuenta de servicio: {e}. Configurá GDRIVE_TOKEN_ENCRYPTION_KEY en el .env del servidor y reiniciá."})
 
     # Trigger webhook update in Green API
     client = db.query(Client).filter_by(id=client_id).first()
@@ -3767,6 +3725,18 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
         public_base_url = os.getenv("PUBLIC_BASE_URL", "http://TU_DOMINIO_VPS")
         asyncio.create_task(setup_whatsapp_webhook(public_base_url, client.slug))
 
+    return {"status": "ok"}
+
+
+@app.post("/api/superadmin/clients/{client_id}/gdrive/clear_service_account")
+async def clear_client_service_account(client_id: int, db: Session = Depends(get_db)):
+    """Quita la clave de cuenta de servicio de Drive de un cliente (acción explícita y separada
+    del guardado normal, ya que dejar el campo vacío en el form significa 'no tocar', no 'borrar')."""
+    settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
+
+    from src.database.gdrive_sync import clear_service_account_key
+    clear_service_account_key(client_id)
     return {"status": "ok"}
 
 
@@ -3952,8 +3922,8 @@ async def gdrive_sync_loop():
         try:
             db = SessionLocal()
             clients = db.query(ClientSettings).filter(
-                ClientSettings.gdrive_refresh_token_encrypted.isnot(None),
-                ClientSettings.gdrive_needs_reconnect == False
+                ClientSettings.gdrive_service_account_json_encrypted.isnot(None),
+                ClientSettings.gdrive_share_revoked == False
             ).all()
             client_ids = [c.client_id for c in clients]
             db.close()

@@ -102,20 +102,16 @@ class ClientSettings(Base):
     reminder_2h_hours = Column(Integer, default=2, server_default='2')
 
     # --- SINCRONIZACIÓN CON GOOGLE DRIVE (Biblioteca de Documentos) ---
-    gdrive_refresh_token_encrypted = Column(Text, nullable=True)  # Fernet, nunca texto plano (más sensible que whatsapp_token/telegram_token)
-    gdrive_connected_email = Column(String(255), nullable=True)
-    gdrive_connected_at = Column(DateTime, nullable=True)
+    # Cuenta de servicio propia de ESTE cliente (no OAuth de usuario): el cliente comparte
+    # su carpeta de Drive con el email de la cuenta de servicio, sin pantalla de consentimiento
+    # ni vencimiento de token (a diferencia del refresh token OAuth que reemplazó esto).
+    gdrive_service_account_json_encrypted = Column(Text, nullable=True)  # Fernet, nunca texto plano (más sensible que whatsapp_token/telegram_token)
+    gdrive_service_account_email = Column(String(255), nullable=True)  # client_email cacheado del JSON, para mostrar en el panel sin desencriptar
     gdrive_root_folder_id = Column(String(255), nullable=True)
     gdrive_root_folder_name = Column(String(255), nullable=True)
     gdrive_last_sync_at = Column(DateTime, nullable=True)
     gdrive_last_sync_summary = Column(Text, nullable=True)  # JSON: {"created":N,"unmapped_folders":[...],"missing_in_drive":N}
-    gdrive_needs_reconnect = Column(Boolean, default=False)
-
-    # Credenciales de la app OAuth de Google propia de ESTE cliente (cada tenant registra
-    # su propio proyecto en Google Cloud — a diferencia del refresh token de arriba, esto
-    # identifica la "app", no la cuenta de Drive conectada).
-    google_oauth_client_id = Column(String(255), nullable=True)
-    google_oauth_client_secret_encrypted = Column(Text, nullable=True)  # Fernet, misma clave que gdrive_refresh_token_encrypted
+    gdrive_share_revoked = Column(Boolean, default=False)  # la SA tiene credenciales válidas pero la carpeta ya no está compartida con ella
 
     client = relationship("Client", back_populates="settings")
 

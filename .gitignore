@@ -6,6 +6,12 @@ __pycache__/
 # Variables de Entorno (¡CRÍTICO!)
 .env
 
+# Credenciales de cuentas de servicio de Google (pruebas de Drive)
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
 # Bases de Datos (Solo subirlas si quieres clonar el cerebro, 
 # pero Git no es el mejor lugar para archivos de +50MB)
 checkpoints.sqlite
