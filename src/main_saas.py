@@ -2479,6 +2479,41 @@ async def api_delete_doc_library_user(request: Request, user_id: int, db: Sessio
     db.commit()
     return {"status": "ok"}
 
+# --- Sesiones activas (acceso ya autenticado por thread/segmento) ---
+
+@app.get("/api/admin/document_library/sessions")
+async def api_get_doc_sessions(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocSession, DocSegment, DocLibraryUser
+    sessions = db.query(DocSession).filter_by(client_id=target_client_id).order_by(DocSession.authenticated_at.desc()).all()
+    segment_names = {s.id: s.name for s in db.query(DocSegment).filter_by(client_id=target_client_id).all()}
+    usernames = {u.id: u.username for u in db.query(DocLibraryUser).filter_by(client_id=target_client_id).all()}
+
+    now = datetime.utcnow()
+    return [{
+        "id": s.id,
+        "thread_id": s.thread_id,
+        "segment_name": segment_names.get(s.segment_id, "(segmento eliminado)"),
+        "library_username": usernames.get(s.library_user_id) if s.library_user_id else None,
+        "authenticated_at": s.authenticated_at.strftime("%d/%m/%Y %H:%M") if s.authenticated_at else "",
+        "expires_at": s.expires_at.strftime("%d/%m/%Y %H:%M") if s.expires_at else None,
+        "is_expired": bool(s.expires_at and s.expires_at < now),
+    } for s in sessions]
+
+@app.delete("/api/admin/document_library/sessions/delete/{session_id}")
+async def api_delete_doc_session(request: Request, session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Cierra manualmente una sesión de acceso a un segmento protegido: la próxima vez que el
+    usuario pida un documento de ese segmento, el bot le va a volver a pedir la clave."""
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import DocSession
+    db.query(DocSession).filter_by(client_id=target_client_id, id=session_id).delete()
+    db.commit()
+    return {"status": "ok"}
+
 # --- Configuración (frases gatillo) ---
 
 @app.get("/api/admin/document_library/settings")

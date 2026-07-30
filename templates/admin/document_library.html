@@ -163,6 +163,32 @@
             <p id="usersEmptyState" class="text-slate-500 text-sm py-4 hidden">Todavía no creaste ningún usuario de biblioteca.</p>
         </div>
     </div>
+
+    <!-- Sesiones activas -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-10">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+            <i data-lucide="key-round" class="w-4 h-4 text-brand-500"></i> Sesiones activas
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">
+            Usuarios que ya se autenticaron en un segmento protegido y no van a tener que volver a poner la clave hasta que la sesión venza. Cerrala manualmente si necesitás que alguien vuelva a autenticarse ahora mismo.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        <th class="py-2 pr-3">Contacto</th>
+                        <th class="py-2 pr-3">Segmento</th>
+                        <th class="py-2 pr-3">Usuario</th>
+                        <th class="py-2 pr-3">Autenticado</th>
+                        <th class="py-2 pr-3">Vence</th>
+                        <th class="py-2 pr-3 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsTableBody"></tbody>
+            </table>
+            <p id="sessionsEmptyState" class="text-slate-500 text-sm py-4 hidden">No hay sesiones activas por el momento.</p>
+        </div>
+    </div>
 </div>
 
 <!-- Modal Segmento -->
@@ -318,6 +344,7 @@
     let segmentsData = [];
     let documentsData = [];
     let usersData = [];
+    let sessionsData = [];
 
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     function openModalEl(id) { document.getElementById(id).classList.remove('hidden'); }
@@ -329,22 +356,25 @@
     }
 
     async function loadAll() {
-        const [segRes, docRes, userRes, settingsRes] = await Promise.all([
+        const [segRes, docRes, userRes, settingsRes, sessionsRes] = await Promise.all([
             fetch('/api/admin/document_library/segments'),
             fetch('/api/admin/document_library/documents'),
             fetch('/api/admin/document_library/users'),
             fetch('/api/admin/document_library/settings'),
+            fetch('/api/admin/document_library/sessions'),
         ]);
         segmentsData = await segRes.json();
         documentsData = await docRes.json();
         usersData = await userRes.json();
         const settings = await settingsRes.json();
+        sessionsData = await sessionsRes.json();
 
         document.getElementById('triggerPhrasesInput').value = (settings.trigger_phrases || []).join(', ');
 
         renderSegmentsTable();
         renderDocumentsTable();
         renderUsersTable();
+        renderSessionsTable();
         if (window.lucide) lucide.createIcons();
     }
 
@@ -674,6 +704,40 @@
     async function deleteLibraryUser(id) {
         if (!confirm('¿Eliminar este usuario de biblioteca?')) return;
         await fetch(`/api/admin/document_library/users/delete/${id}`, { method: 'DELETE' });
+        await loadAll();
+    }
+
+    // ---------- SESIONES ACTIVAS ----------
+
+    function renderSessionsTable() {
+        const body = document.getElementById('sessionsTableBody');
+        body.innerHTML = '';
+        document.getElementById('sessionsEmptyState').classList.toggle('hidden', sessionsData.length > 0);
+        sessionsData.forEach(s => {
+            const expiresLabel = s.expires_at
+                ? (s.is_expired ? `<span class="text-red-400">Vencida (${s.expires_at})</span>` : s.expires_at)
+                : '<span class="text-slate-400">Permanente</span>';
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-slate-800/50';
+            tr.innerHTML = `
+                <td class="py-2 pr-3 text-white font-medium">${s.thread_id}</td>
+                <td class="py-2 pr-3 text-slate-300">${s.segment_name}</td>
+                <td class="py-2 pr-3 text-slate-400">${s.library_username || '<span class="text-slate-500">Clave genérica</span>'}</td>
+                <td class="py-2 pr-3 text-slate-400">${s.authenticated_at}</td>
+                <td class="py-2 pr-3">${expiresLabel}</td>
+                <td class="py-2 pr-3 text-right">
+                    <button onclick="revokeSession(${s.id})" class="text-slate-400 hover:text-red-400 text-xs font-semibold flex items-center gap-1 ml-auto">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Cerrar sesión
+                    </button>
+                </td>`;
+            body.appendChild(tr);
+        });
+        if (window.lucide) lucide.createIcons();
+    }
+
+    async function revokeSession(id) {
+        if (!confirm('¿Cerrar esta sesión? La próxima vez que pida un documento de ese segmento, el bot le va a volver a pedir la clave.')) return;
+        await fetch(`/api/admin/document_library/sessions/delete/${id}`, { method: 'DELETE' });
         await loadAll();
     }
 
