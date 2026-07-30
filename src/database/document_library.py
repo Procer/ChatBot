@@ -262,7 +262,10 @@ def get_authorized_document_file(client_id: int, thread_id: str, document_id: in
     db = SessionLocal()
     try:
         doc = db.query(Document).filter_by(client_id=client_id, id=document_id, is_active=True).first()
-        if not doc or not doc.file_path:
+        # Los documentos de Drive nunca tienen file_path (el archivo no se guarda localmente,
+        # se trae fresco desde Drive recién al enviarlo vía external_file_id).
+        has_file = doc and (doc.file_path or (doc.source_type == "gdrive" and doc.external_file_id))
+        if not has_file:
             return None
 
         segment_ids = [l.segment_id for l in db.query(DocumentSegmentLink).filter_by(document_id=doc.id).all()]
