@@ -1335,7 +1335,72 @@ def iniciar_busqueda_documento_segmento(query: str, segmento: str, config: Runna
         )
     })
 
-tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento]
+@tool
+def buscar_documento_en_segmento(query: str, segmento: str, config: RunnableConfig):
+    """Busca UN ÚNICO documento dentro de un segmento específico, usando solo los datos puntuales
+    ya recolectados (no la consulta/frase original que disparó el flujo). Se debe llamar SOLO al
+    completar la recolección de datos activada por 'iniciar_busqueda_documento_segmento', con el
+    texto EXACTO indicado por el sistema como 'query'. Nunca devuelve una lista: si hay resultado,
+    es el documento puntual que corresponde a esos datos.
+    Si trae 'status':'not_found', avisale al usuario que no encontraste un documento con esos datos.
+    Si trae 'status':'activated', seguí el mismo flujo de login que con 'buscar_documento':
+    'registrar_dato_tramite' para 'Usuario' y 'registrar_clave_documento' para 'Contraseña'.
+    Si trae 'status':'success', incluí literalmente la etiqueta [SEND_DOC: <id>] al final de tu
+    respuesta si el documento responde lo que pidió el usuario."""
+    client_id = config.get("configurable", {}).get("client_id")
+    thread_id = config.get("configurable", {}).get("thread_id")
+    if not client_id: return json.dumps({"error": "No client ID"})
+
+    db = SessionLocal()
+    try:
+        settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+        if not settings or not settings.feat_document_library:
+            return json.dumps({"status": "error", "message": "La biblioteca de documentos no está habilitada para este cliente."})
+    finally:
+        db.close()
+
+    from src.database.document_library import get_segment_by_name, search_segment_document
+
+    db2 = SessionLocal()
+    try:
+        segment = get_segment_by_name(db2, client_id, segmento)
+    finally:
+        db2.close()
+    if not segment:
+        return json.dumps({"status": "error", "message": f"No encontré el segmento '{segmento}'."})
+
+    result = search_segment_document(client_id, thread_id, segment.id, query)
+
+    if not result:
+        return json.dumps({"status": "not_found", "message": f"No encontré ningún documento del segmento '{segmento}' con esos datos."})
+
+    if result["status"] == "blocked":
+        auth_mode = result["auth_mode"]
+        fields = ["Usuario", "Contraseña"] if auth_mode == "individual" else ["Contraseña"]
+        return json.dumps({
+            "status": "activated",
+            "topic": f"{DOC_LOGIN_TOPIC_PREFIX}{result['segment_name']}",
+            "fields": fields,
+            "storage": "database",
+            "documento_consulta": query,
+            "segmento_busqueda": result["segment_name"],
+            "message": (
+                f"El documento del segmento '{result['segment_name']}' está protegido. "
+                f"Pedile amablemente estos datos, uno por vez o todos juntos: {', '.join(fields)}. "
+                f"Para 'Usuario' (si corresponde) usá 'registrar_dato_tramite', y para 'Contraseña' usá "
+                f"SIEMPRE la herramienta 'registrar_clave_documento' (pasándole segmento='{result['segment_name']}'). "
+                f"Una vez validado el acceso, volvé a llamar a 'buscar_documento_en_segmento' con "
+                f"segmento='{result['segment_name']}' y esta misma query: '{query}'."
+            )
+        })
+
+    return json.dumps({
+        "status": "success",
+        "documento": {"id": result["id"], "titulo": result["title"], "descripcion": result["description"]},
+        "instruccion": "Si esto responde lo que pidió el usuario, incluí la etiqueta [SEND_DOC: <id>] al final de tu respuesta."
+    })
+
+tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento, buscar_documento_en_segmento]
 tool_node = ToolNode(tools)
 
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
@@ -1497,22 +1562,32 @@ def call_model(state: AgentState):
                         "avisale que fue registrado y que se va a procesar.\n"
                     )
                 elif is_doc_login_topic:
-                    system_prompt += (
-                        "\n### ✅ ACCESO A DOCUMENTOS VALIDADO\n"
-                        "El usuario ya se autenticó correctamente. Ahora DEBÉS continuar respondiendo su consulta "
-                        "original sobre el documento que había pedido, volviendo a llamar a la herramienta "
-                        "'buscar_documento' con esa misma consulta.\n"
-                    )
+                    segmento_busqueda = collected_data.get("Segmento de Búsqueda")
+                    if segmento_busqueda:
+                        consulta = collected_data.get("Consulta de Documento", "")
+                        system_prompt += (
+                            "\n### ✅ ACCESO A DOCUMENTOS VALIDADO\n"
+                            "El usuario ya se autenticó correctamente. Ahora DEBÉS llamar a la herramienta "
+                            f"'buscar_documento_en_segmento' con segmento='{segmento_busqueda}' y este texto "
+                            f"EXACTO como parámetro 'query' (no lo reformules ni lo resumas): '{consulta}'.\n"
+                        )
+                    else:
+                        system_prompt += (
+                            "\n### ✅ ACCESO A DOCUMENTOS VALIDADO\n"
+                            "El usuario ya se autenticó correctamente. Ahora DEBÉS continuar respondiendo su consulta "
+                            "original sobre el documento que había pedido, volviendo a llamar a la herramienta "
+                            "'buscar_documento' con esa misma consulta.\n"
+                        )
                 elif is_doc_search_topic:
                     from src.database.document_library import build_segment_search_query
                     segment_fields = [f for f in fields_to_collect if f != "Nombre del Cliente"]
-                    base_query = collected_data.get("Consulta de Documento", "")
-                    combined_query = build_segment_search_query(base_query, collected_data, segment_fields)
+                    combined_query = build_segment_search_query(collected_data, segment_fields)
+                    segment_name = str(state.get('form_topic') or '')[len(DOC_SEARCH_TOPIC_PREFIX):]
                     system_prompt += (
                         "\n### ✅ DATOS DE BÚSQUEDA COMPLETADOS\n"
                         "Ya tenés los datos para buscar el documento. Ahora DEBÉS llamar a la herramienta "
-                        f"'buscar_documento' con este texto EXACTO como parámetro 'query' (no lo reformules ni "
-                        f"lo resumas): '{combined_query}'.\n"
+                        f"'buscar_documento_en_segmento' con segmento='{segment_name}' y este texto EXACTO "
+                        f"como parámetro 'query' (no lo reformules ni lo resumas): '{combined_query}'.\n"
                     )
                 else:
                     system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
@@ -1725,6 +1800,8 @@ def state_manager(state: AgentState):
                         initial_data["SKU"] = data["producto_sku"]
                     if data.get("documento_consulta"):
                         initial_data["Consulta de Documento"] = data["documento_consulta"]
+                    if data.get("segmento_busqueda"):
+                        initial_data["Segmento de Búsqueda"] = data["segmento_busqueda"]
                     new_state["collected_data"] = initial_data
                     new_state["storage_dest"] = data["storage"]
                 elif data.get("status") == "profile_update":

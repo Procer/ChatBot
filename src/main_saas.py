@@ -3588,10 +3588,15 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
 # PANEL SUPER ADMIN (MODO DIOS)
 # ==========================================
 
+def require_superadmin(current_user: User) -> bool:
+    """True si el usuario logueado es Súper Admin (client_id NULL, no un cliente impersonando)."""
+    return bool(current_user) and current_user.client_id is None
+
 @app.get("/super-admin", response_class=HTMLResponse)
-async def super_admin_panel(request: Request, db: Session = Depends(get_db)):
+async def super_admin_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Renderiza el panel de control maestro para gestionar inquilinos."""
-    # TODO: Añadir protección de login de Super Admin
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
     clients = db.query(Client).all()
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": []}
     return templates.TemplateResponse(request=request, name="admin/super_admin.html", context={
@@ -3600,15 +3605,19 @@ async def super_admin_panel(request: Request, db: Session = Depends(get_db)):
     })
 
 @app.get("/super-admin/impersonate/{client_id}")
-async def impersonate_client(client_id: int):
+async def impersonate_client(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Permite al Súper Admin ingresar al panel de un cliente específico."""
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
     response = RedirectResponse(url="/admin", status_code=303)
     response.set_cookie(key="impersonated_client_id", value=str(client_id), httponly=True)
     return response
 
 @app.get("/super-admin/stop-impersonate")
-async def stop_impersonate():
+async def stop_impersonate(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Finaliza la sesión impersonada y devuelve al panel Súper Admin."""
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
     response = RedirectResponse(url="/super-admin", status_code=303)
     response.delete_cookie("impersonated_client_id")
     return response
@@ -3636,8 +3645,10 @@ DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EM
 - Escribe respuestas cortas y fáciles de leer desde un teléfono móvil. Evita bloques gigantes de texto."""
 
 @app.post("/api/superadmin/clients")
-async def create_client(client_data: ClientCreate, db: Session = Depends(get_db)):
+async def create_client(client_data: ClientCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Crea un nuevo inquilino en la base de datos."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
     try:
         new_client = Client(business_name=client_data.business_name, slug=client_data.slug, status="active")
         db.add(new_client)
@@ -3657,8 +3668,10 @@ async def create_client(client_data: ClientCreate, db: Session = Depends(get_db)
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.get("/api/superadmin/clients/{client_id}")
-async def get_client(client_id: int, db: Session = Depends(get_db)):
+async def get_client(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Obtiene los detalles de un cliente específico."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
     client = db.query(Client).filter_by(id=client_id).first()
     if not client: return JSONResponse(status_code=404, content={"error": "Not found"})
     
@@ -3696,8 +3709,10 @@ async def get_client(client_id: int, db: Session = Depends(get_db)):
     }
 
 @app.put("/api/superadmin/clients/{client_id}/settings")
-async def update_client_settings(client_id: int, settings_data: ClientSettingsUpdate, db: Session = Depends(get_db)):
+async def update_client_settings(client_id: int, settings_data: ClientSettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Actualiza la configuración y Feature Flags de un inquilino."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
     settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
     if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
     
@@ -3743,9 +3758,11 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
 
 
 @app.post("/api/superadmin/clients/{client_id}/gdrive/clear_service_account")
-async def clear_client_service_account(client_id: int, db: Session = Depends(get_db)):
+async def clear_client_service_account(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Quita la clave de cuenta de servicio de Drive de un cliente (acción explícita y separada
     del guardado normal, ya que dejar el campo vacío en el form significa 'no tocar', no 'borrar')."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
     settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
     if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
 

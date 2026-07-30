@@ -355,18 +355,81 @@ def get_segment_by_trigger(db, client_id: int, message_text: str):
     return None
 
 
-def build_segment_search_query(base_query: str, collected_data: dict, fields: list) -> str:
-    """Combina la consulta original que disparó el flujo con los campos recolectados, como pares
-    'etiqueta: valor', para enriquecer la búsqueda de texto libre (Chroma). No filtra metadata
-    estructurada: solo arma un mejor texto de entrada para la misma búsqueda por similitud."""
+def build_segment_search_query(collected_data: dict, fields: list) -> str:
+    """Arma la consulta de búsqueda SOLO con los campos recolectados para el segmento, como pares
+    'etiqueta: valor'. La frase/palabra gatillo que disparó el flujo NO se incluye acá a propósito:
+    esa frase solo sirve para decidir en qué segmento buscar (routing), no como texto de búsqueda."""
     parts = []
-    if base_query and base_query.strip():
-        parts.append(base_query.strip())
     for f in fields:
         val = str(collected_data.get(f) or "").strip()
         if val and val.lower() not in ("n/a", "na", "no tiene", "no sabe", "no disponible"):
             parts.append(f"{f}: {val}")
     return " ".join(parts).strip()
+
+
+def search_segment_document(client_id: int, thread_id: str, segment_id: int, query: str, k: int = 5):
+    """Busca un único documento DENTRO de un segmento específico (a diferencia de
+    search_documents_candidates, que busca en toda la biblioteca del cliente y puede devolver
+    varios candidatos). Devuelve el mejor match (o el bloqueado, si el mejor match no es
+    accesible) en vez de una lista, porque este flujo pide datos puntuales para encontrar un
+    único documento correcto, no para que el usuario elija de una lista."""
+    db = SessionLocal()
+    try:
+        segment = db.query(DocSegment).filter_by(id=segment_id, is_active=True).first()
+        if not segment:
+            return None
+
+        try:
+            vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+            results_with_scores = vector_db.similarity_search_with_score(
+                query, k=k,
+                filter={"$and": [{"client_id": client_id}, {"doc_type": "library_document"}]}
+            )
+            results = [doc for doc, score in results_with_scores if score <= DOC_SEARCH_SCORE_THRESHOLD]
+        except Exception as e:
+            logging.error(f"[DocLibrary] Error buscando en Chroma (segmento {segment_id}): {e}")
+            results = []
+
+        doc_ids = []
+        seen = set()
+        for r in results:
+            did = r.metadata.get("document_id")
+            if did is not None and did not in seen:
+                seen.add(did)
+                doc_ids.append(did)
+
+        segment_doc_ids = {
+            l.document_id for l in db.query(DocumentSegmentLink).filter_by(segment_id=segment_id).all()
+        }
+        doc_ids = [did for did in doc_ids if did in segment_doc_ids]
+
+        if not doc_ids:
+            log_document_search(client_id, thread_id, query, found=False)
+            return None
+
+        docs = db.query(Document).filter(
+            Document.client_id == client_id,
+            Document.id.in_(doc_ids),
+            Document.is_active == True
+        ).all()
+        docs_by_id = {d.id: d for d in docs}
+
+        for did in doc_ids:  # doc_ids ya viene ordenado por score (mejor primero)
+            doc = docs_by_id.get(did)
+            if not doc:
+                continue
+
+            accessible = segment.is_public or thread_has_segment_access(db, client_id, thread_id, segment.id)
+            log_document_search(client_id, thread_id, query, found=True, results_count=1, document_title=doc.title)
+
+            if not accessible:
+                return {"status": "blocked", "segment_name": segment.name, "auth_mode": segment.auth_mode}
+
+            return {"status": "found", "id": doc.id, "title": doc.title, "description": doc.description or ""}
+
+        return None
+    finally:
+        db.close()
 
 
 def process_doc_login_completion(client_id: int, thread_id: str, topic: str):
