@@ -150,11 +150,6 @@
                         <i data-lucide="shield" class="w-4 h-4 shrink-0"></i> Auditoría
                     </a>
                     {% endif %}
-                    {% if user and user.role == 'superadmin' %}
-                    <a href="/admin/users" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/users' %}active{% endif %}">
-                        <i data-lucide="users" class="w-4 h-4 shrink-0"></i> Gestión de Usuarios
-                    </a>
-                    {% endif %}
                 </div>
             </div>
         </nav>

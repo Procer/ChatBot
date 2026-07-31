@@ -108,6 +108,10 @@
                 <i data-lucide="file-text" class="w-4 h-4 text-brand-500"></i> Documentos
             </h2>
             <div class="flex items-center gap-2">
+                <button onclick="document.getElementById('bulkFolderInput').click()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-1">
+                    <i data-lucide="folder-up" class="w-3.5 h-3.5 text-sky-400"></i> Cargar carpeta
+                </button>
+                <input type="file" id="bulkFolderInput" class="hidden" webkitdirectory multiple onchange="handleBulkFolderUpload(event)">
                 <button onclick="document.getElementById('bulkUploadInput').click()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-1">
                     <i data-lucide="upload" class="w-3.5 h-3.5 text-sky-400"></i> Cargar varios documentos
                 </button>
@@ -117,11 +121,30 @@
                 </button>
             </div>
         </div>
+        <p class="text-xs text-slate-500 mb-3">
+            "Cargar carpeta" sube una carpeta con subcarpetas: cada subcarpeta se asigna automáticamente al segmento con el mismo nombre (creá el segmento primero, arriba). Lo que no matchee queda sin segmento y se avisa al terminar.
+        </p>
         <p id="bulkUploadProgress" class="text-xs text-brand-400 mb-2 hidden"></p>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <label class="text-xs text-slate-400">Filtrar por segmento:</label>
+            <select id="documentSegmentFilter" onchange="renderDocumentsTable()" class="px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <option value="">Todos</option>
+            </select>
+            <div id="documentBulkBar" class="hidden flex items-center gap-2 ml-auto">
+                <span id="documentBulkCount" class="text-xs text-slate-400"></span>
+                <select id="documentBulkSegmentSelect" class="px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <option value="">Elegir segmento...</option>
+                </select>
+                <button onclick="bulkAssignDocumentSegment()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors">Asignar segmento a seleccionados</button>
+            </div>
+        </div>
+
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        <th class="py-2 pr-3"><input type="checkbox" id="documentSelectAll" onchange="toggleAllDocumentChecks(this)" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700"></th>
                         <th class="py-2 pr-3">Título</th>
                         <th class="py-2 pr-3">Palabras clave</th>
                         <th class="py-2 pr-3">Segmentos</th>
@@ -143,14 +166,39 @@
                 <i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Usuarios de Biblioteca
                 <span class="text-xs font-normal text-slate-500">(credenciales individuales para segmentos protegidos)</span>
             </h2>
-            <button onclick="openUserModal()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
-                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Usuario
-            </button>
+            <div class="flex items-center gap-2">
+                {% if is_impersonating %}
+                <button onclick="openBulkUsersModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors border border-slate-700 flex items-center gap-1">
+                    <i data-lucide="clipboard-paste" class="w-3.5 h-3.5 text-sky-400"></i> Pegar desde Excel
+                </button>
+                {% endif %}
+                <button onclick="openUserModal()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo Usuario
+                </button>
+            </div>
         </div>
+
+        {% if is_impersonating %}
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <label class="text-xs text-slate-400">Filtrar por segmento:</label>
+            <select id="userSegmentFilter" onchange="renderUsersTable()" class="px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <option value="">Todos</option>
+            </select>
+            <div id="userBulkBar" class="hidden flex items-center gap-2 ml-auto">
+                <span id="userBulkCount" class="text-xs text-slate-400"></span>
+                <select id="userBulkSegmentSelect" class="px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <option value="">Elegir segmento...</option>
+                </select>
+                <button onclick="bulkAssignUserSegment()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold transition-colors">Asignar segmento a seleccionados</button>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                        {% if is_impersonating %}<th class="py-2 pr-3"><input type="checkbox" id="userSelectAll" onchange="toggleAllUserChecks(this)" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700"></th>{% endif %}
                         <th class="py-2 pr-3">Usuario</th>
                         <th class="py-2 pr-3">Nombre</th>
                         <th class="py-2 pr-3">Segmentos</th>
@@ -340,11 +388,34 @@
     </div>
 </div>
 
+<!-- Modal Carga Masiva de Usuarios (Excel) -->
+<div id="bulkUsersModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-800 rounded-2xl p-6 w-full max-w-2xl animate-scale-in">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-white">Pegar usuarios desde Excel</h3>
+            <button onclick="closeModal('bulkUsersModal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <p class="text-xs text-slate-500 mb-2">
+            Pegá filas copiadas de Excel con columnas separadas por tabulación (o coma): <strong class="text-slate-300">Nombre, Usuario, Contraseña, Segmento</strong>. El segmento es opcional; si no matchea con ninguno existente, el usuario se crea sin segmento.
+        </p>
+        <textarea id="bulkUsersTextarea" rows="8" placeholder="Juan Pérez	jperez	claveSegura1	Choferes&#10;Ana Gómez	agomez	claveSegura2	Administración" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+        <div id="bulkUsersPreview" class="mt-3 max-h-52 overflow-y-auto text-xs hidden"></div>
+        <p id="bulkUsersResult" class="text-xs mt-3 hidden"></p>
+        <div class="flex gap-3 mt-5">
+            <button onclick="closeModal('bulkUsersModal')" class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold transition-colors">Cancelar</button>
+            <button onclick="previewBulkUsers()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-semibold transition-colors">Previsualizar</button>
+            <button onclick="submitBulkUsers()" class="flex-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Crear usuarios</button>
+        </div>
+    </div>
+</div>
+
 <script>
     let segmentsData = [];
     let documentsData = [];
     let usersData = [];
     let sessionsData = [];
+    let selectedDocumentIds = new Set();
+    let selectedUserIds = new Set();
 
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     function openModalEl(id) { document.getElementById(id).classList.remove('hidden'); }
@@ -371,11 +442,27 @@
 
         document.getElementById('triggerPhrasesInput').value = (settings.trigger_phrases || []).join(', ');
 
+        selectedDocumentIds = new Set();
+        selectedUserIds = new Set();
+        populateSegmentSelects();
         renderSegmentsTable();
         renderDocumentsTable();
         renderUsersTable();
         renderSessionsTable();
         if (window.lucide) lucide.createIcons();
+    }
+
+    function populateSegmentSelects() {
+        const optionsHtml = '<option value="">Todos</option>' + segmentsData.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        const pickHtml = '<option value="">Elegir segmento...</option>' + segmentsData.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        const docFilter = document.getElementById('documentSegmentFilter');
+        const userFilter = document.getElementById('userSegmentFilter');
+        const docBulkSel = document.getElementById('documentBulkSegmentSelect');
+        const userBulkSel = document.getElementById('userBulkSegmentSelect');
+        if (docFilter) docFilter.innerHTML = optionsHtml;
+        if (userFilter) userFilter.innerHTML = optionsHtml;
+        if (docBulkSel) docBulkSel.innerHTML = pickHtml;
+        if (userBulkSel) userBulkSel.innerHTML = pickHtml;
     }
 
     async function saveSettings() {
@@ -496,8 +583,13 @@
     function renderDocumentsTable() {
         const body = document.getElementById('documentsTableBody');
         body.innerHTML = '';
-        document.getElementById('documentsEmptyState').classList.toggle('hidden', documentsData.length > 0);
-        documentsData.forEach(d => {
+        const filterEl = document.getElementById('documentSegmentFilter');
+        const filterId = filterEl ? filterEl.value : '';
+        const visibleDocs = filterId
+            ? documentsData.filter(d => (d.segment_ids || []).includes(parseInt(filterId)))
+            : documentsData;
+        document.getElementById('documentsEmptyState').classList.toggle('hidden', visibleDocs.length > 0);
+        visibleDocs.forEach(d => {
             const segNames = (d.segment_ids || []).map(sid => {
                 const s = segmentsData.find(x => x.id === sid);
                 return s ? s.name : null;
@@ -505,6 +597,7 @@
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-800/50';
             tr.innerHTML = `
+                <td class="py-2 pr-3"><input type="checkbox" class="docCheck w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700" value="${d.id}" ${selectedDocumentIds.has(d.id) ? 'checked' : ''} onchange="onDocumentCheckChange()"></td>
                 <td class="py-2 pr-3 text-white font-medium">${d.title}</td>
                 <td class="py-2 pr-3 text-slate-400 max-w-[220px] truncate">${d.keywords || ''}</td>
                 <td class="py-2 pr-3 text-slate-400">${segNames}</td>
@@ -516,7 +609,41 @@
                 </td>`;
             body.appendChild(tr);
         });
+        updateDocumentBulkBar();
         if (window.lucide) lucide.createIcons();
+    }
+
+    function toggleAllDocumentChecks(checkbox) {
+        document.querySelectorAll('#documentsTableBody .docCheck').forEach(el => {
+            el.checked = checkbox.checked;
+            const id = parseInt(el.value);
+            if (checkbox.checked) selectedDocumentIds.add(id); else selectedDocumentIds.delete(id);
+        });
+        updateDocumentBulkBar();
+    }
+
+    function onDocumentCheckChange() {
+        selectedDocumentIds = new Set(Array.from(document.querySelectorAll('#documentsTableBody .docCheck:checked')).map(el => parseInt(el.value)));
+        updateDocumentBulkBar();
+    }
+
+    function updateDocumentBulkBar() {
+        const bar = document.getElementById('documentBulkBar');
+        const count = document.getElementById('documentBulkCount');
+        bar.classList.toggle('hidden', selectedDocumentIds.size === 0);
+        count.textContent = `${selectedDocumentIds.size} seleccionado(s)`;
+    }
+
+    async function bulkAssignDocumentSegment() {
+        const segmentId = document.getElementById('documentBulkSegmentSelect').value;
+        if (!segmentId) { alert('Elegí un segmento primero.'); return; }
+        if (selectedDocumentIds.size === 0) return;
+        await fetch('/api/admin/document_library/documents/bulk_assign_segment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ document_ids: Array.from(selectedDocumentIds), segment_id: parseInt(segmentId) })
+        });
+        await loadAll();
     }
 
     function renderSegmentCheckboxes(containerId, selectedIds) {
@@ -627,6 +754,51 @@
         await loadAll();
     }
 
+    async function handleBulkFolderUpload(event) {
+        const files = Array.from(event.target.files || []);
+        if (files.length === 0) return;
+        const progressEl = document.getElementById('bulkUploadProgress');
+        progressEl.classList.remove('hidden');
+        const unmatchedFolders = new Set();
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const relPath = file.webkitRelativePath || '';
+            const parts = relPath.split('/');
+            // parts[0] es la carpeta raíz elegida; parts[1] (si existe) es la subcarpeta = segmento.
+            const folderName = parts.length > 2 ? parts[1] : null;
+            progressEl.textContent = `Subiendo ${i + 1}/${files.length}: ${file.name}...`;
+            try {
+                const saveRes = await fetch('/api/admin/document_library/documents/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: cleanTitleFromFilename(file.name),
+                        segment_ids: [],
+                        folder_name: folderName,
+                        is_active: true,
+                    })
+                });
+                const saveResult = await saveRes.json();
+                if (!saveResult.id) continue;
+                if (folderName && saveResult.folder_matched === false) unmatchedFolders.add(folderName);
+
+                const formData = new FormData();
+                formData.append('file', file);
+                await fetch(`/api/admin/document_library/documents/upload_file/${saveResult.id}`, { method: 'POST', body: formData });
+            } catch (e) {
+                console.error('Error subiendo', file.name, e);
+            }
+        }
+
+        progressEl.textContent = unmatchedFolders.size > 0
+            ? `Listo: ${files.length} documento(s) cargado(s). Carpetas sin segmento coincidente: ${Array.from(unmatchedFolders).join(', ')}.`
+            : `Listo: ${files.length} documento(s) cargado(s).`;
+        setTimeout(() => progressEl.classList.add('hidden'), 8000);
+        event.target.value = '';
+        await loadAll();
+    }
+
     async function deleteDocument(id) {
         if (!confirm('¿Eliminar este documento? También se borra el archivo del servidor.')) return;
         await fetch(`/api/admin/document_library/documents/delete/${id}`, { method: 'DELETE' });
@@ -638,8 +810,14 @@
     function renderUsersTable() {
         const body = document.getElementById('usersTableBody');
         body.innerHTML = '';
-        document.getElementById('usersEmptyState').classList.toggle('hidden', usersData.length > 0);
-        usersData.forEach(u => {
+        const filterEl = document.getElementById('userSegmentFilter');
+        const filterId = filterEl ? filterEl.value : '';
+        const visibleUsers = filterId
+            ? usersData.filter(u => (u.segment_ids || []).includes(parseInt(filterId)))
+            : usersData;
+        const showCheckbox = document.getElementById('userSelectAll') !== null;
+        document.getElementById('usersEmptyState').classList.toggle('hidden', visibleUsers.length > 0);
+        visibleUsers.forEach(u => {
             const segNames = (u.segment_ids || []).map(sid => {
                 const s = segmentsData.find(x => x.id === sid);
                 return s ? s.name : null;
@@ -647,6 +825,7 @@
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-800/50';
             tr.innerHTML = `
+                ${showCheckbox ? `<td class="py-2 pr-3"><input type="checkbox" class="userCheck w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700" value="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''} onchange="onUserCheckChange()"></td>` : ''}
                 <td class="py-2 pr-3 text-white font-medium">${u.username}</td>
                 <td class="py-2 pr-3 text-slate-400">${u.full_name || ''}</td>
                 <td class="py-2 pr-3 text-slate-400">${segNames}</td>
@@ -657,7 +836,99 @@
                 </td>`;
             body.appendChild(tr);
         });
+        updateUserBulkBar();
         if (window.lucide) lucide.createIcons();
+    }
+
+    function toggleAllUserChecks(checkbox) {
+        document.querySelectorAll('#usersTableBody .userCheck').forEach(el => {
+            el.checked = checkbox.checked;
+            const id = parseInt(el.value);
+            if (checkbox.checked) selectedUserIds.add(id); else selectedUserIds.delete(id);
+        });
+        updateUserBulkBar();
+    }
+
+    function onUserCheckChange() {
+        selectedUserIds = new Set(Array.from(document.querySelectorAll('#usersTableBody .userCheck:checked')).map(el => parseInt(el.value)));
+        updateUserBulkBar();
+    }
+
+    function updateUserBulkBar() {
+        const bar = document.getElementById('userBulkBar');
+        if (!bar) return;
+        const count = document.getElementById('userBulkCount');
+        bar.classList.toggle('hidden', selectedUserIds.size === 0);
+        count.textContent = `${selectedUserIds.size} seleccionado(s)`;
+    }
+
+    async function bulkAssignUserSegment() {
+        const segmentId = document.getElementById('userBulkSegmentSelect').value;
+        if (!segmentId) { alert('Elegí un segmento primero.'); return; }
+        if (selectedUserIds.size === 0) return;
+        await fetch('/api/admin/document_library/users/bulk_assign_segment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_ids: Array.from(selectedUserIds), segment_id: parseInt(segmentId) })
+        });
+        await loadAll();
+    }
+
+    // ---------- CARGA MASIVA DE USUARIOS (EXCEL) ----------
+
+    function parseBulkUsersText() {
+        const raw = document.getElementById('bulkUsersTextarea').value;
+        return raw.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+            const cols = line.includes('\t') ? line.split('\t') : line.split(',');
+            return {
+                full_name: (cols[0] || '').trim(),
+                username: (cols[1] || '').trim(),
+                password: (cols[2] || '').trim(),
+                segment_name: (cols[3] || '').trim() || null,
+            };
+        });
+    }
+
+    function openBulkUsersModal() {
+        document.getElementById('bulkUsersTextarea').value = '';
+        document.getElementById('bulkUsersPreview').classList.add('hidden');
+        document.getElementById('bulkUsersResult').classList.add('hidden');
+        openModalEl('bulkUsersModal');
+    }
+
+    function previewBulkUsers() {
+        const rows = parseBulkUsersText();
+        const box = document.getElementById('bulkUsersPreview');
+        if (rows.length === 0) { box.classList.add('hidden'); return; }
+        box.innerHTML = '<table class="w-full text-xs"><thead><tr class="text-slate-500 text-left"><th class="pr-3 py-1">Nombre</th><th class="pr-3 py-1">Usuario</th><th class="pr-3 py-1">Contraseña</th><th class="pr-3 py-1">Segmento</th></tr></thead><tbody>' +
+            rows.map(r => `<tr class="border-t border-slate-800"><td class="pr-3 py-1 text-slate-300">${r.full_name || ''}</td><td class="pr-3 py-1 text-white">${r.username || '<span class=\"text-red-400\">falta</span>'}</td><td class="pr-3 py-1 text-slate-400">${r.password ? '••••••' : '<span class=\"text-red-400\">falta</span>'}</td><td class="pr-3 py-1 text-slate-400">${r.segment_name || '-'}</td></tr>`).join('') +
+            '</tbody></table>';
+        box.classList.remove('hidden');
+    }
+
+    async function submitBulkUsers() {
+        const rows = parseBulkUsersText();
+        if (rows.length === 0) { alert('Pegá al menos una fila.'); return; }
+        const res = await fetch('/api/admin/document_library/users/bulk_create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows })
+        });
+        const result = await res.json();
+        const resultEl = document.getElementById('bulkUsersResult');
+        if (!res.ok) {
+            resultEl.className = 'text-xs mt-3 text-red-400';
+            resultEl.textContent = result.error || 'No se pudo procesar la carga.';
+            resultEl.classList.remove('hidden');
+            return;
+        }
+        const parts = [`${result.created} usuario(s) creado(s).`];
+        if (result.skipped && result.skipped.length) parts.push(`${result.skipped.length} omitido(s): ${result.skipped.map(s => `${s.username} (${s.reason})`).join(', ')}.`);
+        if (result.unmatched_segments && result.unmatched_segments.length) parts.push(`Sin segmento coincidente: ${result.unmatched_segments.map(s => `${s.username} → "${s.segment_name}"`).join(', ')}.`);
+        resultEl.className = 'text-xs mt-3 text-slate-300';
+        resultEl.textContent = parts.join(' ');
+        resultEl.classList.remove('hidden');
+        await loadAll();
     }
 
     function openUserModal(id = null) {

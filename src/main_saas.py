@@ -193,10 +193,24 @@ def get_admin_context(request: Request, current_user: User, db: Session):
     user_mock = {
         "full_name": f"Súper Admin ({business_name})" if is_impersonating else (current_user.client.business_name if current_user.client else "Admin"),
         "role": "superadmin" if is_impersonating else current_user.role_name,
-        "permissions": permissions
+        "permissions": permissions,
+        "is_real_superadmin": current_user.client_id is None
     }
-    
+
     return target_client_id, is_impersonating, user_mock
+
+def require_document_library_access(current_user: User, is_impersonating: bool, db: Session) -> bool:
+    """Permite si el super-admin está impersonando, o si el usuario del cliente tiene el permiso 'document_library'."""
+    if is_impersonating:
+        return True
+    from src.database.models import UserPermission
+    return db.query(UserPermission).filter_by(
+        user_id=current_user.id, menu_key="document_library", can_access=True
+    ).first() is not None
+
+def require_super_admin_action(is_impersonating: bool) -> bool:
+    """Exige que sea el súper-admin real operando en contexto de un cliente (vía impersonación)."""
+    return is_impersonating
 
 @app.get("/")
 def home():
@@ -2180,6 +2194,11 @@ class DocumentPayload(BaseModel):
     description: str | None = None
     segment_ids: list[int] = []
     is_active: bool = True
+    folder_name: str | None = None  # subida masiva por carpeta: resuelve segment_ids si viene vacío
+
+class BulkAssignDocumentSegmentPayload(BaseModel):
+    document_ids: list[int]
+    segment_id: int
 
 class DocLibraryUserPayload(BaseModel):
     id: int | None = None
@@ -2188,6 +2207,19 @@ class DocLibraryUserPayload(BaseModel):
     full_name: str | None = None
     segment_ids: list[int] = []
     is_active: bool = True
+
+class DocLibraryUserBulkRow(BaseModel):
+    full_name: str | None = None
+    username: str
+    password: str
+    segment_name: str | None = None
+
+class DocLibraryUserBulkCreatePayload(BaseModel):
+    rows: list[DocLibraryUserBulkRow]
+
+class BulkAssignUserSegmentPayload(BaseModel):
+    user_ids: list[int]
+    segment_id: int
 
 class DocLibrarySettingsPayload(BaseModel):
     trigger_phrases: list[str] = []
@@ -2342,15 +2374,54 @@ async def api_save_document(request: Request, payload: DocumentPayload, db: Sess
     db.commit()
     db.refresh(d)
 
+    segment_ids = list(payload.segment_ids or [])
+    matched_by_folder = None
+    if not segment_ids and payload.folder_name:
+        from src.database.document_library import get_segment_by_name
+        segment = get_segment_by_name(db, target_client_id, payload.folder_name)
+        if segment:
+            segment_ids = [segment.id]
+            matched_by_folder = True
+        else:
+            matched_by_folder = False
+
     db.query(DocumentSegmentLink).filter_by(document_id=d.id).delete()
-    for seg_id in (payload.segment_ids or []):
+    for seg_id in segment_ids:
         db.add(DocumentSegmentLink(client_id=target_client_id, document_id=d.id, segment_id=seg_id))
     db.commit()
 
     from src.database.document_library import sync_document_to_chroma
     sync_document_to_chroma(d.id)
 
-    return {"status": "ok", "id": d.id}
+    result = {"status": "ok", "id": d.id}
+    if matched_by_folder is not None:
+        result["folder_matched"] = matched_by_folder
+    return result
+
+@app.post("/api/admin/document_library/documents/bulk_assign_segment")
+async def api_bulk_assign_document_segment(request: Request, payload: BulkAssignDocumentSegmentPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if not require_document_library_access(current_user, is_impersonating, db):
+        return JSONResponse(status_code=403, content={"error": "No tenés permiso sobre la Biblioteca de Documentos"})
+
+    from src.database.models import Document, DocumentSegmentLink, DocSegment
+    from src.database.document_library import sync_document_to_chroma
+
+    segment = db.query(DocSegment).filter_by(client_id=target_client_id, id=payload.segment_id).first()
+    if not segment:
+        return JSONResponse(status_code=404, content={"error": "Segmento no encontrado"})
+
+    docs = db.query(Document).filter(Document.client_id == target_client_id, Document.id.in_(payload.document_ids)).all()
+    for doc in docs:
+        db.query(DocumentSegmentLink).filter_by(document_id=doc.id).delete()
+        db.add(DocumentSegmentLink(client_id=target_client_id, document_id=doc.id, segment_id=payload.segment_id))
+    db.commit()
+
+    for doc in docs:
+        sync_document_to_chroma(doc.id)
+
+    return {"status": "ok", "updated": len(docs)}
 
 @app.delete("/api/admin/document_library/documents/delete/{doc_id}")
 async def api_delete_document(request: Request, doc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -2465,6 +2536,74 @@ async def api_save_doc_library_user(request: Request, payload: DocLibraryUserPay
     db.commit()
 
     return {"status": "ok", "id": u.id}
+
+@app.post("/api/admin/document_library/users/bulk_create")
+async def api_bulk_create_doc_library_users(request: Request, payload: DocLibraryUserBulkCreatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if not require_super_admin_action(is_impersonating):
+        return JSONResponse(status_code=403, content={"error": "Solo el súper-admin puede cargar usuarios masivamente"})
+
+    from src.database.models import DocLibraryUser, DocLibraryUserSegment
+    from src.database.document_library import hash_password, get_segment_by_name
+
+    created = 0
+    skipped = []
+    unmatched_segments = []
+    for row in payload.rows:
+        username = (row.username or "").strip()
+        if not username or not row.password:
+            skipped.append({"username": username, "reason": "usuario o contraseña vacíos"})
+            continue
+
+        existing = db.query(DocLibraryUser).filter_by(client_id=target_client_id, username=username).first()
+        if existing:
+            skipped.append({"username": username, "reason": "usuario duplicado"})
+            continue
+
+        u = DocLibraryUser(
+            client_id=target_client_id,
+            username=username,
+            password_hash=hash_password(row.password),
+            full_name=(row.full_name or "").strip() or None,
+            is_active=True,
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+
+        if row.segment_name:
+            segment = get_segment_by_name(db, target_client_id, row.segment_name)
+            if segment:
+                db.add(DocLibraryUserSegment(client_id=target_client_id, library_user_id=u.id, segment_id=segment.id))
+                db.commit()
+            else:
+                unmatched_segments.append({"username": username, "segment_name": row.segment_name})
+
+        created += 1
+
+    return {"status": "ok", "created": created, "skipped": skipped, "unmatched_segments": unmatched_segments}
+
+@app.post("/api/admin/document_library/users/bulk_assign_segment")
+async def api_bulk_assign_user_segment(request: Request, payload: BulkAssignUserSegmentPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if not require_super_admin_action(is_impersonating):
+        return JSONResponse(status_code=403, content={"error": "Solo el súper-admin puede reasignar segmentos masivamente"})
+
+    from src.database.models import DocLibraryUser, DocLibraryUserSegment, DocSegment
+
+    segment = db.query(DocSegment).filter_by(client_id=target_client_id, id=payload.segment_id).first()
+    if not segment:
+        return JSONResponse(status_code=404, content={"error": "Segmento no encontrado"})
+
+    users = db.query(DocLibraryUser).filter(DocLibraryUser.client_id == target_client_id, DocLibraryUser.id.in_(payload.user_ids)).all()
+    for u in users:
+        db.query(DocLibraryUserSegment).filter_by(library_user_id=u.id).delete()
+        db.add(DocLibraryUserSegment(client_id=target_client_id, library_user_id=u.id, segment_id=payload.segment_id))
+    db.commit()
+
+    return {"status": "ok", "updated": len(users)}
 
 @app.delete("/api/admin/document_library/users/delete/{user_id}")
 async def api_delete_doc_library_user(request: Request, user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -2697,13 +2836,13 @@ async def api_create_user(
         return JSONResponse({"status": "error", "message": "No autorizado"}, status_code=401)
         
     email_to_save = payload.email.strip() if (payload.email and payload.email.strip()) else f"{payload.username.strip()}@rondan.com"
-    
-    existing = db.query(User).filter_by(email=email_to_save).first()
+
+    existing = db.query(User).filter_by(email=email_to_save, client_id=target_client_id).first()
     if existing:
         return JSONResponse({"status": "error", "message": "El email o username ya existe"}, status_code=409)
-        
+
     pwd_hash = hashlib.md5(payload.password.encode()).hexdigest()
-    
+
     new_user = User(
         client_id=target_client_id,
         email=email_to_save,
@@ -2713,7 +2852,7 @@ async def api_create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
     return {"status": "ok", "id": new_user.id}
 
 @app.patch("/api/admin/users/{uid}")
@@ -3633,7 +3772,7 @@ async def super_admin_panel(request: Request, db: Session = Depends(get_db), cur
     if not require_superadmin(current_user):
         return RedirectResponse(url="/admin/login")
     clients = db.query(Client).all()
-    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": []}
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
     return templates.TemplateResponse(request=request, name="admin/super_admin.html", context={
         "clients": clients,
         "user": user_mock
@@ -3656,6 +3795,200 @@ async def stop_impersonate(db: Session = Depends(get_db), current_user: User = D
     response = RedirectResponse(url="/super-admin", status_code=303)
     response.delete_cookie("impersonated_client_id")
     return response
+
+# --- Gestión global de usuarios del panel (adm_users) ---
+
+@app.get("/super-admin/users", response_class=HTMLResponse)
+async def super_admin_users_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
+    clients = db.query(Client).order_by(Client.business_name).all()
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+    return templates.TemplateResponse(request=request, name="admin/super_admin_users.html", context={
+        "clients": clients,
+        "user": user_mock
+    })
+
+class SuperAdminUserCreatePayload(BaseModel):
+    client_id: int
+    email: str
+    role: str
+    password: str
+
+@app.get("/api/superadmin/users")
+async def api_superadmin_list_users(request: Request, client_id: int = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    query = db.query(User)
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+    users_raw = query.order_by(User.id.desc()).all()
+    return {"status": "ok", "users": [{
+        "id": u.id,
+        "email": u.email,
+        "role": u.role_name,
+        "client_id": u.client_id,
+        "client_name": u.client.business_name if u.client else "(Súper Admin)"
+    } for u in users_raw]}
+
+@app.post("/api/superadmin/users")
+async def api_superadmin_create_user(request: Request, payload: SuperAdminUserCreatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    email_to_save = payload.email.strip()
+    existing = db.query(User).filter_by(email=email_to_save, client_id=payload.client_id).first()
+    if existing:
+        return JSONResponse(status_code=409, content={"error": "Ya existe un usuario con ese email en ese cliente"})
+
+    new_user = User(
+        client_id=payload.client_id,
+        email=email_to_save,
+        password_hash=hashlib.md5(payload.password.encode()).hexdigest(),
+        role_name=payload.role
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"status": "ok", "id": new_user.id}
+
+@app.patch("/api/superadmin/users/{uid}")
+async def api_superadmin_edit_user(request: Request, uid: int, payload: UserUpdatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    user = db.query(User).filter_by(id=uid).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+    if payload.email is not None:
+        user.email = payload.email
+    if payload.role is not None:
+        user.role_name = payload.role
+    db.commit()
+    return {"status": "ok"}
+
+@app.patch("/api/superadmin/users/{uid}/reset-password")
+async def api_superadmin_reset_password(request: Request, uid: int, payload: PasswordResetPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    user = db.query(User).filter_by(id=uid).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+    user.password_hash = hashlib.md5(payload.password.encode()).hexdigest()
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/superadmin/users/{uid}")
+async def api_superadmin_delete_user(request: Request, uid: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    user = db.query(User).filter_by(id=uid).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+    if user.client_id is None:
+        return JSONResponse(status_code=400, content={"error": "No se puede borrar una cuenta de Súper Admin"})
+    db.delete(user)
+    db.commit()
+    return {"status": "ok"}
+
+# --- Calculadora de pricing (monto por cliente + historial + simulaciones) ---
+
+@app.get("/super-admin/calculadora", response_class=HTMLResponse)
+async def super_admin_calculadora_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
+    clients = db.query(Client).order_by(Client.business_name).all()
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+    return templates.TemplateResponse(request=request, name="admin/super_admin_calculadora.html", context={
+        "clients": clients,
+        "user": user_mock
+    })
+
+class ClientPricingUpdatePayload(BaseModel):
+    abono_usd: float
+    reason: str | None = None
+
+class PricingSimulationPayload(BaseModel):
+    client_id: int | None = None
+    label: str | None = None
+    tipo_cambio: float
+    clientes: int
+    abono_usd: float
+    green_api_usd: float
+    openai_usd: float
+    server_tramo1: float
+    server_tramo2: float
+    server_tramo3: float
+    ganancia_ars: float
+
+@app.get("/api/superadmin/pricing/{client_id}")
+async def api_get_client_pricing(request: Request, client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPricing, ClientPricingHistory
+    pricing = db.query(ClientPricing).filter_by(client_id=client_id).first()
+    history = db.query(ClientPricingHistory).filter_by(client_id=client_id).order_by(ClientPricingHistory.created_at.desc()).all()
+    return {
+        "status": "ok",
+        "abono_usd": pricing.abono_usd if pricing else None,
+        "history": [{
+            "old_abono_usd": h.old_abono_usd,
+            "new_abono_usd": h.new_abono_usd,
+            "reason": h.reason,
+            "created_at": h.created_at.strftime("%d/%m/%Y %H:%M") if h.created_at else ""
+        } for h in history]
+    }
+
+@app.put("/api/superadmin/pricing/{client_id}")
+async def api_update_client_pricing(request: Request, client_id: int, payload: ClientPricingUpdatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPricing, ClientPricingHistory
+    pricing = db.query(ClientPricing).filter_by(client_id=client_id).first()
+    old_value = pricing.abono_usd if pricing else None
+    if not pricing:
+        pricing = ClientPricing(client_id=client_id, abono_usd=payload.abono_usd)
+        db.add(pricing)
+    else:
+        pricing.abono_usd = payload.abono_usd
+    db.add(ClientPricingHistory(client_id=client_id, old_abono_usd=old_value, new_abono_usd=payload.abono_usd, reason=payload.reason))
+    db.commit()
+    return {"status": "ok"}
+
+@app.post("/api/superadmin/pricing/simulations")
+async def api_save_pricing_simulation(request: Request, payload: PricingSimulationPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import PricingSimulation
+    sim = PricingSimulation(**payload.dict())
+    db.add(sim)
+    db.commit()
+    db.refresh(sim)
+    return {"status": "ok", "id": sim.id}
+
+@app.get("/api/superadmin/pricing/simulations")
+async def api_list_pricing_simulations(request: Request, client_id: int = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import PricingSimulation
+    query = db.query(PricingSimulation)
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+    sims = query.order_by(PricingSimulation.created_at.desc()).limit(100).all()
+    return {"status": "ok", "simulations": [{
+        "id": s.id,
+        "label": s.label,
+        "client_id": s.client_id,
+        "tipo_cambio": s.tipo_cambio,
+        "clientes": s.clientes,
+        "abono_usd": s.abono_usd,
+        "green_api_usd": s.green_api_usd,
+        "openai_usd": s.openai_usd,
+        "server_tramo1": s.server_tramo1,
+        "server_tramo2": s.server_tramo2,
+        "server_tramo3": s.server_tramo3,
+        "ganancia_ars": s.ganancia_ars,
+        "created_at": s.created_at.strftime("%d/%m/%Y %H:%M") if s.created_at else ""
+    } for s in sims]}
 
 DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EMPRESA]. Tu objetivo es brindar una atención al cliente excepcional, rápida y profesional.
 

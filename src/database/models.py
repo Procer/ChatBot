@@ -499,3 +499,39 @@ class FollowupLog(Base):
     thread_id = Column(String(100), nullable=False)
     content_id = Column(Integer, ForeignKey("data_followup_content.id", ondelete="CASCADE"), nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+# ==========================================
+# CAPA 6: PRICING / CALCULADORA SAAS (SUPER ADMIN)
+# ==========================================
+
+class ClientPricing(Base):
+    __tablename__ = "adm_client_pricing"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), unique=True, nullable=False)
+    abono_usd = Column(Float, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ClientPricingHistory(Base):
+    __tablename__ = "adm_client_pricing_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    old_abono_usd = Column(Float, nullable=True)
+    new_abono_usd = Column(Float, nullable=False)
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PricingSimulation(Base):
+    __tablename__ = "adm_pricing_simulations"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=True)
+    label = Column(String(150), nullable=True)
+    tipo_cambio = Column(Float, nullable=False)
+    clientes = Column(Integer, nullable=False)
+    abono_usd = Column(Float, nullable=False)
+    green_api_usd = Column(Float, nullable=False)
+    openai_usd = Column(Float, nullable=False)
+    server_tramo1 = Column(Float, nullable=False)
+    server_tramo2 = Column(Float, nullable=False)
+    server_tramo3 = Column(Float, nullable=False)
+    ganancia_ars = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
