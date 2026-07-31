@@ -34,8 +34,14 @@
             <h3 class="text-sm font-bold text-white mb-3">Variables y Abonos</h3>
             <div class="space-y-3">
                 <div>
-                    <label class="text-xs text-slate-400 block mb-1">Cotización Dólar (ARS)</label>
-                    <input type="number" id="tipoCambio" value="1420" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <label class="text-xs text-slate-400 block mb-1">Cotización Dólar Oficial (ARS)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="tipoCambio" value="1420" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                        <button type="button" onclick="fetchDolarOficial()" title="Actualizar cotización" class="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg border border-slate-700 shrink-0">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <p id="dolarStatus" class="text-xs text-slate-500 mt-1">Buscando cotización oficial...</p>
                 </div>
                 <div>
                     <label class="text-xs text-slate-400 block mb-1">Cantidad de Clientes</label>
@@ -145,6 +151,23 @@
 {% block extra_scripts %}
 <script>
     let lastResult = {};
+
+    async function fetchDolarOficial() {
+        const statusEl = document.getElementById('dolarStatus');
+        statusEl.textContent = 'Buscando cotización oficial...';
+        try {
+            const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
+            if (!res.ok) throw new Error('respuesta no OK');
+            const data = await res.json();
+            if (!data.venta) throw new Error('sin valor de venta');
+            document.getElementById('tipoCambio').value = data.venta;
+            const hora = data.fechaActualizacion ? new Date(data.fechaActualizacion).toLocaleString('es-AR') : '';
+            statusEl.textContent = `Oficial (venta): $${data.venta}${hora ? ' · actualizado ' + hora : ''}`;
+            calcular();
+        } catch (e) {
+            statusEl.textContent = 'No se pudo obtener la cotización automática — dejá el valor manual.';
+        }
+    }
 
     function calcular() {
         const tipoCambio = parseFloat(document.getElementById('tipoCambio').value) || 0;
@@ -275,6 +298,7 @@
     }
 
     calcular();
+    fetchDolarOficial();
     loadSimulations();
 </script>
 {% endblock %}
