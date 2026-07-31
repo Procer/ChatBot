@@ -193,7 +193,7 @@
         const totalCostosArs = costoWhaArs + costoIaArs + costoServerArs;
         const gananciaNetaArs = ingresosArs - totalCostosArs;
 
-        const formatearMoneda = (valor) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(valor);
+        const formatearMoneda = (valor) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(valor).replace('$', 'ARS $');
 
         document.getElementById('resIngresos').innerText = formatearMoneda(ingresosArs);
         document.getElementById('resCostowha').innerText = formatearMoneda(costoWhaArs);
@@ -283,7 +283,7 @@
         const body = document.getElementById('simulationsTableBody');
         body.innerHTML = '';
         document.getElementById('simulationsEmptyState').classList.toggle('hidden', sims.length > 0);
-        const formatearMoneda = (valor) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(valor);
+        const formatearMoneda = (valor) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(valor).replace('$', 'ARS $');
         sims.forEach(s => {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-800/50';
