@@ -138,6 +138,7 @@
                         <th class="py-2 pr-3">Clientes</th>
                         <th class="py-2 pr-3">Abono USD</th>
                         <th class="py-2 pr-3">Ganancia ARS</th>
+                        <th class="py-2 pr-3">Estado</th>
                     </tr>
                 </thead>
                 <tbody id="simulationsTableBody"></tbody>
@@ -275,6 +276,14 @@
         await loadSimulations();
     }
 
+    const STATUS_LABELS = { borrador: 'Borrador', enviada: 'Enviada', aprobada: 'Aprobada', rechazada: 'Rechazada' };
+    const STATUS_CLASSES = {
+        borrador: 'bg-slate-800 text-slate-400 border-slate-700',
+        enviada: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+        aprobada: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+        rechazada: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+    };
+
     async function loadSimulations() {
         const clientId = document.getElementById('clientSelect').value;
         const res = await fetch(`/api/superadmin/pricing/simulations${clientId ? '?client_id=' + clientId : ''}`);
@@ -287,18 +296,49 @@
         sims.forEach(s => {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-slate-800/50';
+            const statusOptions = Object.keys(STATUS_LABELS).map(key =>
+                `<option value="${key}" ${s.status === key ? 'selected' : ''}>${STATUS_LABELS[key]}</option>`
+            ).join('');
             tr.innerHTML = `
                 <td class="py-2 pr-3 text-slate-400">${s.created_at}</td>
                 <td class="py-2 pr-3 text-white font-medium">${s.label || '(sin nombre)'}</td>
                 <td class="py-2 pr-3 text-slate-400">${s.clientes}</td>
                 <td class="py-2 pr-3 text-slate-400">USD ${s.abono_usd}</td>
-                <td class="py-2 pr-3 text-emerald-400">${formatearMoneda(s.ganancia_ars)}</td>`;
+                <td class="py-2 pr-3 text-emerald-400">${formatearMoneda(s.ganancia_ars)}</td>
+                <td class="py-2 pr-3">
+                    <select onchange="updateSimulationStatus(${s.id}, this)" class="px-2 py-1 text-xs rounded-lg border ${STATUS_CLASSES[s.status] || STATUS_CLASSES.borrador} bg-slate-900 focus:ring-1 focus:ring-brand-500 outline-none">
+                        ${statusOptions}
+                    </select>
+                </td>`;
             body.appendChild(tr);
         });
     }
 
+    async function updateSimulationStatus(simId, selectEl) {
+        const newStatus = selectEl.value;
+        const res = await fetch(`/api/superadmin/pricing/simulations/${simId}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            alert(err.error || 'No se pudo actualizar el estado.');
+            await loadSimulations();
+            return;
+        }
+        selectEl.className = `px-2 py-1 text-xs rounded-lg border ${STATUS_CLASSES[newStatus] || STATUS_CLASSES.borrador} bg-slate-900 focus:ring-1 focus:ring-brand-500 outline-none`;
+        if (newStatus === 'aprobada') await onClientChange();
+    }
+
     calcular();
     fetchDolarOficial();
-    loadSimulations();
+    const preselectClientId = new URLSearchParams(window.location.search).get('client_id');
+    if (preselectClientId) {
+        document.getElementById('clientSelect').value = preselectClientId;
+        onClientChange();
+    } else {
+        loadSimulations();
+    }
 </script>
 {% endblock %}

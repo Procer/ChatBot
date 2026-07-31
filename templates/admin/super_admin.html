@@ -58,6 +58,15 @@
                 </div>
             </div>
 
+            {% if client.id in approved_sims %}
+            <a href="/super-admin/calculadora?client_id={{ client.id }}" class="mb-4 flex items-center justify-between px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs hover:bg-emerald-500/20 transition-colors">
+                <span class="text-emerald-400 font-semibold flex items-center gap-1.5">
+                    <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Aprobada: USD {{ approved_sims[client.id].abono_usd }}
+                </span>
+                <span class="text-slate-500">Ver →</span>
+            </a>
+            {% endif %}
+
             <div class="flex gap-2">
                 <a href="/super-admin/impersonate/{{ client.id }}" class="flex-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="log-in" class="w-4 h-4"></i>

@@ -534,4 +534,6 @@ class PricingSimulation(Base):
     server_tramo2 = Column(Float, nullable=False)
     server_tramo3 = Column(Float, nullable=False)
     ganancia_ars = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default="borrador")  # borrador | enviada | aprobada | rechazada
+    status_updated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

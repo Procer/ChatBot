@@ -3773,9 +3773,18 @@ async def super_admin_panel(request: Request, db: Session = Depends(get_db), cur
         return RedirectResponse(url="/admin/login")
     clients = db.query(Client).all()
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+
+    from src.database.models import PricingSimulation
+    approved_sims = {}
+    approved_rows = db.query(PricingSimulation).filter_by(status="aprobada").order_by(PricingSimulation.status_updated_at.desc()).all()
+    for s in approved_rows:
+        if s.client_id and s.client_id not in approved_sims:
+            approved_sims[s.client_id] = s
+
     return templates.TemplateResponse(request=request, name="admin/super_admin.html", context={
         "clients": clients,
-        "user": user_mock
+        "user": user_mock,
+        "approved_sims": approved_sims
     })
 
 @app.get("/super-admin/impersonate/{client_id}")
@@ -3987,8 +3996,50 @@ async def api_list_pricing_simulations(request: Request, client_id: int = None, 
         "server_tramo2": s.server_tramo2,
         "server_tramo3": s.server_tramo3,
         "ganancia_ars": s.ganancia_ars,
+        "status": s.status,
         "created_at": s.created_at.strftime("%d/%m/%Y %H:%M") if s.created_at else ""
     } for s in sims]}
+
+PRICING_SIMULATION_STATUSES = ("borrador", "enviada", "aprobada", "rechazada")
+
+class PricingSimulationStatusPayload(BaseModel):
+    status: str
+
+@app.patch("/api/superadmin/pricing/simulations/{sim_id}/status")
+async def api_update_pricing_simulation_status(request: Request, sim_id: int, payload: PricingSimulationStatusPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if payload.status not in PRICING_SIMULATION_STATUSES:
+        return JSONResponse(status_code=400, content={"error": "Estado inválido"})
+
+    from src.database.models import PricingSimulation, ClientPricing, ClientPricingHistory
+    sim = db.query(PricingSimulation).filter_by(id=sim_id).first()
+    if not sim:
+        return JSONResponse(status_code=404, content={"error": "Simulación no encontrada"})
+
+    if payload.status == "aprobada" and not sim.client_id:
+        return JSONResponse(status_code=400, content={"error": "Esta simulación no tiene un cliente asociado, no se puede aprobar"})
+
+    sim.status = payload.status
+    sim.status_updated_at = datetime.now()
+
+    if payload.status == "aprobada":
+        pricing = db.query(ClientPricing).filter_by(client_id=sim.client_id).first()
+        old_value = pricing.abono_usd if pricing else None
+        if not pricing:
+            pricing = ClientPricing(client_id=sim.client_id, abono_usd=sim.abono_usd)
+            db.add(pricing)
+        else:
+            pricing.abono_usd = sim.abono_usd
+        db.add(ClientPricingHistory(
+            client_id=sim.client_id,
+            old_abono_usd=old_value,
+            new_abono_usd=sim.abono_usd,
+            reason=f"Simulación aprobada{' (' + sim.label + ')' if sim.label else ''}"
+        ))
+
+    db.commit()
+    return {"status": "ok"}
 
 DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EMPRESA]. Tu objetivo es brindar una atención al cliente excepcional, rápida y profesional.
 
