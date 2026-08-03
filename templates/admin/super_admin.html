@@ -172,6 +172,12 @@
                                 <textarea id="gauth_sa_json" rows="4" autocomplete="off" placeholder='Pegá acá el contenido completo del archivo .json descargado. Dejar vacío para no modificarlo.' class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1 font-mono"></textarea>
                                 <button type="button" onclick="clearGDriveServiceAccount()" class="mt-2 text-xs text-red-400 hover:text-red-300">Quitar cuenta de servicio</button>
                             </div>
+
+                            <div class="mt-3">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase">Sincronización automática cada (minutos)</label>
+                                <input type="number" id="gdrive_sync_interval" min="5" step="1" value="480" class="w-32 bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1">
+                                <p class="text-[11px] text-slate-500 mt-1">Mínimo 5 minutos. Por defecto 480 (8hs). Cuanto más bajo, más rápido aparecen archivos nuevos subidos a Drive, pero más llamadas a la API de Google.</p>
+                            </div>
                         </div>
 
                         <!-- Prompt -->
@@ -309,6 +315,7 @@
         document.getElementById('feat_document_library').checked = data.settings?.feat_document_library || false;
 
         document.getElementById('gauth_sa_json').value = '';
+        document.getElementById('gdrive_sync_interval').value = data.settings?.gdrive_sync_interval_minutes || 480;
         const badge = document.getElementById('gauthStatusBadge');
         if (data.settings?.gdrive_service_account_configured) {
             badge.textContent = 'Configurado';
@@ -343,7 +350,8 @@
             feat_catalog: document.getElementById('feat_catalog').checked,
             feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked,
             feat_document_library: document.getElementById('feat_document_library').checked,
-            gdrive_service_account_json: document.getElementById('gauth_sa_json').value.trim()
+            gdrive_service_account_json: document.getElementById('gauth_sa_json').value.trim(),
+            gdrive_sync_interval_minutes: parseInt(document.getElementById('gdrive_sync_interval').value, 10) || 480
         };
         const res = await fetch(`/api/superadmin/clients/${id}/settings`, {
             method: 'PUT',

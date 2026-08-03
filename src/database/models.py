@@ -112,6 +112,7 @@ class ClientSettings(Base):
     gdrive_last_sync_at = Column(DateTime, nullable=True)
     gdrive_last_sync_summary = Column(Text, nullable=True)  # JSON: {"created":N,"unmapped_folders":[...],"missing_in_drive":N}
     gdrive_share_revoked = Column(Boolean, default=False)  # la SA tiene credenciales válidas pero la carpeta ya no está compartida con ella
+    gdrive_sync_interval_minutes = Column(Integer, nullable=False, default=480, server_default="480")  # cada cuánto corre el sync automático para ESTE cliente (default 8hs, igual que antes de hacerse configurable)
 
     client = relationship("Client", back_populates="settings")
 

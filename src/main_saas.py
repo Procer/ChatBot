@@ -110,6 +110,7 @@ class ClientSettingsUpdate(BaseModel):
     feat_catalog_dynamic_fields: bool = False
     feat_document_library: bool = False
     gdrive_service_account_json: str = None  # vacío/None = no tocar la clave ya guardada
+    gdrive_sync_interval_minutes: int = 480  # cada cuánto sincroniza Drive este cliente (piso de 5min, ver update_client_settings)
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -4116,7 +4117,8 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "feat_catalog_dynamic_fields": getattr(client.settings, 'feat_catalog_dynamic_fields', False),
             "feat_document_library": getattr(client.settings, 'feat_document_library', False),
             "gdrive_service_account_email": getattr(client.settings, 'gdrive_service_account_email', None) or '',
-            "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None))
+            "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None)),
+            "gdrive_sync_interval_minutes": getattr(client.settings, 'gdrive_sync_interval_minutes', None) or 480
         }
         
     return {
@@ -4153,6 +4155,7 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_catalog = settings_data.feat_catalog
     settings.feat_catalog_dynamic_fields = settings_data.feat_catalog_dynamic_fields
     settings.feat_document_library = settings_data.feat_document_library
+    settings.gdrive_sync_interval_minutes = max(5, settings_data.gdrive_sync_interval_minutes or 480)
 
     sa_json_raw = (settings_data.gdrive_service_account_json or "").strip()
     if sa_json_raw:
@@ -4359,11 +4362,15 @@ async def scheduler_reminders_loop():
         await asyncio.sleep(300)
 
 
+GDRIVE_SYNC_TICK_SECONDS = 60  # cada cuánto se revisa qué clientes ya cumplieron SU propio intervalo
+
 async def gdrive_sync_loop():
-    """Sync automático de Google Drive: solo metadata (título/keywords a Chroma), cada 8hs.
-    El contenido real siempre se trae fresco al momento de enviar, así que no hace falta
-    near-real-time. Mismo patrón defensivo que scheduler_reminders_loop (try/except por
-    cliente para que un error no tumbe el loop)."""
+    """Sync automático de Google Drive: solo metadata (título/keywords a Chroma). Cada cliente
+    define su propio intervalo (ClientSettings.gdrive_sync_interval_minutes, default 480min/8hs);
+    este loop solo hace un tick corto y dispara el sync de un cliente cuando ya pasó su intervalo
+    desde gdrive_last_sync_at. El contenido real siempre se trae fresco al momento de enviar, así
+    que no hace falta near-real-time. Mismo patrón defensivo que scheduler_reminders_loop
+    (try/except por cliente para que un error no tumbe el loop)."""
     from src.database.gdrive_sync import sync_client_drive
 
     logging.info("[GDrive] Starting automatic sync service...")
@@ -4375,10 +4382,15 @@ async def gdrive_sync_loop():
                 ClientSettings.gdrive_service_account_json_encrypted.isnot(None),
                 ClientSettings.gdrive_share_revoked == False
             ).all()
-            client_ids = [c.client_id for c in clients]
+            now = datetime.utcnow()
+            due_client_ids = []
+            for c in clients:
+                interval_minutes = c.gdrive_sync_interval_minutes or 480
+                if c.gdrive_last_sync_at is None or (now - c.gdrive_last_sync_at).total_seconds() >= interval_minutes * 60:
+                    due_client_ids.append(c.client_id)
             db.close()
 
-            for cid in client_ids:
+            for cid in due_client_ids:
                 try:
                     summary = sync_client_drive(cid)
                     logging.info(f"[GDrive] Sync client_id={cid}: {summary}")
@@ -4387,7 +4399,7 @@ async def gdrive_sync_loop():
         except Exception as e:
             logging.error(f"[GDrive] Error in loop: {e}")
 
-        await asyncio.sleep(28800)  # 8 horas
+        await asyncio.sleep(GDRIVE_SYNC_TICK_SECONDS)
 
 
 @app.on_event("startup")
