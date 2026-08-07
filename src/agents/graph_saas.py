@@ -1403,11 +1403,18 @@ def buscar_documento_en_segmento(query: str, segmento: str, config: RunnableConf
 tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento, buscar_documento_en_segmento]
 tool_node = ToolNode(tools)
 
+# Herramientas de gestión de turnos: solo deben ofrecerse al LLM si el cliente tiene la
+# funcionalidad de turnos habilitada (feat_appointments). Sin esto, el bot intenta agendar
+# turnos aunque el cliente nunca haya configurado el módulo.
+APPOINTMENT_TOOL_NAMES = {"consultar_disponibilidad", "agendar_turno", "cancelar_mi_turno", "reprogramar_mi_turno"}
+tools_no_appointments = [t for t in tools if t.name not in APPOINTMENT_TOOL_NAMES]
+
 if AI_PROVIDER == "openai" and OPENAI_API_KEY:
     llm_with_tools = ChatOpenAI(model="gpt-4o-mini", temperature=0.2).bind_tools(tools)
+    llm_with_tools_no_appointments = ChatOpenAI(model="gpt-4o-mini", temperature=0.2).bind_tools(tools_no_appointments)
 else:
     llm_with_tools = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash", 
+        model="gemini-1.5-flash",
         temperature=0.1,
         google_api_key=GOOGLE_API_KEY,
         safety_settings={
@@ -1417,6 +1424,17 @@ else:
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
         }
     ).bind_tools(tools)
+    llm_with_tools_no_appointments = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.1,
+        google_api_key=GOOGLE_API_KEY,
+        safety_settings={
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        }
+    ).bind_tools(tools_no_appointments)
 
 
 def call_model(state: AgentState):
@@ -1433,7 +1451,10 @@ def call_model(state: AgentState):
     try:
         client = db.query(Client).filter_by(id=client_id).first()
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        
+        # feat_appointments es nullable en la DB (columnas viejas sin migrar quedan en NULL);
+        # tratamos NULL/True como habilitado y solo False lo desactiva explícitamente.
+        appointments_enabled = bool(settings is None or settings.feat_appointments is not False)
+
         db_name = get_user_profile(client_id, t_id)
         if db_name and "Nombre del Cliente" not in collected_data:
             collected_data["Nombre del Cliente"] = db_name
@@ -1480,14 +1501,16 @@ def call_model(state: AgentState):
 {proximos_dias_str}
 """
         
-        prohibition_rule = """
+        prohibition_rule = ""
+        if appointments_enabled:
+            prohibition_rule = """
 ### 🚫 PROHIBICIÓN ABSOLUTA DE MOSTRAR LISTAS DE HORARIOS:
 - Está TERMINANTEMENTE PROHIBIDO enviarle al usuario listas verticales o largas de horarios (usando guiones, viñetas, listas numeradas o texto separado por saltos de línea).
 - Si el usuario te pide un horario ocupado (ej. las 15:30), NUNCA listes toda la disponibilidad. Debes guiarlo conversacionalmente ofreciéndole únicamente las opciones inmediatamente anteriores o posteriores disponibles (ej: "El horario de las 15:30 ya está ocupado para ese día, pero te puedo ofrecer un turno antes a las 15:00 o después a las 16:00. ¿Te sirve alguno de estos?").
 - Si el usuario pregunta disponibilidad general, sólo menciónale 2 o 3 opciones representativas en una sola frase amigable en un renglón continuo, sin hacer listas.
 - CONFIANZA ABSOLUTA EN LAS HERRAMIENTAS: Si la herramienta 'consultar_disponibilidad' o 'agendar_turno' indica que un horario solicitado está disponible (está en la lista de horarios_disponibles), significa que está LIBRE. NUNCA digas que está ocupado si la herramienta te dice que está disponible.
 """
-        
+
         system_prompt = company_info + "\n\n" + date_context + "\n\n" + prohibition_rule + "\n\n" + system_prompt
         
         if not user_name:
@@ -1612,8 +1635,10 @@ def call_model(state: AgentState):
             if settings and settings.catalog_response_style:
                 system_prompt += f"\n### 🎨 ESTILO DE RESPUESTA DEL CATÁLOGO:\n{settings.catalog_response_style}\n"
 
-        # Las reglas de turnos deben estar siempre presentes, aun durante el onboarding
-        system_prompt += """
+        # Las reglas de turnos deben estar siempre presentes, aun durante el onboarding,
+        # pero solo si el cliente tiene el módulo de turnos habilitado (feat_appointments).
+        if appointments_enabled:
+            system_prompt += """
 ### 📅 REGLAS ESTRICTAS PARA LA GESTIÓN DE TURNOS:
 1. **FLUJO DE SELECCIÓN:** Para reservar un turno, debés guiar al usuario paso a paso en la elección de la fecha y hora:
    - **Paso 1: Fecha:** Si el usuario solicita un turno pero no indica fecha, pregúñtale qué día le gustaría asistir. Calcula la fecha exacta (formato YYYY-MM-DD) usando el 'CONTEXTO TEMPORAL'. Por ejemplo, si hoy es viernes 29 de mayo de 2026, el próximo lunes es 1 de junio de 2026. ¡Calculá bien los días y los meses de 30/31 días!
@@ -1645,11 +1670,13 @@ def call_model(state: AgentState):
         if not user_name:
             system_prompt += "\n1. EL CLIENTE ES DESCONOCIDO: Pregúntale amigable y discretamente su nombre y apellido (mínimamente nombre) dentro de tu respuesta (ej: '¿Con quién tengo el gusto de hablar para agendar tu consulta?'), sin bloquear el flujo si prefiere responder otra cosa, pero recuerda que NO PUEDES confirmar ni registrar el turno en la herramienta 'agendar_turno' sin que el usuario te haya indicado su nombre."
         
-        system_prompt += "\n2. PROHIBIDO ENVIAR LISTAS DE HORARIOS: Está terminantemente prohibido usar listas verticales para mostrar horas de turnos. Si el horario pedido por el usuario no está en la lista de disponibles, no listes los demás. Si figura en 'horarios_ya_reservados_por_otros', dile que ya está ocupado/reservado por otro cliente. Si no figura allí, dile amigablemente que no es un slot de reserva válido o no está habilitado para ese día. En cualquier caso, ofrécele 2 opciones libres cercanas en un único renglón corrido de texto (ej: 'El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?')."
-        
+        if appointments_enabled:
+            system_prompt += "\n2. PROHIBIDO ENVIAR LISTAS DE HORARIOS: Está terminantemente prohibido usar listas verticales para mostrar horas de turnos. Si el horario pedido por el usuario no está en la lista de disponibles, no listes los demás. Si figura en 'horarios_ya_reservados_por_otros', dile que ya está ocupado/reservado por otro cliente. Si no figura allí, dile amigablemente que no es un slot de reserva válido o no está habilitado para ese día. En cualquier caso, ofrécele 2 opciones libres cercanas en un único renglón corrido de texto (ej: 'El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?')."
+
         system_prompt += "\n3. ENVÍO DE ARCHIVOS ADJUNTOS: Si el tema del que habla el usuario tiene la etiqueta `[CON_ARCHIVO]` (ej. FORMULARIO 08) o has consultado información sobre un tema con archivo, DEBES agregar OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. ¡No omitas esta etiqueta por ningún motivo!"
-        
-        system_prompt += "\n4. VERIFICACIÓN Y ACCIÓN DE AGENDA INMEDIATA (Garantizar exactitud): NUNCA asumas ni le digas al usuario que un horario está libre u ocupado basándote en tu memoria o en los ejemplos del prompt. Si el usuario te pide un horario específico (ej: miércoles a las 10) y tras llamar a 'consultar_disponibilidad' compruebas que ese horario está en la lista de 'horarios_disponibles', DEBES llamar obligatoriamente a la herramienta 'agendar_turno' en esta misma respuesta para reservarlo. Está TERMINANTEMENTE PROHIBIDO decirle que está ocupado o pedirle más confirmaciones por chat si el horario devuelto por la herramienta está libre."
+
+        if appointments_enabled:
+            system_prompt += "\n4. VERIFICACIÓN Y ACCIÓN DE AGENDA INMEDIATA (Garantizar exactitud): NUNCA asumas ni le digas al usuario que un horario está libre u ocupado basándote en tu memoria o en los ejemplos del prompt. Si el usuario te pide un horario específico (ej: miércoles a las 10) y tras llamar a 'consultar_disponibilidad' compruebas que ese horario está en la lista de 'horarios_disponibles', DEBES llamar obligatoriamente a la herramienta 'agendar_turno' en esta misma respuesta para reservarlo. Está TERMINANTEMENTE PROHIBIDO decirle que está ocupado o pedirle más confirmaciones por chat si el horario devuelto por la herramienta está libre."
         
     finally:
         db.close()
@@ -1768,7 +1795,8 @@ def call_model(state: AgentState):
     except Exception as debug_err:
         pass
 
-    response = llm_with_tools.invoke(messages)
+    active_llm = llm_with_tools if appointments_enabled else llm_with_tools_no_appointments
+    response = active_llm.invoke(messages)
     
     return {
         "messages": [response], 
