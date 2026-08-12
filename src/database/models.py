@@ -73,6 +73,11 @@ class ClientSettings(Base):
     feat_document_library = Column(Boolean, default=False)
     doc_library_trigger_phrases = Column(Text, nullable=True)  # JSON list, frases gatillo generales del cliente
 
+    # --- PREGUNTA DE SALUDO (ofrecer un segmento de documentos en el primer mensaje) ---
+    greeting_question_enabled = Column(Boolean, default=False, server_default='0')
+    greeting_question_text = Column(Text, nullable=True)  # ej: "¿Querés descargar algún resultado o protocolo?"
+    greeting_question_segment_id = Column(Integer, ForeignKey("data_doc_segments.id"), nullable=True)
+
     # --- MODOS DE RESPUESTA DEL CATÁLOGO (combinables) ---
     catalog_require_lead_before_price = Column(Boolean, default=False)
     catalog_lead_fields = Column(Text, nullable=True)  # JSON list, ej: ["Nombre y Apellido","Email","Teléfono"]

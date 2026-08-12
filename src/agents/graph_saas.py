@@ -52,6 +52,7 @@ class AgentState(TypedDict):
     storage_dest: str
     pending_pdf_path: str
     form_just_completed: bool
+    greeting_offer_topic: str
 
 # --- Helpers SaaS ---
 def get_user_profile(client_id: int, user_id: str):
@@ -81,6 +82,26 @@ def save_user_profile(client_id: int, user_id: str, full_name: str):
         return False
     finally:
         db.close()
+
+_GREETING_AFFIRMATIVE_WORDS = {
+    "si", "sí", "sisi", "sisisi", "dale", "obvio", "porfa", "porfavor",
+    "claro", "ok", "okay", "s",
+}
+
+def es_respuesta_afirmativa(texto: str) -> bool:
+    """Heurística acotada para interpretar un 'sí' a la pregunta de saludo (ver
+    'greeting_offer_topic' en AgentState). A propósito solo mira la primera palabra
+    del mensaje (no busca la palabra en cualquier parte, para no confundir un mensaje
+    largo no relacionado con una afirmación) y solo se usa en la ventana de un turno,
+    inmediatamente después de haber hecho la pregunta de saludo."""
+    import re
+    if not texto:
+        return False
+    cleaned = re.sub(r"[^\w\sáéíóúñ]", "", texto.lower()).strip()
+    if not cleaned:
+        return False
+    first_word = cleaned.split()[0]
+    return first_word in _GREETING_AFFIRMATIVE_WORDS or cleaned in _GREETING_AFFIRMATIVE_WORDS
 
 def registrar_vacio_conocimiento(client_id: int, query: str, thread_id: str = None):
     try:
@@ -1746,6 +1767,50 @@ def call_model(state: AgentState):
         if not matched_segment and doc_keywords and any(dk in last_human_msg.lower() for dk in doc_keywords):
             user_doc_intent = True
 
+    # --- Pregunta de saludo: ofrecer un segmento de documentos en el primer mensaje de la
+    # conversación (configurable por cliente, ver ClientSettings.greeting_question_*). Si el
+    # turno anterior dejó una oferta pendiente, este turno solo chequea si la respuesta fue
+    # afirmativa (heurística acotada a la primera palabra, ver es_respuesta_afirmativa) — nunca
+    # se vuelve a preguntar ni queda "abierta" más de un turno.
+    greeting_offer_pending = state.get("greeting_offer_topic") or ""
+    greeting_offer_topic_next = ""
+    if greeting_offer_pending and not onboarding_active:
+        if not matched_segment and es_respuesta_afirmativa(last_human_msg):
+            from src.database.document_library import get_segment_by_name
+            db_g = SessionLocal()
+            try:
+                offered_segment = get_segment_by_name(db_g, client_id, greeting_offer_pending)
+            finally:
+                db_g.close()
+            if offered_segment and offered_segment.search_fields:
+                try:
+                    offered_fields = [f.strip() for f in json.loads(offered_segment.search_fields) if f and f.strip()]
+                except Exception:
+                    offered_fields = []
+                if offered_fields:
+                    matched_segment = offered_segment
+                    matched_segment_fields = offered_fields
+    elif not onboarding_active and settings and getattr(settings, "greeting_question_enabled", False) and getattr(settings, "greeting_question_segment_id", None):
+        is_first_turn = not any(isinstance(m, AIMessage) for m in state["messages"])
+        if is_first_turn:
+            from src.database.models import DocSegment
+            db_g = SessionLocal()
+            try:
+                greet_segment = db_g.query(DocSegment).filter_by(
+                    id=settings.greeting_question_segment_id, client_id=client_id, is_active=True
+                ).first()
+            finally:
+                db_g.close()
+            if greet_segment:
+                question_text = (settings.greeting_question_text or "").strip() or f"¿Querés descargar algún documento de {greet_segment.name}?"
+                messages.append(SystemMessage(content=(
+                    f"REFUERZO DE SALUDO: Es el primer mensaje de esta conversación. Además de tu saludo "
+                    f"normal, DEBES incluir textualmente (podés adaptar apenas el tono) esta pregunta: "
+                    f"\"{question_text}\". Todavía NO llames a ninguna herramienta de documentos por esto: "
+                    f"solo preguntá, el sistema se encarga de continuar si el usuario responde que sí."
+                )))
+                greeting_offer_topic_next = greet_segment.name
+
     if matched_segment and not onboarding_active:
         messages.append(SystemMessage(content=(
             f"REFUERZO DE BÚSQUEDA POR SEGMENTO: El usuario está pidiendo un documento del segmento "
@@ -1799,12 +1864,13 @@ def call_model(state: AgentState):
     response = active_llm.invoke(messages)
     
     return {
-        "messages": [response], 
+        "messages": [response],
         "thread_id": t_id,
         "client_id": client_id,
         "onboarding_active": onboarding_active,
         "fields_to_collect": fields_to_collect,
-        "collected_data": collected_data
+        "collected_data": collected_data,
+        "greeting_offer_topic": greeting_offer_topic_next
     }
 
 def state_manager(state: AgentState):

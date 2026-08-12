@@ -2224,6 +2224,9 @@ class BulkAssignUserSegmentPayload(BaseModel):
 
 class DocLibrarySettingsPayload(BaseModel):
     trigger_phrases: list[str] = []
+    greeting_question_enabled: bool = False
+    greeting_question_text: str = ""
+    greeting_question_segment_id: int | None = None
 
 @app.get("/admin/document-library", response_class=HTMLResponse)
 async def document_library_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -2673,7 +2676,12 @@ async def api_get_doc_library_settings(request: Request, db: Session = Depends(g
         phrases = json.loads(settings.doc_library_trigger_phrases) if settings and settings.doc_library_trigger_phrases else []
     except Exception:
         phrases = []
-    return {"trigger_phrases": phrases}
+    return {
+        "trigger_phrases": phrases,
+        "greeting_question_enabled": bool(settings.greeting_question_enabled) if settings else False,
+        "greeting_question_text": (settings.greeting_question_text or "") if settings else "",
+        "greeting_question_segment_id": settings.greeting_question_segment_id if settings else None,
+    }
 
 @app.post("/api/admin/document_library/settings")
 async def api_save_doc_library_settings(request: Request, payload: DocLibrarySettingsPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -2684,7 +2692,17 @@ async def api_save_doc_library_settings(request: Request, payload: DocLibrarySet
     if not settings:
         return JSONResponse(status_code=404, content={"error": "Configuración no encontrada"})
 
+    greeting_segment_id = payload.greeting_question_segment_id
+    if greeting_segment_id is not None:
+        from src.database.models import DocSegment
+        owned = db.query(DocSegment).filter_by(id=greeting_segment_id, client_id=target_client_id).first()
+        if not owned:
+            return JSONResponse(status_code=400, content={"error": "Segmento inválido"})
+
     settings.doc_library_trigger_phrases = json.dumps(payload.trigger_phrases) if payload.trigger_phrases else None
+    settings.greeting_question_enabled = payload.greeting_question_enabled
+    settings.greeting_question_text = payload.greeting_question_text.strip() or None
+    settings.greeting_question_segment_id = greeting_segment_id
     db.commit()
     return {"status": "ok"}
 

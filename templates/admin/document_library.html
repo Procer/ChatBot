@@ -31,6 +31,36 @@
         </div>
     </div>
 
+    <!-- Configuración: pregunta de saludo -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+            <i data-lucide="message-circle-question" class="w-4 h-4 text-brand-500"></i> Pregunta de saludo
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">
+            En el primer mensaje de cada conversación nueva, el bot puede ofrecer proactivamente un segmento de documentos. Si el usuario responde afirmativamente, arranca directo el flujo de búsqueda de ese segmento (pidiendo los mismos datos configurados en el segmento).
+        </p>
+        <label class="flex items-center gap-2 text-sm text-white mb-3">
+            <input type="checkbox" id="greetingQuestionEnabled" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+            Activar pregunta de saludo
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Segmento a ofrecer</label>
+                <select id="greetingQuestionSegment" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <option value="">Elegir segmento...</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Texto de la pregunta (opcional)</label>
+                <input type="text" id="greetingQuestionText" placeholder="¿Querés descargar algún resultado o protocolo?" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+        </div>
+        <p class="text-xs text-amber-400/80 mt-2">
+            Requiere que el segmento elegido tenga "Datos a pedir antes de buscar" configurados (si no, no hace nada).
+        </p>
+        <button onclick="saveSettings()" class="mt-3 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+    </div>
+
     <!-- Segmentos -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <div class="flex items-center justify-between mb-3">
@@ -441,10 +471,14 @@
         sessionsData = await sessionsRes.json();
 
         document.getElementById('triggerPhrasesInput').value = (settings.trigger_phrases || []).join(', ');
+        document.getElementById('greetingQuestionEnabled').checked = !!settings.greeting_question_enabled;
+        document.getElementById('greetingQuestionText').value = settings.greeting_question_text || '';
 
         selectedDocumentIds = new Set();
         selectedUserIds = new Set();
         populateSegmentSelects();
+        const greetingSel = document.getElementById('greetingQuestionSegment');
+        if (greetingSel && settings.greeting_question_segment_id) greetingSel.value = String(settings.greeting_question_segment_id);
         renderSegmentsTable();
         renderDocumentsTable();
         renderUsersTable();
@@ -459,20 +493,29 @@
         const userFilter = document.getElementById('userSegmentFilter');
         const docBulkSel = document.getElementById('documentBulkSegmentSelect');
         const userBulkSel = document.getElementById('userBulkSegmentSelect');
+        const greetingSel = document.getElementById('greetingQuestionSegment');
         if (docFilter) docFilter.innerHTML = optionsHtml;
         if (userFilter) userFilter.innerHTML = optionsHtml;
         if (docBulkSel) docBulkSel.innerHTML = pickHtml;
         if (userBulkSel) userBulkSel.innerHTML = pickHtml;
+        if (greetingSel) greetingSel.innerHTML = pickHtml;
     }
 
     async function saveSettings() {
         const raw = document.getElementById('triggerPhrasesInput').value;
         const phrases = raw.split(',').map(s => s.trim()).filter(Boolean);
+        const greetingSegmentRaw = document.getElementById('greetingQuestionSegment').value;
         await fetch('/api/admin/document_library/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trigger_phrases: phrases })
+            body: JSON.stringify({
+                trigger_phrases: phrases,
+                greeting_question_enabled: document.getElementById('greetingQuestionEnabled').checked,
+                greeting_question_text: document.getElementById('greetingQuestionText').value.trim(),
+                greeting_question_segment_id: greetingSegmentRaw ? parseInt(greetingSegmentRaw) : null,
+            })
         });
+        await loadAll();
     }
 
     // ---------- SEGMENTOS ----------
