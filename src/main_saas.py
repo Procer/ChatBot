@@ -2338,9 +2338,16 @@ async def api_get_documents(request: Request, db: Session = Depends(get_db), cur
     from src.database.models import Document, DocumentSegmentLink
     docs = db.query(Document).filter_by(client_id=target_client_id).order_by(Document.id.desc()).all()
 
+    segment_ids_by_doc: Dict[int, list] = {}
+    if docs:
+        doc_ids = [d.id for d in docs]
+        links = db.query(DocumentSegmentLink).filter(DocumentSegmentLink.document_id.in_(doc_ids)).all()
+        for l in links:
+            segment_ids_by_doc.setdefault(l.document_id, []).append(l.segment_id)
+
     data = []
     for d in docs:
-        segment_ids = [l.segment_id for l in db.query(DocumentSegmentLink).filter_by(document_id=d.id).all()]
+        segment_ids = segment_ids_by_doc.get(d.id, [])
         data.append({
             "id": d.id,
             "title": d.title,
