@@ -3534,11 +3534,16 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                         ).order_by(Message.timestamp.desc()).first()
 
                         if last_user_msg and datetime.datetime.utcnow() >= last_user_msg.timestamp + datetime.timedelta(minutes=active_piece.interval_minutes):
-                            already_sent = db_local.query(FollowupLog).filter_by(
+                            last_sent = db_local.query(FollowupLog).filter_by(
                                 client_id=client_id, thread_id=user_id, content_id=active_piece.id
-                            ).first()
+                            ).order_by(FollowupLog.sent_at.desc()).first()
+                            # Reenviar cada vez que se cumpla el intervalo de nuevo: solo se bloquea
+                            # si ya se envió DESPUÉS del último mensaje del usuario (ya cubre este
+                            # período de inactividad). Si el usuario volvió a escribir desde el
+                            # último envío, es un período de inactividad nuevo y puede reenviarse.
+                            already_sent_this_gap = last_sent and last_sent.sent_at and last_sent.sent_at >= last_user_msg.timestamp
 
-                            if not already_sent:
+                            if not already_sent_this_gap:
                                 followup_text = active_piece.message_text
                                 followup_media = active_piece.media_path
                                 base_url = (settings.webhook_base_url or "").rstrip('/') if settings else ""
