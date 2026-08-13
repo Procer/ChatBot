@@ -88,6 +88,29 @@ _GREETING_AFFIRMATIVE_WORDS = {
     "claro", "ok", "okay", "s",
 }
 
+def _normalizar_palabra(palabra: str) -> str:
+    """Quita acentos y un plural simple (s final) para comparar frases gatillo de forma más
+    tolerante que un substring exacto. Bug real que motivó esto: la frase gatillo 'protocolos'
+    no matcheaba el mensaje del usuario 'protocolo' (singular), ni 'resultados' matcheaba
+    'resultado'. Solo se usa como señal blanda (ver 'user_doc_intent' en graph_saas), nunca para
+    decidir a qué segmento corresponde un pedido: esa decisión la toma el LLM con el menú de
+    segmentos disponibles."""
+    import unicodedata
+    p = unicodedata.normalize("NFD", palabra.lower())
+    p = "".join(c for c in p if unicodedata.category(c) != "Mn")
+    if len(p) > 3 and p.endswith("s"):
+        p = p[:-1]
+    return p
+
+
+def _frase_matchea_normalizada(mensaje_palabras: set, frase: str) -> bool:
+    """True si todas las palabras de 'frase' (normalizadas) aparecen en el mensaje del usuario
+    (también normalizado), sin importar el orden ni singular/plural/acentos."""
+    import re
+    frase_palabras = [_normalizar_palabra(w) for w in re.findall(r"\w+", frase)]
+    return bool(frase_palabras) and all(fp in mensaje_palabras for fp in frase_palabras)
+
+
 def es_respuesta_afirmativa(texto: str) -> bool:
     """Heurística acotada para interpretar un 'sí' a la pregunta de saludo (ver
     'greeting_offer_topic' en AgentState). A propósito solo mira la primera palabra
@@ -1749,22 +1772,49 @@ def call_model(state: AgentState):
     if user_scheduling_intent:
         messages.append(SystemMessage(content="REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno (ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la herramienta primero."))
 
+    # --- Biblioteca de Documentos: segmentos con búsqueda dirigida -----------------
+    # Antes esto decidía en Python, con un match de substring exacto, A QUÉ segmento
+    # correspondía el pedido — fallaba con singular/plural o sinónimos (ver memoria del bug real
+    # con "protocolo"/"protocolos"). Ahora se le describe el menú completo de segmentos activos
+    # al LLM (más abajo) y es él quien decide, por comprensión del lenguaje, si el pedido
+    # corresponde a alguno. `user_doc_intent` se sigue calculando acá, pero SOLO como señal
+    # blanda para no dejar que el Catálogo (más abajo) secuestre un pedido que en realidad es de
+    # documentos.
     user_doc_intent = False
     matched_segment = None
     matched_segment_fields = None
+    doc_segments_available = []
     if last_human_msg and settings and settings.feat_document_library:
         try:
             db_kw = SessionLocal()
-            from src.database.document_library import get_doc_trigger_keywords, get_segment_by_trigger
-            seg_match = get_segment_by_trigger(db_kw, client_id, last_human_msg)
-            if seg_match:
-                matched_segment, matched_segment_fields = seg_match
+            from src.database.document_library import get_doc_trigger_keywords
+            from src.database.models import DocSegment
+            segs = db_kw.query(DocSegment).filter(
+                DocSegment.client_id == client_id, DocSegment.is_active == True
+            ).order_by(DocSegment.id).all()
+            for s in segs:
+                if not s.search_trigger_phrases or not s.search_fields:
+                    continue
+                try:
+                    hints = [p.strip() for p in json.loads(s.search_trigger_phrases) if p and p.strip()]
+                    fields = [f.strip() for f in json.loads(s.search_fields) if f and f.strip()]
+                except Exception:
+                    continue
+                if not fields:
+                    continue
+                doc_segments_available.append((s.name, hints, fields))
             doc_keywords = get_doc_trigger_keywords(db_kw, client_id, settings)
             db_kw.close()
         except Exception as kw_err:
-            logging.error(f"Error obteniendo frases gatillo de la biblioteca de documentos: {kw_err}")
+            logging.error(f"Error obteniendo segmentos/frases gatillo de la biblioteca de documentos: {kw_err}")
             doc_keywords = []
-        if not matched_segment and doc_keywords and any(dk in last_human_msg.lower() for dk in doc_keywords):
+
+        import re
+        mensaje_palabras = set(_normalizar_palabra(w) for w in re.findall(r"\w+", last_human_msg))
+        pistas = list(doc_keywords)
+        for _, hints, _ in doc_segments_available:
+            pistas.extend(hints)
+        if any(_frase_matchea_normalizada(mensaje_palabras, p) for p in pistas):
             user_doc_intent = True
 
     # --- Pregunta de saludo: ofrecer un segmento de documentos en el primer mensaje de la
@@ -1812,6 +1862,8 @@ def call_model(state: AgentState):
                 greeting_offer_topic_next = greet_segment.name
 
     if matched_segment and not onboarding_active:
+        # Caso determinístico: el usuario confirmó la oferta de saludo para ESTE segmento puntual
+        # (no depende del menú/LLM de abajo, ya sabemos exactamente cuál es).
         messages.append(SystemMessage(content=(
             f"REFUERZO DE BÚSQUEDA POR SEGMENTO: El usuario está pidiendo un documento del segmento "
             f"'{matched_segment.name}', que requiere estos datos antes de buscar: "
@@ -1819,10 +1871,27 @@ def call_model(state: AgentState):
             f"`iniciar_busqueda_documento_segmento` en esta misma respuesta (query=la consulta del usuario, "
             f"segmento='{matched_segment.name}'). NO llames a `buscar_documento` en este turno."
         )))
+    elif doc_segments_available and not onboarding_active:
+        lineas_segmentos = []
+        for seg_name, seg_hints, seg_fields in doc_segments_available:
+            pistas_str = f" Pistas: {', '.join(seg_hints)}." if seg_hints else ""
+            lineas_segmentos.append(f"- \"{seg_name}\": pedí antes de buscar: {', '.join(seg_fields)}.{pistas_str}")
+        messages.append(SystemMessage(content=(
+            "BIBLIOTECA DE DOCUMENTOS - SEGMENTOS CON BÚSQUEDA DIRIGIDA disponibles:\n"
+            + "\n".join(lineas_segmentos) + "\n"
+            "Si el último mensaje del usuario pide descargar, consultar o buscar algo que corresponda a "
+            "alguno de estos segmentos -aunque use singular/plural distinto, sinónimos, u otra forma de "
+            "decirlo, no hace falta que use las palabras exactas de las pistas-, DEBES llamar "
+            "obligatoriamente a `iniciar_busqueda_documento_segmento` en esta misma respuesta, con "
+            "segmento=el nombre EXACTO listado arriba (entre comillas) y query=la consulta del usuario. NO "
+            "llames a `buscar_documento` en ese caso. Si el pedido es por otro documento/manual/reglamento "
+            "que NO corresponde a ninguno de estos segmentos, llamá a `buscar_documento` en su lugar. Si el "
+            "mensaje no tiene nada que ver con documentos, ignorá esta instrucción por completo."
+        )))
     elif user_doc_intent and not onboarding_active:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
 
-    if user_product_intent and settings and settings.feat_catalog and not onboarding_active:
+    if user_product_intent and not user_doc_intent and settings and settings.feat_catalog and not onboarding_active:
         messages.append(SystemMessage(content="REFUERZO DE CATÁLOGO: El usuario está preguntando por un producto, precio o disponibilidad. DEBES llamar obligatoriamente a la herramienta `consultar_catalogo` en esta misma respuesta con esa consulta, INCLUSO SI ESTÁS SEGURO de que ese producto no existe en el catálogo. Está terminantemente prohibido responder 'no tenemos/no vendemos eso' o cualquier respuesta similar sin haber ejecutado antes la herramienta: si no la ejecutás, esa consulta no queda registrada."))
 
     # Query database for knowledge items with media to reinforce [SEND_FILE] tag

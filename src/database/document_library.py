@@ -332,32 +332,6 @@ def get_doc_trigger_keywords(db, client_id: int, settings):
     return list(dict.fromkeys(keywords))
 
 
-def get_segment_by_trigger(db, client_id: int, message_text: str):
-    """Devuelve (segment, fields) si el mensaje matchea las frases gatillo propias de algún
-    segmento activo que además tenga datos de búsqueda configurados (ambos campos son requeridos,
-    si falta uno el segmento se ignora acá). Si varios matchean, gana el primero por id. None si
-    ninguno matchea o si el cliente no tiene ningún segmento con esto configurado."""
-    if not message_text:
-        return None
-    msg_lower = message_text.lower()
-    segments = db.query(DocSegment).filter(
-        DocSegment.client_id == client_id, DocSegment.is_active == True
-    ).order_by(DocSegment.id).all()
-    for s in segments:
-        if not s.search_trigger_phrases or not s.search_fields:
-            continue
-        try:
-            phrases = [p.strip().lower() for p in json.loads(s.search_trigger_phrases) if p and p.strip()]
-            fields = [f.strip() for f in json.loads(s.search_fields) if f and f.strip()]
-        except Exception:
-            continue
-        if not phrases or not fields:
-            continue
-        if any(p in msg_lower for p in phrases):
-            return s, fields
-    return None
-
-
 def build_segment_search_query(collected_data: dict, fields: list) -> str:
     """Arma la consulta de búsqueda SOLO con los campos recolectados para el segmento, como pares
     'etiqueta: valor'. La frase/palabra gatillo que disparó el flujo NO se incluye acá a propósito:
