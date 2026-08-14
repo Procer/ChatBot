@@ -1887,7 +1887,13 @@ def call_model(state: AgentState):
             "segmento=el nombre EXACTO listado arriba (entre comillas) y query=la consulta del usuario. NO "
             "llames a `buscar_documento` en ese caso. Si el pedido es por otro documento/manual/reglamento "
             "que NO corresponde a ninguno de estos segmentos, llamá a `buscar_documento` en su lugar. Si el "
-            "mensaje no tiene nada que ver con documentos, ignorá esta instrucción por completo."
+            "mensaje no tiene nada que ver con documentos, ignorá esta instrucción por completo.\n"
+            "DESAMBIGUACIÓN ENTRE SEGMENTOS: si el pedido del usuario podría corresponder a más de uno de "
+            "estos segmentos, priorizá el que sirva para recuperar algo PROPIO y YA EXISTENTE del usuario "
+            "(ej. 'quiero ver/descargar el resultado de un análisis/estudio que ya me hice', identificado "
+            "por datos personales como DNI/protocolo/número de orden) por sobre uno de información general "
+            "o catálogo (ej. 'qué tipos de análisis hacen'). Ante la duda entre ambos, preguntale al usuario "
+            "una sola frase corta para confirmar cuál de los dos quiere, en vez de asumir el equivocado."
         )))
     elif user_doc_intent and not onboarding_active:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
