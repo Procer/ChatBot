@@ -622,6 +622,11 @@
                         </div>
                         <p class="text-[11px] text-slate-600 ml-1">Si no marcás ningún día, se usan los días generales configurados en Empresa. Marcá solo los días en que este trámite puntual está disponible (ej: solo lunes/miércoles/viernes).</p>
                     </div>
+                    <div class="space-y-2 md:col-span-3">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Datos a Pedir para este Turno</label>
+                        <input type="text" name="appointment_extra_fields" id="appointment_extra_fields" placeholder="Ej: Obra Social, DNI, Edad" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Separados por coma. El bot los pide antes de confirmar el turno y quedan guardados en el detalle del turno. Dejalo vacío si no necesitás pedir nada extra.</p>
+                    </div>
                 </div>
 
                 <div class="space-y-2">
@@ -853,6 +858,7 @@
             document.querySelectorAll('.scheduling-day-checkbox').forEach(cb => {
                 cb.checked = selectedDays.includes(cb.value);
             });
+            document.getElementById('appointment_extra_fields').value = data.appointment_extra_fields || '';
             if(data.storage_dest) document.getElementById('storage_dest').value = data.storage_dest;
             
             if (data.has_form) {

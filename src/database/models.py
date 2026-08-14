@@ -274,6 +274,7 @@ class Knowledge(Base):
     allow_scheduling = Column(Boolean, default=False)
     scheduling_hours = Column(Text, nullable=True)
     scheduling_days = Column(String(50), nullable=True)  # "mon,wed,fri"; NULL/vacío = usar los días generales del cliente (ClientSettings.scheduling_days)
+    appointment_extra_fields = Column(Text, nullable=True)  # "Obra Social, DNI, Edad"; datos puntuales a pedir antes de confirmar el turno de este trámite
     appointment_duration = Column(Integer, nullable=True)
     scheduling_capacity = Column(Integer, default=1, nullable=True)
     interactive_options = Column(Text)

@@ -831,8 +831,50 @@ def consultar_disponibilidad(fecha: str, tramite_nombre: str = None, config: Run
 
 
 @tool
-def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None, nombre_usuario: str = None, config: RunnableConfig = None):
-    """Registra y agenda un nuevo turno para el usuario en una fecha (YYYY-MM-DD) y hora (HH:MM) específicas. Si el usuario agenda para un trámite o servicio específico, incluir tramite_nombre. Si conoces el nombre y apellido del usuario, pasalo en nombre_usuario."""
+def iniciar_datos_turno(fecha: str, hora: str, tramite_nombre: str, config: RunnableConfig = None):
+    """Activa la recolección de los datos adicionales configurados para un trámite, ANTES de
+    confirmar el turno con 'agendar_turno'. Usala SOLO cuando el sistema te lo indique con un
+    'REFUERZO DE DATOS DE TURNO' (justo después de que el usuario ya confirmó día y hora). NO
+    llames a 'agendar_turno' en este mismo turno: una vez recolectados todos los datos, el sistema
+    te va a pedir que llames a 'agendar_turno'."""
+    client_id = config.get("configurable", {}).get("client_id") if config else None
+    if not client_id:
+        return json.dumps({"error": "No client ID"})
+    db = SessionLocal()
+    try:
+        search_topic = (tramite_nombre or "").lower().strip()
+        all_kb = db.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()
+        match = None
+        for k in all_kb:
+            kb_topic = k.topic.lower()
+            if search_topic and (search_topic in kb_topic or kb_topic in search_topic):
+                match = k
+                break
+        try:
+            fields = [f.strip() for f in (match.appointment_extra_fields or "").split(",") if f.strip()] if match else []
+        except Exception:
+            fields = []
+    finally:
+        db.close()
+    if not fields:
+        return json.dumps({"status": "error", "message": "Este trámite no tiene datos extra configurados, llamá directo a agendar_turno."})
+    return json.dumps({
+        "status": "activated",
+        "topic": f"{APPOINTMENT_DATA_TOPIC_PREFIX}{tramite_nombre}",
+        "fields": fields,
+        "storage": "database",
+        "fecha_turno": fecha,
+        "hora_turno": hora,
+        "tramite_turno": tramite_nombre,
+        "message": (
+            f"Antes de confirmar el turno, pedile estos datos al usuario, uno por vez o todos "
+            f"juntos: {', '.join(fields)}. Usá 'registrar_dato_tramite' para cada uno."
+        )
+    })
+
+@tool
+def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None, nombre_usuario: str = None, datos_adicionales: str = None, config: RunnableConfig = None):
+    """Registra y agenda un nuevo turno para el usuario en una fecha (YYYY-MM-DD) y hora (HH:MM) específicas. Si el usuario agenda para un trámite o servicio específico, incluir tramite_nombre. Si conoces el nombre y apellido del usuario, pasalo en nombre_usuario. Si ya se recolectaron los datos adicionales del trámite (ver 'REFUERZO DE DATOS DE TURNO'), pasalos en datos_adicionales como texto 'Campo: Valor, Campo2: Valor2'."""
     client_id = config.get("configurable", {}).get("client_id") if config else None
     thread_id = config.get("configurable", {}).get("thread_id") if config else None
     if not client_id or not thread_id:
@@ -896,7 +938,9 @@ def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None
     real_reason = motivo
     if tramite_nombre and tramite_nombre not in motivo:
         real_reason = f"{tramite_nombre} - {motivo}"
-        
+    if datos_adicionales and datos_adicionales.strip():
+        real_reason = f"{real_reason} | {datos_adicionales.strip()}"
+
     exito = registrar_turno_saas(client_id, thread_id, fecha, hora, real_reason, tramite_nombre)
     if exito:
         return json.dumps({
@@ -1259,6 +1303,7 @@ def registrar_fecha_entrega_pedido(fecha: str, config: RunnableConfig):
 
 DOC_LOGIN_TOPIC_PREFIX = "Login Documento: "
 DOC_SEARCH_TOPIC_PREFIX = "Búsqueda Documento: "
+APPOINTMENT_DATA_TOPIC_PREFIX = "Datos del Turno: "
 
 @tool
 def buscar_documento(query: str, config: RunnableConfig):
@@ -1451,7 +1496,7 @@ def buscar_documento_en_segmento(query: str, segmento: str, config: RunnableConf
         "instruccion": "Si esto responde lo que pidió el usuario, incluí la etiqueta [SEND_DOC: <id>] al final de tu respuesta."
     })
 
-tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento, buscar_documento_en_segmento]
+tools = [buscar_info_empresa, solicitar_asistencia_humana, iniciar_onboarding_tramite, registrar_dato_tramite, consultar_disponibilidad, agendar_turno, iniciar_datos_turno, registrar_nombre_usuario, consultar_estado_tramite, cancelar_mi_turno, reprogramar_mi_turno, consultar_catalogo, iniciar_pedido_catalogo, registrar_cantidad_pedido, registrar_fecha_entrega_pedido, buscar_documento, registrar_clave_documento, iniciar_busqueda_documento_segmento, buscar_documento_en_segmento]
 tool_node = ToolNode(tools)
 
 # Herramientas de gestión de turnos: solo deben ofrecerse al LLM si el cliente tiene la
@@ -1597,6 +1642,10 @@ def call_model(state: AgentState):
         # Onboarding Logic
         doc_search_ready_query = None
         doc_search_ready_segment = None
+        appointment_ready_fecha = None
+        appointment_ready_hora = None
+        appointment_ready_tramite = None
+        appointment_ready_datos = None
         if onboarding_active:
             if "Nombre del Cliente" not in fields_to_collect:
                 fields_to_collect.insert(0, "Nombre del Cliente")
@@ -1605,6 +1654,7 @@ def call_model(state: AgentState):
             is_pedido_topic = str(state.get('form_topic') or '').startswith("Pedido: ")
             is_doc_login_topic = str(state.get('form_topic') or '').startswith(DOC_LOGIN_TOPIC_PREFIX)
             is_doc_search_topic = str(state.get('form_topic') or '').startswith(DOC_SEARCH_TOPIC_PREFIX)
+            is_appointment_data_topic = str(state.get('form_topic') or '').startswith(APPOINTMENT_DATA_TOPIC_PREFIX)
             if missing:
                 current_field = missing[0]
                 system_prompt += f"\n### 📝 GESTIÓN DE TRÁMITE: {state.get('form_topic')}\n"
@@ -1622,6 +1672,8 @@ def call_model(state: AgentState):
                     system_prompt += "4. **CAMPO ESPECIAL DE LOGIN:** Para 'Contraseña' usá SIEMPRE 'registrar_clave_documento' (nunca 'registrar_dato_tramite'), pasándole el nombre del segmento. Si devuelve un error (usuario/clave incorrectos), NO la registres como si fuera válida: explicale el motivo al usuario y pedile que la vuelva a escribir.\n"
                 elif is_doc_search_topic:
                     system_prompt += "4. **ESTOS DATOS SON PARA MEJORAR LA BÚSQUEDA, NO SON UN REQUISITO ESTRICTO:** si el usuario no tiene o no sabe alguno de estos datos (por ejemplo dice 'no tengo ese número' o te da información distinta a la pedida), NO insistas más de una vez ni lo bloquees. Registrá ese campo igual con 'registrar_dato_tramite' usando el texto que sí te haya dado (aunque no tenga el formato exacto pedido), o con el valor 'N/A' si no dio nada útil, y seguí con el próximo dato. Si ya no quedan más datos por pedir, avisale amablemente que vas a buscar con lo que tenés.\n"
+                elif is_appointment_data_topic:
+                    system_prompt += "4. **DATOS DEL TURNO:** el día y la hora YA están confirmados, esto es solo información adicional que pidió el negocio para este trámite. Pedí estos datos de forma conversacional (no como formulario frío) y registrá cada uno con 'registrar_dato_tramite' apenas el usuario lo mencione. Cuando ya tengas todos, vas a poder confirmar el turno.\n"
             else:
                 if state.get('form_topic') == CATALOG_LEAD_TOPIC:
                     system_prompt += (
@@ -1672,6 +1724,21 @@ def call_model(state: AgentState):
                     # 'buscar_documento' (búsqueda general) con un texto suelto en vez de la query combinada.
                     doc_search_ready_query = combined_query
                     doc_search_ready_segment = segment_name
+                elif is_appointment_data_topic:
+                    extra_fields = [f for f in fields_to_collect if f != "Nombre del Cliente"]
+                    datos_str = build_segment_search_query(collected_data, extra_fields)
+                    system_prompt += (
+                        "\n### ✅ DATOS DEL TURNO COMPLETADOS\n"
+                        "Ya tenés todos los datos adicionales. Ahora DEBÉS llamar a la herramienta "
+                        f"'agendar_turno' con fecha='{collected_data.get('Fecha del Turno', '')}', "
+                        f"hora='{collected_data.get('Hora del Turno', '')}', "
+                        f"tramite_nombre='{collected_data.get('Trámite del Turno', '')}' y "
+                        f"datos_adicionales='{datos_str}' (no reformules ni resumas datos_adicionales).\n"
+                    )
+                    appointment_ready_fecha = collected_data.get('Fecha del Turno', '')
+                    appointment_ready_hora = collected_data.get('Hora del Turno', '')
+                    appointment_ready_tramite = collected_data.get('Trámite del Turno', '')
+                    appointment_ready_datos = datos_str
                 else:
                     system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
         else:
@@ -1762,6 +1829,14 @@ def call_model(state: AgentState):
             f"segmento='{doc_search_ready_segment}' y query='{doc_search_ready_query}' (ese texto "
             "exacto, no lo reformules ni lo resumas ni uses solo una parte). Está terminantemente "
             "prohibido llamar a `buscar_documento` (la búsqueda general) en este turno."
+        )))
+
+    if appointment_ready_fecha is not None:
+        messages.append(SystemMessage(content=(
+            "REFUERZO FINAL DE DATOS DE TURNO: ya tenés todos los datos adicionales recolectados. "
+            f"DEBÉS llamar AHORA MISMO a la herramienta `agendar_turno` con fecha='{appointment_ready_fecha}', "
+            f"hora='{appointment_ready_hora}', tramite_nombre='{appointment_ready_tramite}' y "
+            f"datos_adicionales='{appointment_ready_datos}' (ese texto exacto, no lo reformules)."
         )))
 
     # ----------------- REFUERZO DINÁMICO DE REGLAS DE NEGOCIO -----------------
@@ -2010,12 +2085,49 @@ def call_model(state: AgentState):
     if prev_ai is not None:
         prev_ai_text = str(getattr(prev_ai, "content", "") or "").lower()
         if "turno" in prev_ai_text and "confirm" in prev_ai_text and es_respuesta_afirmativa(last_human_msg):
-            messages.append(SystemMessage(content=(
-                "IMPORTANTE: el usuario acaba de responder afirmativamente a tu pregunta de "
-                "confirmación de turno del mensaje anterior. DEBÉS llamar AHORA MISMO a la "
-                "herramienta `agendar_turno` con la fecha y hora que vos mismo propusiste en esa "
-                "pregunta (recalculando la fecha en formato YYYY-MM-DD con el CONTEXTO TEMPORAL si "
-                "hace falta)."
+            # Antes de agendar, chequear si el trámite confirmado tiene datos adicionales
+            # configurados (appointment_extra_fields) que haya que pedir primero.
+            tramite_confirmado = None
+            for m in reversed(messages):
+                if isinstance(m, ToolMessage) and getattr(m, "name", None) == "consultar_disponibilidad":
+                    try:
+                        avail_data = json.loads(m.content)
+                    except Exception:
+                        avail_data = None
+                    if avail_data and avail_data.get("status") == "success":
+                        tramite_confirmado = avail_data.get("tramite")
+                    break
+            extra_fields_for_tramite = None
+            if tramite_confirmado:
+                db_ex = SessionLocal()
+                try:
+                    search_topic = tramite_confirmado.lower().strip()
+                    all_kb_ex = db_ex.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()
+                    for k in all_kb_ex:
+                        kb_topic = k.topic.lower()
+                        if search_topic in kb_topic or kb_topic in search_topic:
+                            if k.appointment_extra_fields and k.appointment_extra_fields.strip():
+                                extra_fields_for_tramite = k.appointment_extra_fields
+                            break
+                finally:
+                    db_ex.close()
+            if extra_fields_for_tramite:
+                messages.append(SystemMessage(content=(
+                    "IMPORTANTE: el usuario acaba de responder afirmativamente a tu pregunta de "
+                    "confirmación de turno del mensaje anterior. Este trámite tiene datos "
+                    "adicionales configurados que hay que pedir ANTES de agendar. DEBÉS llamar "
+                    "AHORA MISMO a la herramienta `iniciar_datos_turno` con la fecha, hora y "
+                    f"tramite_nombre='{tramite_confirmado}' que vos mismo propusiste en esa "
+                    "pregunta (recalculando la fecha en formato YYYY-MM-DD con el CONTEXTO TEMPORAL "
+                    "si hace falta). NO llames a `agendar_turno` todavía."
+                )))
+            else:
+                messages.append(SystemMessage(content=(
+                    "IMPORTANTE: el usuario acaba de responder afirmativamente a tu pregunta de "
+                    "confirmación de turno del mensaje anterior. DEBÉS llamar AHORA MISMO a la "
+                    "herramienta `agendar_turno` con la fecha y hora que vos mismo propusiste en esa "
+                    "pregunta (recalculando la fecha en formato YYYY-MM-DD con el CONTEXTO TEMPORAL si "
+                    "hace falta)."
                 )))
 
     if tramites_con_turno:
@@ -2132,6 +2244,12 @@ def state_manager(state: AgentState):
                         initial_data["Consulta de Documento"] = data["documento_consulta"]
                     if data.get("segmento_busqueda"):
                         initial_data["Segmento de Búsqueda"] = data["segmento_busqueda"]
+                    if data.get("fecha_turno"):
+                        initial_data["Fecha del Turno"] = data["fecha_turno"]
+                    if data.get("hora_turno"):
+                        initial_data["Hora del Turno"] = data["hora_turno"]
+                    if data.get("tramite_turno"):
+                        initial_data["Trámite del Turno"] = data["tramite_turno"]
                     new_state["collected_data"] = initial_data
                     new_state["storage_dest"] = data["storage"]
                 elif data.get("status") == "profile_update":
@@ -2175,6 +2293,7 @@ def state_manager(state: AgentState):
             is_catalog_topic = topic == CATALOG_LEAD_TOPIC or str(topic or "").startswith("Pedido: ")
             is_doc_login_topic = str(topic or "").startswith(DOC_LOGIN_TOPIC_PREFIX)
             is_doc_search_topic = str(topic or "").startswith(DOC_SEARCH_TOPIC_PREFIX)
+            is_appointment_data_topic = str(topic or "").startswith(APPOINTMENT_DATA_TOPIC_PREFIX)
 
             pdf_path = None
             if is_catalog_topic:
@@ -2203,6 +2322,11 @@ def state_manager(state: AgentState):
                 # no un trámite: no hay nada que persistir acá. La búsqueda real (y su auditoría vía
                 # log_document_search) ocurre cuando buscar_documento se vuelva a llamar con la
                 # consulta combinada, en la próxima respuesta del agente.
+                pass
+            elif is_appointment_data_topic:
+                # Los datos adicionales del turno son insumos efímeros para pasarle a
+                # agendar_turno (que los persiste dentro del campo 'reason' del turno real):
+                # no hay nada que guardar acá como Submission aparte.
                 pass
             else:
                 process_form_completion(

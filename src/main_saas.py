@@ -1467,6 +1467,7 @@ async def add_knowledge(
     allow_scheduling: int = Form(0), storage_dest: str = Form("database"),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
     scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
+    appointment_extra_fields: str = Form(None),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
@@ -1497,6 +1498,7 @@ async def add_knowledge(
         allow_scheduling=bool(allow_scheduling),
         scheduling_hours=scheduling_hours,
         scheduling_days=",".join(scheduling_days) if scheduling_days else None,
+        appointment_extra_fields=appointment_extra_fields,
         appointment_duration=appointment_duration_kb,
         scheduling_capacity=scheduling_capacity,
         storage_dest=storage_dest,
@@ -1515,6 +1517,7 @@ async def update_knowledge(
     storage_dest: str = Form("database"), allow_scheduling: int = Form(0),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
     scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
+    appointment_extra_fields: str = Form(None),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
@@ -1555,6 +1558,7 @@ async def update_knowledge(
     k.allow_scheduling = bool(allow_scheduling)
     k.scheduling_hours = scheduling_hours
     k.scheduling_days = ",".join(scheduling_days) if scheduling_days else None
+    k.appointment_extra_fields = appointment_extra_fields
     k.appointment_duration = appointment_duration_kb
     k.scheduling_capacity = scheduling_capacity
     k.interactive_options = interactive_options
@@ -1595,6 +1599,7 @@ async def get_knowledge(request: Request, item_id: int, db: Session = Depends(ge
         "allow_scheduling": k.allow_scheduling,
         "scheduling_hours": k.scheduling_hours,
         "scheduling_days": k.scheduling_days,
+        "appointment_extra_fields": k.appointment_extra_fields,
         "appointment_duration": k.appointment_duration,
         "scheduling_capacity": k.scheduling_capacity,
         "storage_dest": k.storage_dest,
