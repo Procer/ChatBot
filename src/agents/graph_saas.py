@@ -1796,22 +1796,25 @@ def call_model(state: AgentState):
         if any(pkw in last_human_msg_normalized for pkw in product_keywords):
             user_product_intent = True
 
+    tramites_con_turno = []
     if user_scheduling_intent:
-        agenda_msg = (
+        messages.append(SystemMessage(content=(
             "REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno "
             "(ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES "
             "llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta "
             "para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está "
             "terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la "
             "herramienta primero."
-        )
+        )))
         # Trámites con horario de turno propio: si no se le pasa 'tramite_nombre' correcto a la
         # herramienta, el sistema intenta deducirlo comparando palabras EXACTAS del mensaje contra el
         # nombre del trámite — falla con variaciones naturales (singular/plural, palabras de más,
         # sinónimos). Bug real: "necesito un turno para extraccion de sangre" no matcheaba el trámite
         # "Turnos Extraccion de Sangre" porque el mensaje no tiene la palabra "turnos" (plural) tal
         # cual. Mismo patrón que se arregló para los segmentos de documentos: delegar la elección al
-        # LLM en vez de a un match literal.
+        # LLM en vez de a un match literal. Guardado para repetir esto como el ÚLTIMO mensaje del
+        # contexto (ver más abajo): agregado acá solo, el modelo lo ignoraba porque quedaba en medio
+        # de muchos otros refuerzos — mismo problema que ya se resolvió así para buscar_documento_en_segmento.
         try:
             db_tr = SessionLocal()
             tramites_con_turno = [
@@ -1820,16 +1823,6 @@ def call_model(state: AgentState):
             db_tr.close()
         except Exception:
             tramites_con_turno = []
-        if tramites_con_turno:
-            agenda_msg += (
-                "\nTRÁMITES CON HORARIO DE TURNO PROPIO disponibles: "
-                + ", ".join(f'"{t}"' for t in tramites_con_turno)
-                + ". Si el pedido del usuario corresponde a alguno de estos -aunque use singular/plural "
-                "distinto, sinónimos u otra forma de decirlo, no hace falta que use las palabras exactas-, "
-                "DEBÉS pasar el parámetro `tramite_nombre` con el nombre EXACTO listado arriba al llamar "
-                "a `consultar_disponibilidad`. Si no corresponde a ninguno, no pases ese parámetro."
-            )
-        messages.append(SystemMessage(content=agenda_msg))
 
     # --- Biblioteca de Documentos: segmentos con búsqueda dirigida -----------------
     # Antes esto decidía en Python, con un match de substring exacto, A QUÉ segmento
@@ -1988,6 +1981,17 @@ def call_model(state: AgentState):
             
     if has_availability_tool_output:
         messages.append(SystemMessage(content="IMPORTANTE: Si el usuario solicitó un día y hora específicos (ej: 'miércoles a las 10') y esa hora está en la lista de 'horarios_disponibles' de la herramienta, DEBES llamar de inmediato a la herramienta 'agendar_turno' para reservarlo en esta misma respuesta. Si el usuario cambia de día o pide para una fecha distinta a la consultada, DEBES llamar primero a 'consultar_disponibilidad' con la nueva fecha. Está terminantemente prohibido asumir disponibilidad o no disponibilidad de una fecha sin haber llamado a la herramienta en este turno. Si no especificó un horario exacto libre, menciónale solo 2 o 3 opciones representativas en un único renglón corrido de texto."))
+
+    if tramites_con_turno:
+        messages.append(SystemMessage(content=(
+            "REFUERZO FINAL DE TRÁMITE PARA TURNO: trámites con horario de turno propio disponibles: "
+            + ", ".join(f'"{t}"' for t in tramites_con_turno)
+            + ". Si el pedido del usuario corresponde a alguno de estos -aunque use singular/plural "
+            "distinto, sinónimos u otra forma de decirlo, no hace falta que use las palabras exactas-, "
+            "DEBÉS pasar el parámetro `tramite_nombre` con el nombre EXACTO listado arriba al llamar "
+            "a `consultar_disponibilidad` en esta misma respuesta. Si no corresponde a ninguno, no pases "
+            "ese parámetro."
+        )))
 
     # Reinforce inclusion of [SEND_DOC: <id>] si la búsqueda de documento encontró resultado. Bug
     # real: el tag vive dentro del JSON que devuelve la herramienta como campo 'instruccion', y el
