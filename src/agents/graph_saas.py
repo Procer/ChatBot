@@ -1788,7 +1788,39 @@ def call_model(state: AgentState):
             user_product_intent = True
 
     if user_scheduling_intent:
-        messages.append(SystemMessage(content="REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno (ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la herramienta primero."))
+        agenda_msg = (
+            "REFUERZO DE AGENDA: El usuario está expresando intención de consultar o agendar un turno "
+            "(ej: indicando día, hora, solicitando disponibilidad o diciendo que quiere reservar). DEBES "
+            "llamar obligatoriamente a la herramienta `consultar_disponibilidad` en esta misma respuesta "
+            "para la fecha correspondiente (usando el CONTEXTO TEMPORAL para calcularla). Está "
+            "terminantemente prohibido inventar o adivinar si el horario está libre u ocupado sin usar la "
+            "herramienta primero."
+        )
+        # Trámites con horario de turno propio: si no se le pasa 'tramite_nombre' correcto a la
+        # herramienta, el sistema intenta deducirlo comparando palabras EXACTAS del mensaje contra el
+        # nombre del trámite — falla con variaciones naturales (singular/plural, palabras de más,
+        # sinónimos). Bug real: "necesito un turno para extraccion de sangre" no matcheaba el trámite
+        # "Turnos Extraccion de Sangre" porque el mensaje no tiene la palabra "turnos" (plural) tal
+        # cual. Mismo patrón que se arregló para los segmentos de documentos: delegar la elección al
+        # LLM en vez de a un match literal.
+        try:
+            db_tr = SessionLocal()
+            tramites_con_turno = [
+                k.topic for k in db_tr.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all()
+            ]
+            db_tr.close()
+        except Exception:
+            tramites_con_turno = []
+        if tramites_con_turno:
+            agenda_msg += (
+                "\nTRÁMITES CON HORARIO DE TURNO PROPIO disponibles: "
+                + ", ".join(f'"{t}"' for t in tramites_con_turno)
+                + ". Si el pedido del usuario corresponde a alguno de estos -aunque use singular/plural "
+                "distinto, sinónimos u otra forma de decirlo, no hace falta que use las palabras exactas-, "
+                "DEBÉS pasar el parámetro `tramite_nombre` con el nombre EXACTO listado arriba al llamar "
+                "a `consultar_disponibilidad`. Si no corresponde a ninguno, no pases ese parámetro."
+            )
+        messages.append(SystemMessage(content=agenda_msg))
 
     # --- Biblioteca de Documentos: segmentos con búsqueda dirigida -----------------
     # Antes esto decidía en Python, con un match de substring exacto, A QUÉ segmento
