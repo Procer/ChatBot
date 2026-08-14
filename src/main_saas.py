@@ -3603,10 +3603,16 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             
             # 4. Enviar Respuesta
             if "messages" in final_state and len(final_state["messages"]) > 0:
-                from langchain_core.messages import HumanMessage, AIMessage
+                from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
                 new_ai_texts = []
                 for msg in reversed(final_state["messages"]):
                     if isinstance(msg, HumanMessage):
+                        break
+                    # Corte también en el mensaje de auto-corrección de disponibilidad (ver
+                    # state_manager/_find_availability_contradiction en graph_saas.py): todo lo que
+                    # esté ANTES de esa marca es la respuesta alucinada original, que nunca debe
+                    # llegarle al usuario — solo la respuesta corregida que vino después.
+                    if isinstance(msg, SystemMessage) and "CORRECCIÓN OBLIGATORIA" in str(getattr(msg, "content", "") or ""):
                         break
                     if isinstance(msg, AIMessage) and msg.content:
                         new_ai_texts.append(msg.content)

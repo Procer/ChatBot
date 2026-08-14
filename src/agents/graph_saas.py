@@ -2075,6 +2075,40 @@ def call_model(state: AgentState):
         "greeting_offer_topic": greeting_offer_topic_next
     }
 
+def _find_availability_contradiction(ai_text: str, messages: list):
+    """Busca en el texto de la respuesta final del bot un horario que declare 'reservado/ocupado'
+    pero que en realidad figure como disponible según la última llamada real a
+    'consultar_disponibilidad'. Devuelve el horario en conflicto (ej. '20:00') o None.
+    Bug real que motivó esto: el prompt ya prohibía explícitamente inventar ocupación, pero
+    gpt-4o-mini seguía haciéndolo de vez en cuando (confirmado con horarios que SÍ figuraban en
+    'horarios_disponibles' y NO en 'horarios_ya_reservados_por_otros', sin ningún Appointment real
+    en la base) — un límite real de confiar solo en instrucciones de prompt."""
+    if not ai_text:
+        return None
+    last_avail = None
+    for m in reversed(messages):
+        if isinstance(m, ToolMessage) and getattr(m, "name", None) == "consultar_disponibilidad":
+            try:
+                data = json.loads(m.content)
+            except Exception:
+                data = None
+            if data and data.get("status") == "success":
+                last_avail = data
+            break
+    if not last_avail:
+        return None
+    disponibles = set(last_avail.get("horarios_disponibles") or [])
+    ya_reservados = set(last_avail.get("horarios_ya_reservados_por_otros") or [])
+    import re as _re
+    for match in _re.finditer(r'(\d{1,2}):(\d{2})', ai_text):
+        hhmm = f"{int(match.group(1)):02d}:{match.group(2)}"
+        window = ai_text[max(0, match.start() - 40):match.end() + 40].lower()
+        if any(kw in window for kw in ("reservad", "ocupad", "no está disponible", "no esta disponible")):
+            if hhmm in disponibles and hhmm not in ya_reservados:
+                return hhmm
+    return None
+
+
 def state_manager(state: AgentState):
     new_state = {}
     collected_data = state.get("collected_data", {}).copy()
@@ -2196,6 +2230,30 @@ def state_manager(state: AgentState):
                 new_state["collected_data"] = {}
                 new_state["form_just_completed"] = False
 
+    # Validación anti-alucinación de disponibilidad (ver _find_availability_contradiction): si la
+    # respuesta final del bot contradice el resultado real de la última consultar_disponibilidad,
+    # se corta el END y se le devuelve al agente para que se corrija, en vez de mandarle al usuario
+    # un horario "ocupado" inventado. Guard de un solo reintento: si el mensaje anterior a esta
+    # respuesta ya era una corrección nuestra, no se vuelve a intentar (evita loop infinito si el
+    # modelo insiste).
+    final_msg = state["messages"][-1]
+    if isinstance(final_msg, AIMessage) and not getattr(final_msg, "tool_calls", None):
+        ya_se_corrigio = (
+            len(state["messages"]) >= 2
+            and isinstance(state["messages"][-2], SystemMessage)
+            and "CORRECCIÓN OBLIGATORIA" in str(state["messages"][-2].content or "")
+        )
+        if not ya_se_corrigio:
+            conflicto = _find_availability_contradiction(str(final_msg.content or ""), state["messages"])
+            if conflicto:
+                new_state["messages"] = [SystemMessage(content=(
+                    f"CORRECCIÓN OBLIGATORIA: tu respuesta anterior decía que el horario {conflicto} "
+                    "está reservado/ocupado, pero el resultado real de 'consultar_disponibilidad' dice "
+                    "que ESE horario SÍ está disponible (no figura en 'horarios_ya_reservados_por_otros'). "
+                    "Escribí de nuevo tu respuesta corrigiendo ese dato: decile al usuario que ese "
+                    "horario SÍ está disponible."
+                ))]
+
     return new_state
 
 def should_continue(state: AgentState):
@@ -2204,7 +2262,10 @@ def should_continue(state: AgentState):
     return "manager"
 
 def manager_should_continue(state: AgentState):
-    if isinstance(state["messages"][-1], ToolMessage):
+    last = state["messages"][-1]
+    if isinstance(last, ToolMessage):
+        return "agent"
+    if isinstance(last, SystemMessage) and "CORRECCIÓN OBLIGATORIA" in str(getattr(last, "content", "") or ""):
         return "agent"
     return END
 
