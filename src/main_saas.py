@@ -3336,26 +3336,40 @@ async def send_telegram_file_saas(client_id: int, user_id: str, local_path: str,
     return None
 
 async def send_whatsapp_message_saas(client_id: int, user_id: str, message: str):
-    """Envía un mensaje de texto vía Green-API leyendo credenciales de SQL Server."""
+    """Envía un mensaje de texto vía Green-API leyendo credenciales de SQL Server.
+    Bug real encontrado en vivo: esta función abría un SessionLocal() y nunca lo cerraba —
+    en una sesión larga con muchos mensajes, eso filtra conexiones del pool hasta agotarlo,
+    causando fallas de envío intermitentes y silenciosas (mensajes que quedan logueados como
+    'enviados' pero nunca llegan al usuario). Se agrega también un reintento corto para
+    blips transitorios de red/API, y logging.error con exc_info para tener traceback real
+    si vuelve a fallar (antes 'logging.error(f\"...: {e}\")' quedaba vacío con excepciones
+    sin mensaje propio, imposible de diagnosticar)."""
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        if not settings or not settings.whatsapp_instance_id: return None
-        
-        formatted_message = format_message_for_whatsapp(message)
-        import httpx
-        url = f"https://api.green-api.com/waInstance{settings.whatsapp_instance_id}/sendMessage/{settings.whatsapp_token}"
-        payload = {"chatId": user_id, "message": formatted_message}
-        
-        async with httpx.AsyncClient() as http_client:
-            res = await http_client.post(url, json=payload, timeout=20.0)
-            data = res.json()
-            return data.get('idMessage')
-    except Exception as e:
-        logging.error(f"[SaaS Envio] Error: {e}")
-        return None
     finally:
         db.close()
+    if not settings or not settings.whatsapp_instance_id:
+        return None
+
+    formatted_message = format_message_for_whatsapp(message)
+    import httpx
+    url = f"https://api.green-api.com/waInstance{settings.whatsapp_instance_id}/sendMessage/{settings.whatsapp_token}"
+    payload = {"chatId": user_id, "message": formatted_message}
+
+    last_exc = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient() as http_client:
+                res = await http_client.post(url, json=payload, timeout=20.0)
+                data = res.json()
+                return data.get('idMessage')
+        except Exception as e:
+            last_exc = e
+            if attempt == 0:
+                await asyncio.sleep(1)
+    logging.error(f"[SaaS Envio] Error enviando WhatsApp a {user_id} (client {client_id}) tras reintentos", exc_info=last_exc)
+    return None
 
 async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, filename: str, caption: str = ""):
     """Envía un archivo vía Green-API leyendo credenciales de SQL Server."""
