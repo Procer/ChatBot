@@ -4422,7 +4422,10 @@ async def gdrive_sync_loop():
 
             for cid in due_client_ids:
                 try:
-                    summary = sync_client_drive(cid)
+                    # to_thread: sync_client_drive hace decenas/cientos de llamadas HTTP
+                    # sincrónicas a la API de Drive. Llamarla directo acá bloqueaba el
+                    # event loop de todo el proceso (webhooks, admin, etc.) por minutos.
+                    summary = await asyncio.to_thread(sync_client_drive, cid)
                     logging.info(f"[GDrive] Sync client_id={cid}: {summary}")
                 except Exception as e:
                     logging.error(f"[GDrive] Error sincronizando client_id={cid}: {e}")

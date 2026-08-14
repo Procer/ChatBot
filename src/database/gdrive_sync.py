@@ -274,8 +274,6 @@ def sync_client_drive(client_id: int) -> dict:
 
         try:
             subfolders = list_subfolders(service, settings.gdrive_root_folder_id)
-            root_files = list_files_in_folder(service, settings.gdrive_root_folder_id)
-            summary["root_files_skipped"] = len(root_files)
         except HttpError as e:
             if e.resp is not None and e.resp.status in _SHARE_DENIED_STATUSES:
                 settings.gdrive_share_revoked = True
