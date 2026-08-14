@@ -1947,6 +1947,31 @@ def call_model(state: AgentState):
             
     if has_availability_tool_output:
         messages.append(SystemMessage(content="IMPORTANTE: Si el usuario solicitó un día y hora específicos (ej: 'miércoles a las 10') y esa hora está en la lista de 'horarios_disponibles' de la herramienta, DEBES llamar de inmediato a la herramienta 'agendar_turno' para reservarlo en esta misma respuesta. Si el usuario cambia de día o pide para una fecha distinta a la consultada, DEBES llamar primero a 'consultar_disponibilidad' con la nueva fecha. Está terminantemente prohibido asumir disponibilidad o no disponibilidad de una fecha sin haber llamado a la herramienta en este turno. Si no especificó un horario exacto libre, menciónale solo 2 o 3 opciones representativas en un único renglón corrido de texto."))
+
+    # Reinforce inclusion of [SEND_DOC: <id>] si la búsqueda de documento encontró resultado. Bug
+    # real: el tag vive dentro del JSON que devuelve la herramienta como campo 'instruccion', y el
+    # modelo a veces lo ignoraba y escribía una frase suelta tipo "aquí está el enlace: " sin el
+    # tag — el sistema nunca llegaba a mandar el archivo porque no hay tag que detectar.
+    send_doc_reinforcement_id = None
+    for m in messages[-3:]:
+        if isinstance(m, ToolMessage) and m.name in ("buscar_documento_en_segmento", "buscar_documento"):
+            try:
+                content_data = json.loads(getattr(m, 'content', '') or '{}')
+            except Exception:
+                content_data = {}
+            if content_data.get("status") == "success":
+                doc_data = content_data.get("documento") or {}
+                if doc_data.get("id") is not None:
+                    send_doc_reinforcement_id = doc_data.get("id")
+                    break
+    if send_doc_reinforcement_id is not None:
+        messages.append(SystemMessage(content=(
+            f"IMPORTANTE: la búsqueda de documento encontró un resultado (id={send_doc_reinforcement_id}). "
+            f"Si tu respuesta le confirma ese documento al usuario, DEBÉS incluir literalmente y sin "
+            f"omitirla la etiqueta `[SEND_DOC: {send_doc_reinforcement_id}]` al final del texto (no la "
+            "nombres ni la describas en palabras, escribila tal cual) — sin esa etiqueta exacta el "
+            "sistema NO envía el archivo al usuario."
+        )))
     # --------------------------------------------------------------------------
 
     try:
