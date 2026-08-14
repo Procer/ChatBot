@@ -426,8 +426,7 @@
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 gap-4">
-                {% for item in knowledge_items %}
+            {% macro knowledge_card(item) %}
                 <div class="group bg-surface border border-slate-800 p-6 rounded-2xl flex items-center justify-between hover:border-slate-700 transition-all shadow-sm">
                     <div class="flex items-center gap-5">
                         <div class="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 group-hover:text-brand-500 group-hover:border-brand-500/20 transition-all">
@@ -469,6 +468,39 @@
                         </button>
                     </div>
                 </div>
+            {% endmacro %}
+
+            <div class="flex items-center gap-2 border-b border-slate-800 pb-1 flex-wrap">
+                <button type="button" onclick="switchKnowledgeSubtab('texto')" data-ksubtab="texto" class="knowledge-subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-[13px] font-bold uppercase tracking-widest transition-all bg-brand-500/5 text-brand-500">
+                    <i data-lucide="align-left" class="w-4 h-4"></i> Solo Texto
+                </button>
+                <button type="button" onclick="switchKnowledgeSubtab('tramite')" data-ksubtab="tramite" class="knowledge-subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-[13px] font-bold uppercase tracking-widest transition-all text-slate-500 hover:bg-slate-800/50">
+                    <i data-lucide="clipboard-list" class="w-4 h-4"></i> Trámites
+                </button>
+                <button type="button" onclick="switchKnowledgeSubtab('turno')" data-ksubtab="turno" class="knowledge-subtab-btn flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-[13px] font-bold uppercase tracking-widest transition-all text-slate-500 hover:bg-slate-800/50">
+                    <i data-lucide="calendar-plus" class="w-4 h-4"></i> Turnos
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 knowledge-subtab-content" data-ksubtab-content="texto">
+                {% for item in knowledge_items %}
+                {% if not item.has_form and not item.allow_scheduling %}
+                {{ knowledge_card(item) }}
+                {% endif %}
+                {% endfor %}
+            </div>
+            <div class="grid grid-cols-1 gap-4 knowledge-subtab-content hidden" data-ksubtab-content="tramite">
+                {% for item in knowledge_items %}
+                {% if item.has_form and not item.allow_scheduling %}
+                {{ knowledge_card(item) }}
+                {% endif %}
+                {% endfor %}
+            </div>
+            <div class="grid grid-cols-1 gap-4 knowledge-subtab-content hidden" data-ksubtab-content="turno">
+                {% for item in knowledge_items %}
+                {% if item.allow_scheduling %}
+                {{ knowledge_card(item) }}
+                {% endif %}
                 {% endfor %}
             </div>
         </div>
@@ -818,6 +850,20 @@
         const p = new URLSearchParams(window.location.search);
         switchTab(p.get('active_tab') || 'identidad');
     })();
+
+    // ── SUB-PESTAÑAS DE CONOCIMIENTO (texto / trámite / turno) ────────────────
+    function switchKnowledgeSubtab(subtab) {
+        document.querySelectorAll('.knowledge-subtab-content').forEach(el => {
+            el.classList.toggle('hidden', el.dataset.ksubtabContent !== subtab);
+        });
+        document.querySelectorAll('.knowledge-subtab-btn').forEach(btn => {
+            const active = btn.dataset.ksubtab === subtab;
+            btn.classList.toggle('bg-brand-500/5', active);
+            btn.classList.toggle('text-brand-500', active);
+            btn.classList.toggle('text-slate-500', !active);
+            btn.classList.toggle('hover:bg-slate-800/50', !active);
+        });
+    }
 
     // ── KNOWLEDGE MODAL ───────────────────────────────────────────────────────
     function openKnowledgeModal() {
