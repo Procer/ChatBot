@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 
@@ -344,6 +345,23 @@ def build_segment_search_query(collected_data: dict, fields: list) -> str:
     return " ".join(parts).strip()
 
 
+def _normalize_code_token(token: str) -> str:
+    """Normaliza un código alfanumérico (DNI, protocolo, etc.) para comparación exacta:
+    saca todo lo que no sea letra/número y, si queda solo dígitos, saca los ceros a la
+    izquierda. Así '007844646' (como lo guarda Drive) y '7844646' (como lo tipea el usuario)
+    matchean igual."""
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', token or '').upper()
+    if cleaned.isdigit():
+        cleaned = cleaned.lstrip('0') or '0'
+    return cleaned
+
+
+def _extract_query_value_tokens(query: str) -> list:
+    """Extrae los valores de una query armada por build_segment_search_query
+    ('DNI: 7844646 Protocolo: A300125' -> ['7844646', 'A300125'])."""
+    return [t for t in (re.findall(r':\s*(\S+)', query or '')) if t]
+
+
 def search_segment_document(client_id: int, thread_id: str, segment_id: int, query: str, k: int = 5):
     """Busca un único documento DENTRO de un segmento específico (a diferencia de
     search_documents_candidates, que busca en toda la biblioteca del cliente y puede devolver
@@ -355,6 +373,31 @@ def search_segment_document(client_id: int, thread_id: str, segment_id: int, que
         segment = db.query(DocSegment).filter_by(id=segment_id, is_active=True).first()
         if not segment:
             return None
+
+        # Match exacto primero: estos segmentos suelen buscar por códigos (DNI/protocolo), donde
+        # la similitud semántica por embeddings es frágil (ej. '7844646' vs '007844646' no pasaba
+        # el umbral de similitud aunque son el mismo dato con distinto padding de ceros). Si todos
+        # los valores recolectados aparecen literalmente en el título de algún documento del
+        # segmento, se usa ese directo, sin pasar por Chroma.
+        value_tokens = [v for v in (_normalize_code_token(t) for t in _extract_query_value_tokens(query)) if v]
+        if value_tokens:
+            segment_doc_ids_exact = {
+                l.document_id for l in db.query(DocumentSegmentLink).filter_by(segment_id=segment_id).all()
+            }
+            if segment_doc_ids_exact:
+                exact_docs = db.query(Document).filter(
+                    Document.id.in_(segment_doc_ids_exact),
+                    Document.client_id == client_id,
+                    Document.is_active == True
+                ).all()
+                for doc in exact_docs:
+                    title_tokens = {_normalize_code_token(t) for t in re.split(r'\s+', doc.title or '')}
+                    if all(v in title_tokens for v in value_tokens):
+                        accessible = segment.is_public or thread_has_segment_access(db, client_id, thread_id, segment.id)
+                        log_document_search(client_id, thread_id, query, found=True, results_count=1, document_title=doc.title)
+                        if not accessible:
+                            return {"status": "blocked", "segment_name": segment.name, "auth_mode": segment.auth_mode}
+                        return {"status": "found", "id": doc.id, "title": doc.title, "description": doc.description or ""}
 
         try:
             vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
