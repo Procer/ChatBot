@@ -1588,6 +1588,8 @@ def call_model(state: AgentState):
             logging.error(f"[Prompt Tagging] Error adding tagging context: {te}")
         
         # Onboarding Logic
+        doc_search_ready_query = None
+        doc_search_ready_segment = None
         if onboarding_active:
             if "Nombre del Cliente" not in fields_to_collect:
                 fields_to_collect.insert(0, "Nombre del Cliente")
@@ -1656,6 +1658,13 @@ def call_model(state: AgentState):
                         f"'buscar_documento_en_segmento' con segmento='{segment_name}' y este texto EXACTO "
                         f"como parámetro 'query' (no lo reformules ni lo resumas): '{combined_query}'.\n"
                     )
+                    # Guardado para repetir esto como refuerzo al FINAL de los mensajes (ver más abajo):
+                    # esta instrucción va en system_prompt, que queda como el primer mensaje del contexto,
+                    # y en conversaciones largas el modelo le da menos peso que a instrucciones recientes.
+                    # Bug real: con esto solo (sin el refuerzo final), el modelo a veces llamaba a
+                    # 'buscar_documento' (búsqueda general) con un texto suelto en vez de la query combinada.
+                    doc_search_ready_query = combined_query
+                    doc_search_ready_segment = segment_name
                 else:
                     system_prompt += "\n### ✅ TRÁMITE COMPLETADO\n"
         else:
@@ -1739,6 +1748,14 @@ def call_model(state: AgentState):
     else:
         messages = [SystemMessage(content=system_prompt)] + raw_msgs
 
+    if doc_search_ready_query is not None:
+        messages.append(SystemMessage(content=(
+            "REFUERZO FINAL DE BÚSQUEDA POR SEGMENTO: ya tenés todos los datos recolectados. DEBÉS "
+            f"llamar AHORA MISMO a la herramienta `buscar_documento_en_segmento` con "
+            f"segmento='{doc_search_ready_segment}' y query='{doc_search_ready_query}' (ese texto "
+            "exacto, no lo reformules ni lo resumas ni uses solo una parte). Está terminantemente "
+            "prohibido llamar a `buscar_documento` (la búsqueda general) en este turno."
+        )))
 
     # ----------------- REFUERZO DINÁMICO DE REGLAS DE NEGOCIO -----------------
     recent_text = ""
