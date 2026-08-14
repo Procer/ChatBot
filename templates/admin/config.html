@@ -610,6 +610,18 @@
                         <input type="number" name="scheduling_capacity" id="scheduling_capacity" placeholder="Ej: 1" value="1" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
                         <p class="text-[11px] text-slate-600 ml-1">Atención paralela (ej: 1, 2, 3).</p>
                     </div>
+                    <div class="space-y-2 md:col-span-3">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Días Habilitados para Turno</label>
+                        <div class="flex flex-wrap gap-3">
+                            {% for day_code, day_label in [('mon','Lun'), ('tue','Mar'), ('wed','Mié'), ('thu','Jue'), ('fri','Vie'), ('sat','Sáb'), ('sun','Dom')] %}
+                            <label class="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 cursor-pointer">
+                                <input type="checkbox" name="scheduling_days" value="{{ day_code }}" class="scheduling-day-checkbox">
+                                <span class="text-sm text-slate-300">{{ day_label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <p class="text-[11px] text-slate-600 ml-1">Si no marcás ningún día, se usan los días generales configurados en Empresa. Marcá solo los días en que este trámite puntual está disponible (ej: solo lunes/miércoles/viernes).</p>
+                    </div>
                 </div>
 
                 <div class="space-y-2">
@@ -837,6 +849,10 @@
             document.getElementById('scheduling_hours').value = data.scheduling_hours || '';
             document.getElementById('appointment_duration_kb').value = data.appointment_duration || '';
             document.getElementById('scheduling_capacity').value = data.scheduling_capacity || '1';
+            const selectedDays = (data.scheduling_days || '').split(',').map(d => d.trim()).filter(Boolean);
+            document.querySelectorAll('.scheduling-day-checkbox').forEach(cb => {
+                cb.checked = selectedDays.includes(cb.value);
+            });
             if(data.storage_dest) document.getElementById('storage_dest').value = data.storage_dest;
             
             if (data.has_form) {

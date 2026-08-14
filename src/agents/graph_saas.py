@@ -340,7 +340,14 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
         capacity = settings.scheduling_capacity or 1
         if tramite_nombre and match and hasattr(match, "scheduling_capacity") and match.scheduling_capacity is not None:
             capacity = match.scheduling_capacity
-        enabled_days = (settings.scheduling_days or "mon,tue,wed,thu,fri").split(",")
+        # Días habilitados: si el trámite matcheado tiene sus propios días configurados, tienen
+        # prioridad sobre los días generales del cliente (permite, ej., que "Extracción de sangre"
+        # solo se agende lunes/miércoles/viernes aunque el negocio atienda de lunes a viernes).
+        enabled_days = None
+        if tramite_nombre and match and match.scheduling_days:
+            enabled_days = [d.strip() for d in match.scheduling_days.split(",") if d.strip()]
+        if not enabled_days:
+            enabled_days = (settings.scheduling_days or "mon,tue,wed,thu,fri").split(",")
         
         try:
             requested_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -1702,10 +1709,10 @@ def call_model(state: AgentState):
        - Si figura en `horarios_ya_reservados_por_otros`, dile que ya está reservado/ocupado por otra persona.
        - Si no figura en `horarios_ya_reservados_por_otros`, dile amigablemente que ese horario no es un slot de reserva válido, no está habilitado o está fuera de los turnos de atención para ese día (ya que los turnos son cada 30 minutos).
        - En cualquier caso, nunca listes toda la disponibilidad. Ofrécele amigablemente 2 opciones libres cercanas en un único renglón corrido de texto (ej: *"El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?"*). Guíalo conversacionalmente.
-   - **Paso 3: Confirmación:** Cuando el usuario elija un horario válido, procedé a agendar el turno usando la herramienta `agendar_turno`.
+   - **Paso 3: Confirmación explícita (OBLIGATORIA):** Cuando el usuario elija un horario válido, NO lo agendes todavía. Primero preguntale explícitamente si confirma ese turno (ej: "¿Confirmás el turno para el miércoles 19 a las 08:15?"). Recién cuando el usuario responda afirmativamente a ESA pregunta, en un mensaje posterior, llamá a la herramienta `agendar_turno` para reservarlo.
 2. **RESOLUCIÓN DE FECHAS:** Sé extremadamente preciso al calcular la fecha del día que te pida (ej: "lunes", "mañana", "el próximo jueves"). Si la fecha cae en un día en el que no hay disponibilidad o está fuera de los horarios de atención, infórmalo y proponé el día hábil más cercano de forma amigable (ej: "El lunes 1 de junio no tenemos turnos disponibles, pero te puedo ofrecer para el martes 2 de junio. ¿Te sirve?").
 3. **REGLA DE HORARIOS GENERALES:** NUNCA menciones los "Horarios de Atención" generales de la empresa (por ejemplo: lunes a viernes de 08 a 13 hs) al usuario cuando estés guiando o informando sobre turnos. Los horarios de atención general del negocio son exclusivamente para visitas/consultas físicas generales y no representan los horarios específicos habilitados para turnos, los cuales pueden ser distintos o más cortos. Para responder sobre disponibilidad u horarios de turnos, debés consultar SIEMPRE la herramienta `consultar_disponibilidad`.
-4. **INDEPENDENCIA DE TRÁMITES (ONBOARDING NO BLOQUEANTE):** El proceso de recolección de datos (onboarding) nunca debe bloquear o posponer la reserva de turnos. Si el usuario te indica una fecha y hora específica para su turno (ej: "miércoles a las 10"), debés llamar inmediatamente a la herramienta `agendar_turno` para confirmarlo, sin importar si aún faltan campos del formulario por completar (como DNI, marca, título, etc.). Asegura la reserva del turno primero y luego continúa solicitando la información pendiente.
+4. **INDEPENDENCIA DE TRÁMITES (ONBOARDING NO BLOQUEANTE):** El proceso de recolección de datos (onboarding) nunca debe bloquear o posponer la reserva de turnos. Si el usuario te indica una fecha y hora específica para su turno (ej: "miércoles a las 10"), pedile confirmación explícita como en el Paso 3 (sin importar si aún faltan campos del formulario por completar, como DNI, marca, título, etc.) y agendá con `agendar_turno` recién cuando confirme. No dejes que el onboarding bloquee o retrase esa pregunta de confirmación.
 """
  
         # Inyección de Conocimiento Multi-Cliente
@@ -1730,7 +1737,7 @@ def call_model(state: AgentState):
         system_prompt += "\n3. ENVÍO DE ARCHIVOS ADJUNTOS: Si el tema del que habla el usuario tiene la etiqueta `[CON_ARCHIVO]` (ej. FORMULARIO 08) o has consultado información sobre un tema con archivo, DEBES agregar OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. ¡No omitas esta etiqueta por ningún motivo!"
 
         if appointments_enabled:
-            system_prompt += "\n4. VERIFICACIÓN Y ACCIÓN DE AGENDA INMEDIATA (Garantizar exactitud): NUNCA asumas ni le digas al usuario que un horario está libre u ocupado basándote en tu memoria o en los ejemplos del prompt. Si el usuario te pide un horario específico (ej: miércoles a las 10) y tras llamar a 'consultar_disponibilidad' compruebas que ese horario está en la lista de 'horarios_disponibles', DEBES llamar obligatoriamente a la herramienta 'agendar_turno' en esta misma respuesta para reservarlo. Está TERMINANTEMENTE PROHIBIDO decirle que está ocupado o pedirle más confirmaciones por chat si el horario devuelto por la herramienta está libre."
+            system_prompt += "\n4. VERIFICACIÓN Y CONFIRMACIÓN DE AGENDA (Garantizar exactitud): NUNCA asumas ni le digas al usuario que un horario está libre u ocupado basándote en tu memoria o en los ejemplos del prompt. Si el usuario te pide un horario específico (ej: miércoles a las 10) y tras llamar a 'consultar_disponibilidad' compruebas que ese horario está en la lista de 'horarios_disponibles', DEBÉS preguntarle explícitamente si confirma ese turno (día y hora) ANTES de agendarlo — está PROHIBIDO llamar a 'agendar_turno' en esa misma respuesta. Está TERMINANTEMENTE PROHIBIDO decirle que está ocupado si el horario devuelto por la herramienta está libre. Solo llamá a 'agendar_turno' en un turno posterior, cuando el usuario ya haya respondido afirmativamente a tu pregunta de confirmación."
         
     finally:
         db.close()
@@ -1980,7 +1987,36 @@ def call_model(state: AgentState):
             break
             
     if has_availability_tool_output:
-        messages.append(SystemMessage(content="IMPORTANTE: Si el usuario solicitó un día y hora específicos (ej: 'miércoles a las 10') y esa hora está en la lista de 'horarios_disponibles' de la herramienta, DEBES llamar de inmediato a la herramienta 'agendar_turno' para reservarlo en esta misma respuesta. Si el usuario cambia de día o pide para una fecha distinta a la consultada, DEBES llamar primero a 'consultar_disponibilidad' con la nueva fecha. Está terminantemente prohibido asumir disponibilidad o no disponibilidad de una fecha sin haber llamado a la herramienta en este turno. Si no especificó un horario exacto libre, menciónale solo 2 o 3 opciones representativas en un único renglón corrido de texto. PROHIBIDO INVENTAR OCUPACIÓN: un horario está ocupado ÚNICA Y EXCLUSIVAMENTE si aparece en la lista 'horarios_ya_reservados_por_otros' que te devolvió la herramienta. Si un horario pedido está en 'horarios_disponibles' y NO está en 'horarios_ya_reservados_por_otros', está LIBRE — nunca digas que está reservado/ocupado en ese caso, aunque te 'parezca' razonable que lo esté. Tampoco sugieras ni menciones otro día (ej. 'el sábado') como alternativa sin haber llamado antes a 'consultar_disponibilidad' para ESE día específico: puede estar cerrado o bloqueado y no lo sabés hasta consultarlo."))
+        messages.append(SystemMessage(content="IMPORTANTE: Si el usuario solicitó un día y hora específicos (ej: 'miércoles a las 10') y esa hora está en la lista de 'horarios_disponibles' de la herramienta, DEBÉS preguntarle explícitamente si CONFIRMA ese turno (ej: '¿Confirmás el turno para el miércoles 19 a las 08:15?') — está PROHIBIDO llamar a 'agendar_turno' en esta misma respuesta, primero hay que confirmar. Si el usuario cambia de día o pide para una fecha distinta a la consultada, DEBES llamar primero a 'consultar_disponibilidad' con la nueva fecha. Está terminantemente prohibido asumir disponibilidad o no disponibilidad de una fecha sin haber llamado a la herramienta en este turno. Si no especificó un horario exacto libre, menciónale solo 2 o 3 opciones representativas en un único renglón corrido de texto. PROHIBIDO INVENTAR OCUPACIÓN: un horario está ocupado ÚNICA Y EXCLUSIVAMENTE si aparece en la lista 'horarios_ya_reservados_por_otros' que te devolvió la herramienta. Si un horario pedido está en 'horarios_disponibles' y NO está en 'horarios_ya_reservados_por_otros', está LIBRE — nunca digas que está reservado/ocupado en ese caso, aunque te 'parezca' razonable que lo esté. Tampoco sugieras ni menciones otro día (ej. 'el sábado') como alternativa sin haber llamado antes a 'consultar_disponibilidad' para ESE día específico: puede estar cerrado o bloqueado y no lo sabés hasta consultarlo."))
+
+    # El usuario pidió que agendar_turno requiera una confirmación explícita en un mensaje aparte,
+    # en vez de agendar apenas se menciona un horario libre. Si el turno anterior del bot fue una
+    # pregunta de confirmación de turno (detectada por las palabras "turno"+"confirm" en su propio
+    # mensaje) y el usuario respondió afirmativo, hay que decírselo explícitamente: sin esto, el
+    # modelo no sabe con certeza que ESTE mensaje afirmativo es la confirmación pendiente.
+    last_human_idx = None
+    for idx in range(len(messages) - 1, -1, -1):
+        if type(messages[idx]).__name__ == "HumanMessage":
+            last_human_idx = idx
+            break
+    prev_ai = None
+    if last_human_idx is not None:
+        for idx in range(last_human_idx - 1, -1, -1):
+            if type(messages[idx]).__name__ == "AIMessage":
+                prev_ai = messages[idx]
+                break
+            if type(messages[idx]).__name__ == "HumanMessage":
+                break
+    if prev_ai is not None:
+        prev_ai_text = str(getattr(prev_ai, "content", "") or "").lower()
+        if "turno" in prev_ai_text and "confirm" in prev_ai_text and es_respuesta_afirmativa(last_human_msg):
+            messages.append(SystemMessage(content=(
+                "IMPORTANTE: el usuario acaba de responder afirmativamente a tu pregunta de "
+                "confirmación de turno del mensaje anterior. DEBÉS llamar AHORA MISMO a la "
+                "herramienta `agendar_turno` con la fecha y hora que vos mismo propusiste en esa "
+                "pregunta (recalculando la fecha en formato YYYY-MM-DD con el CONTEXTO TEMPORAL si "
+                "hace falta)."
+                )))
 
     if tramites_con_turno:
         messages.append(SystemMessage(content=(

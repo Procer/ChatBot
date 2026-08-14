@@ -1464,14 +1464,14 @@ async def add_knowledge(
     has_form: int = Form(0), form_fields: str = Form(""),
     allow_scheduling: int = Form(0), storage_dest: str = Form("database"),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
-    scheduling_capacity: int = Form(1),
+    scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     target_client_id, _, _ = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+
     saved_paths = []
     if media:
         for m in media:
@@ -1494,6 +1494,7 @@ async def add_knowledge(
         has_form=bool(has_form), form_fields=form_fields,
         allow_scheduling=bool(allow_scheduling),
         scheduling_hours=scheduling_hours,
+        scheduling_days=",".join(scheduling_days) if scheduling_days else None,
         appointment_duration=appointment_duration_kb,
         scheduling_capacity=scheduling_capacity,
         storage_dest=storage_dest,
@@ -1511,7 +1512,7 @@ async def update_knowledge(
     category: str = Form(""), has_form: int = Form(0), form_fields: str = Form(None),
     storage_dest: str = Form("database"), allow_scheduling: int = Form(0),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
-    scheduling_capacity: int = Form(1),
+    scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
@@ -1551,6 +1552,7 @@ async def update_knowledge(
     k.storage_dest = storage_dest
     k.allow_scheduling = bool(allow_scheduling)
     k.scheduling_hours = scheduling_hours
+    k.scheduling_days = ",".join(scheduling_days) if scheduling_days else None
     k.appointment_duration = appointment_duration_kb
     k.scheduling_capacity = scheduling_capacity
     k.interactive_options = interactive_options
@@ -1590,6 +1592,7 @@ async def get_knowledge(request: Request, item_id: int, db: Session = Depends(ge
         "form_fields": k.form_fields,
         "allow_scheduling": k.allow_scheduling,
         "scheduling_hours": k.scheduling_hours,
+        "scheduling_days": k.scheduling_days,
         "appointment_duration": k.appointment_duration,
         "scheduling_capacity": k.scheduling_capacity,
         "storage_dest": k.storage_dest,

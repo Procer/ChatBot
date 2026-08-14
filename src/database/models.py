@@ -273,6 +273,7 @@ class Knowledge(Base):
     storage_dest = Column(String(50), default="database")
     allow_scheduling = Column(Boolean, default=False)
     scheduling_hours = Column(Text, nullable=True)
+    scheduling_days = Column(String(50), nullable=True)  # "mon,wed,fri"; NULL/vacío = usar los días generales del cliente (ClientSettings.scheduling_days)
     appointment_duration = Column(Integer, nullable=True)
     scheduling_capacity = Column(Integer, default=1, nullable=True)
     interactive_options = Column(Text)
