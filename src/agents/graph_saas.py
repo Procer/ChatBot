@@ -1888,12 +1888,15 @@ def call_model(state: AgentState):
             "llames a `buscar_documento` en ese caso. Si el pedido es por otro documento/manual/reglamento "
             "que NO corresponde a ninguno de estos segmentos, llamá a `buscar_documento` en su lugar. Si el "
             "mensaje no tiene nada que ver con documentos, ignorá esta instrucción por completo.\n"
-            "DESAMBIGUACIÓN ENTRE SEGMENTOS: si el pedido del usuario podría corresponder a más de uno de "
-            "estos segmentos, priorizá el que sirva para recuperar algo PROPIO y YA EXISTENTE del usuario "
-            "(ej. 'quiero ver/descargar el resultado de un análisis/estudio que ya me hice', identificado "
-            "por datos personales como DNI/protocolo/número de orden) por sobre uno de información general "
-            "o catálogo (ej. 'qué tipos de análisis hacen'). Ante la duda entre ambos, preguntale al usuario "
-            "una sola frase corta para confirmar cuál de los dos quiere, en vez de asumir el equivocado."
+            "DESAMBIGUACIÓN ENTRE SEGMENTOS: si el pedido del usuario es genérico y PODRÍA corresponder a "
+            "más de uno de estos segmentos (ej. menciona una palabra que aparece en el nombre de dos "
+            "segmentos distintos, sin aclarar cuál), NO elijas uno por tu cuenta ni le pidas de entrada el "
+            "campo de ninguno de los dos. En su lugar, respondé SOLO con una pregunta corta que nombre "
+            "ambas opciones en lenguaje simple para que el usuario elija (ej. \"¿Querés información general "
+            "sobre qué análisis hacemos, o el resultado de un análisis que ya te hiciste?\"). Recién cuando "
+            "el usuario aclare cuál de las dos quiere, llamá a `iniciar_busqueda_documento_segmento` con el "
+            "segmento correspondiente. Si el pedido ya es específico y sin ambigüedad real (ej. menciona "
+            "'resultado', 'protocolo', o datos propios como DNI), no hace falta preguntar: procedé directo."
         )))
     elif user_doc_intent and not onboarding_active:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
