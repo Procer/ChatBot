@@ -1314,8 +1314,10 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "feat_human_handoff": "1" if settings and settings.feat_human_handoff else "0",
         "reminder_24h_enabled": "1" if settings and settings.reminder_24h_enabled else "0",
         "reminder_24h_template": settings.reminder_24h_template if settings else "",
+        "reminder_24h_hours": settings.reminder_24h_hours if settings and settings.reminder_24h_hours is not None else 24,
         "reminder_2h_enabled": "1" if settings and settings.reminder_2h_enabled else "0",
-        "reminder_2h_template": settings.reminder_2h_template if settings else ""
+        "reminder_2h_template": settings.reminder_2h_template if settings else "",
+        "reminder_2h_hours": settings.reminder_2h_hours if settings and settings.reminder_2h_hours is not None else 2
     }
     
     knowledge_raw = db.query(Knowledge).filter_by(client_id=target_client_id).order_by(Knowledge.category.asc()).all()
