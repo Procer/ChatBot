@@ -1777,14 +1777,23 @@ def call_model(state: AgentState):
                 break
 
     if last_human_msg:
+        # Sin acentos: las listas de palabras clave de abajo están escritas sin tilde, y un
+        # substring literal contra el mensaje del usuario (que sí puede traer tildes, ej.
+        # "miércoles") no matcheaba — bug real que hacía que "Para el miércoles" no disparara
+        # 'user_scheduling_intent', dejando al modelo sin la lista de trámites con turno y
+        # cayendo al deducir_tramite_nombre (más frágil).
+        import unicodedata
+        last_human_msg_normalized = "".join(
+            c for c in unicodedata.normalize("NFD", last_human_msg.lower()) if unicodedata.category(c) != "Mn"
+        )
         file_keywords = ["pdf", "archivo", "mandam", "envi", "descarg", "adjunt", "papel", "documento"]
-        scheduling_keywords = ["turn", "agend", "reserv", "cit", "hor", "fech", "disponib", " hs", "lunes", "martes", "miercol", "jueves", "viernes", "sabad", "doming", "si, ", "sí, ", "confirm"]
-        product_keywords = ["tene", "tien", "vend", "hay ", "consig", "necesit", "busco", "buscas", "quiero", "precio", "cuest", "cuant", "cuánt", "stock", "catalog", "catálog", "comprar", "producto", "modelo"]
-        if any(kw in last_human_msg.lower() for kw in file_keywords):
+        scheduling_keywords = ["turn", "agend", "reserv", "cit", "hor", "fech", "disponib", " hs", "lunes", "martes", "miercol", "jueves", "viernes", "sabad", "doming", "si, ", "confirm"]
+        product_keywords = ["tene", "tien", "vend", "hay ", "consig", "necesit", "busco", "buscas", "quiero", "precio", "cuest", "cuant", "stock", "catalog", "comprar", "producto", "modelo"]
+        if any(kw in last_human_msg_normalized for kw in file_keywords):
             user_asked_for_file = True
-        if any(skw in last_human_msg.lower() for skw in scheduling_keywords):
+        if any(skw in last_human_msg_normalized for skw in scheduling_keywords):
             user_scheduling_intent = True
-        if any(pkw in last_human_msg.lower() for pkw in product_keywords):
+        if any(pkw in last_human_msg_normalized for pkw in product_keywords):
             user_product_intent = True
 
     if user_scheduling_intent:
