@@ -37,7 +37,7 @@
                             {{ p.status }}
                         </span>
                     </td>
-                    <td class="px-6 py-4 text-slate-500 text-sm">{{ p.updated_at }}</td>
+                    <td class="px-6 py-4 text-slate-500 text-sm">{% if p.updated_at %}{% set _parts = p.updated_at.split(' ') %}{{ _parts[0].split('-')[::-1]|join('/') }}{% if _parts|length > 1 %} {{ _parts[1][:5] }}{% endif %}{% endif %}</td>
                     <td class="px-6 py-4 text-right">
                         <a href="/admin/proceedings/delete/{{ p.id }}" class="text-slate-600 hover:text-rose-500 transition-colors p-2 inline-block"><i data-lucide="trash-2" class="w-4 h-4"></i></a>
                     </td>

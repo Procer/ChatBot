@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from src.database.session import SessionLocal
 from src.database.models import Client, ClientSettings, UserProfile, KnowledgeGap, Alert, Knowledge, Submission, Appointment, Proceeding
 from src.database.forms_saas import process_form_completion
+from src.database.openai_key import resolve_client_openai_key, get_client_embeddings
 
 load_dotenv()
 AI_PROVIDER = os.getenv("AI_PROVIDER", "google").lower()
@@ -160,7 +161,8 @@ def buscar_info_empresa(query: str, config: RunnableConfig):
         from src.database.tagging_manager import get_user_role, assign_tag_by_name
         user_role = get_user_role(client_id, thread_id)
         
-        vector_db = Chroma(persist_directory="chroma_db", embedding_function=embeddings)
+        query_embeddings = get_client_embeddings(client_id, embeddings) if AI_PROVIDER == "openai" else embeddings
+        vector_db = Chroma(persist_directory="chroma_db", embedding_function=query_embeddings)
         results = vector_db.similarity_search(query, k=3, filter={"client_id": client_id})
         
         def user_has_permission(u_role: str, req_role: str) -> bool:
@@ -1533,6 +1535,19 @@ else:
     ).bind_tools(tools_no_appointments)
 
 
+def get_llm_for_client(settings, appointments_enabled: bool):
+    """Devuelve el LLM a usar para este request. Si el cliente configuró su propia OpenAI API key
+    (aislamiento de billing por tenant, ver openai_key.py), arma un ChatOpenAI nuevo con esa key en
+    vez de reusar el singleton global. Sin key propia (o con AI_PROVIDER=google), se comporta igual
+    que antes: reusa los singletons globales de arriba."""
+    if AI_PROVIDER == "openai" and OPENAI_API_KEY:
+        client_key = resolve_client_openai_key(settings)
+        if client_key:
+            active_tools = tools if appointments_enabled else tools_no_appointments
+            return ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=client_key).bind_tools(active_tools)
+    return llm_with_tools if appointments_enabled else llm_with_tools_no_appointments
+
+
 def call_model(state: AgentState):
     t_id = state.get("thread_id", "unknown")
     client_id = state.get("client_id")
@@ -2174,7 +2189,7 @@ def call_model(state: AgentState):
     except Exception as debug_err:
         pass
 
-    active_llm = llm_with_tools if appointments_enabled else llm_with_tools_no_appointments
+    active_llm = get_llm_for_client(settings, appointments_enabled)
     response = active_llm.invoke(messages)
     
     return {

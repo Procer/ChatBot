@@ -153,6 +153,11 @@
 <script>
     let lastResult = {};
 
+    function formatFechaHora(d) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
     async function fetchDolarOficial() {
         const statusEl = document.getElementById('dolarStatus');
         statusEl.textContent = 'Buscando cotización oficial...';
@@ -162,7 +167,7 @@
             const data = await res.json();
             if (!data.venta) throw new Error('sin valor de venta');
             document.getElementById('tipoCambio').value = data.venta;
-            const hora = data.fechaActualizacion ? new Date(data.fechaActualizacion).toLocaleString('es-AR') : '';
+            const hora = data.fechaActualizacion ? formatFechaHora(new Date(data.fechaActualizacion)) : '';
             statusEl.textContent = `Oficial (venta): $${data.venta}${hora ? ' · actualizado ' + hora : ''}`;
             calcular();
         } catch (e) {

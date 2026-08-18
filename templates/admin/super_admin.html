@@ -180,6 +180,20 @@
                             </div>
                         </div>
 
+                        <!-- OpenAI: API key propia del cliente -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <div class="flex items-center justify-between mb-1">
+                                <h4 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="key" class="w-4 h-4 text-sky-500"></i> OpenAI (API key propia del cliente)</h4>
+                                <span id="openaiKeyStatusBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin configurar</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mb-3">Opcional. Si se carga, este cliente usa su propia key de OpenAI (billing aislado) en vez de la key global del servidor. Solo aplica si el servidor está corriendo con AI_PROVIDER=openai. Dejar vacío para no modificarla.</p>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase">API Key</label>
+                                <input type="password" id="openai_api_key" autocomplete="off" placeholder="sk-..." class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1 font-mono">
+                                <button type="button" onclick="clearOpenAIKey()" class="mt-2 text-xs text-red-400 hover:text-red-300">Quitar key propia</button>
+                            </div>
+                        </div>
+
                         <!-- Prompt -->
                         <div>
                             <label class="block text-xs font-bold text-slate-400 mb-1">System Prompt (Personalidad de IA)</label>
@@ -325,6 +339,16 @@
             badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20';
         }
 
+        document.getElementById('openai_api_key').value = '';
+        const openaiBadge = document.getElementById('openaiKeyStatusBadge');
+        if (data.settings?.openai_api_key_configured) {
+            openaiBadge.textContent = 'Configurado';
+            openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        } else {
+            openaiBadge.textContent = 'Sin configurar';
+            openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
+        }
+
         openModal('config-client-modal');
     }
 
@@ -351,7 +375,8 @@
             feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked,
             feat_document_library: document.getElementById('feat_document_library').checked,
             gdrive_service_account_json: document.getElementById('gauth_sa_json').value.trim(),
-            gdrive_sync_interval_minutes: parseInt(document.getElementById('gdrive_sync_interval').value, 10) || 480
+            gdrive_sync_interval_minutes: parseInt(document.getElementById('gdrive_sync_interval').value, 10) || 480,
+            openai_api_key: document.getElementById('openai_api_key').value.trim()
         };
         const res = await fetch(`/api/superadmin/clients/${id}/settings`, {
             method: 'PUT',
@@ -371,6 +396,14 @@
         const res = await fetch(`/api/superadmin/clients/${id}/gdrive/clear_service_account`, { method: 'POST' });
         if (res.ok) window.location.reload();
         else alert('Error al quitar la cuenta de servicio');
+    }
+
+    async function clearOpenAIKey() {
+        const id = document.getElementById('edit_client_id').value;
+        if (!confirm('¿Quitar la OpenAI API key propia de este cliente? Vuelve a usar la key global del servidor.')) return;
+        const res = await fetch(`/api/superadmin/clients/${id}/openai_key/clear`, { method: 'POST' });
+        if (res.ok) window.location.reload();
+        else alert('Error al quitar la key');
     }
 </script>
 {% endblock %}

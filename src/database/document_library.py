@@ -36,6 +36,13 @@ from src.database.models import (
     DocSegment, DocLibraryUser, DocLibraryUserSegment, Document,
     DocumentSegmentLink, DocSession, DocSearchLog
 )
+from src.database.openai_key import get_client_embeddings
+
+
+def _embeddings_for(client_id: int):
+    """Embeddings a usar para este cliente: los propios si configuró una OpenAI API key
+    (aislamiento de billing por tenant), o los globales del .env si no."""
+    return get_client_embeddings(client_id, embeddings) if AI_PROVIDER == "openai" else embeddings
 
 
 # --- HASHING DE CONTRASEÑAS ---
@@ -157,7 +164,7 @@ def sync_document_to_chroma(document_id: int):
             "document_id": doc.id,
             "segment_ids": ",".join(str(s) for s in segment_ids),
         }
-        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(doc.client_id))
         vector_db.add_texts(texts=[page_content], metadatas=[metadata], ids=[f"library_document_{doc.id}"])
     except Exception as e:
         logging.error(f"[DocLibrary] Error sincronizando documento {document_id} en Chroma: {e}")
@@ -169,7 +176,7 @@ def remove_document_from_chroma(document_id: int, client_id: int):
     try:
         if not os.path.exists(CHROMA_PATH):
             return
-        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(client_id))
         vector_db._collection.delete(where={"$and": [{"client_id": client_id}, {"document_id": document_id}]})
     except Exception as e:
         logging.error(f"[DocLibrary] Error eliminando documento {document_id} de Chroma: {e}")
@@ -189,7 +196,7 @@ def search_documents_candidates(client_id: int, thread_id: str, query: str, k: i
     db = SessionLocal()
     try:
         try:
-            vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+            vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(client_id))
             results_with_scores = vector_db.similarity_search_with_score(
                 query, k=k,
                 filter={"$and": [{"client_id": client_id}, {"doc_type": "library_document"}]}
@@ -400,7 +407,7 @@ def search_segment_document(client_id: int, thread_id: str, segment_id: int, que
                         return {"status": "found", "id": doc.id, "title": doc.title, "description": doc.description or ""}
 
         try:
-            vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+            vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(client_id))
             results_with_scores = vector_db.similarity_search_with_score(
                 query, k=k,
                 filter={"$and": [{"client_id": client_id}, {"doc_type": "library_document"}]}

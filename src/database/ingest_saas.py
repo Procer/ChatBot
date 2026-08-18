@@ -32,6 +32,16 @@ if AI_PROVIDER == "openai" and OPENAI_API_KEY:
 else:
     embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=GOOGLE_API_KEY)
 
+
+def _embeddings_for(client_id: int):
+    """Embeddings a usar para este cliente: los propios si configuró una OpenAI API key
+    (aislamiento de billing por tenant), o los globales del .env si no."""
+    if AI_PROVIDER != "openai":
+        return embeddings
+    from src.database.openai_key import get_client_embeddings
+    return get_client_embeddings(client_id, embeddings)
+
+
 def load_pdf_content(file_path):
     """Extrae texto de un archivo PDF usando PyPDF2."""
     text = ""
@@ -131,7 +141,7 @@ def ingest_data_saas(client_id: int):
         # Si no hay documentos, igual limpiamos lo anterior por seguridad
         try:
             if os.path.exists(CHROMA_PATH):
-                vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+                vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(client_id))
                 vector_db._collection.delete(where={"client_id": client_id})
                 logging.info(f"ChromaDB limpio para el cliente {client_id} (sin registros nuevos).")
         except Exception as e:
@@ -145,8 +155,8 @@ def ingest_data_saas(client_id: int):
 
     # Guardar en ChromaDB
     try:
-        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-        
+        vector_db = Chroma(persist_directory=CHROMA_PATH, embedding_function=_embeddings_for(client_id))
+
         # Eliminar registros previos de este cliente para evitar duplicados
         logging.info(f"Eliminando registros antiguos de ChromaDB para el cliente {client_id}...")
         try:

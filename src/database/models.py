@@ -49,6 +49,11 @@ class ClientSettings(Base):
     whatsapp_enabled = Column(Boolean, default=True)
     telegram_enabled = Column(Boolean, default=False)
     telegram_token = Column(String(255))
+
+    # Key de OpenAI propia de ESTE cliente (aislamiento de billing por tenant, ver
+    # openai_key.py). Encriptada con el mismo Fernet que la cuenta de servicio de Drive.
+    # None = usar la key global OPENAI_API_KEY del .env del servidor (comportamiento previo).
+    openai_api_key_encrypted = Column(Text, nullable=True)
     
     feat_rag_enabled = Column(Boolean, default=False)
     feat_pdf_export = Column(Boolean, default=False)

@@ -111,6 +111,7 @@ class ClientSettingsUpdate(BaseModel):
     feat_document_library: bool = False
     gdrive_service_account_json: str = None  # vacío/None = no tocar la clave ya guardada
     gdrive_sync_interval_minutes: int = 480  # cada cuánto sincroniza Drive este cliente (piso de 5min, ver update_client_settings)
+    openai_api_key: str = None  # vacío/None = no tocar la key ya guardada (aislamiento de billing por cliente, ver openai_key.py)
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -420,7 +421,7 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
         formatted_messages.append({
             "type": "human" if msg.role == "user" else "bot",
             "content": msg.content,
-            "timestamp": msg.timestamp.strftime("%Y-%m-%d %H:%M:%S") if msg.timestamp else "",
+            "timestamp": msg.timestamp.strftime("%d/%m/%Y %H:%M:%S") if msg.timestamp else "",
             "status": msg.status
         })
 
@@ -480,7 +481,7 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
             "tracking_number": p.tracking_number,
             "topic": p.topic,
             "status": p.status,
-            "updated_at": p.updated_at.strftime("%Y-%m-%d %H:%M:%S") if p.updated_at else ""
+            "updated_at": p.updated_at.strftime("%d/%m/%Y %H:%M:%S") if p.updated_at else ""
         })
 
     # Trámites / Submissions
@@ -506,7 +507,7 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
             "id": s.id,
             "topic": s.topic,
             "data": parsed_data,
-            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S") if s.created_at else "",
+            "created_at": s.created_at.strftime("%d/%m/%Y %H:%M:%S") if s.created_at else "",
             "attachments": att_list
         })
 
@@ -589,8 +590,8 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
         "threads": all_threads,
         "user": user_mock,
         "is_impersonating": is_impersonating,
-        "today": _today.strftime("%Y-%m-%d"),
-        "yesterday": (_today - timedelta(days=1)).strftime("%Y-%m-%d"),
+        "today": _today.strftime("%d/%m/%Y"),
+        "yesterday": (_today - timedelta(days=1)).strftime("%d/%m/%Y"),
     })
 
 @app.post("/admin/chat/{thread_id}/send")
@@ -4178,7 +4179,8 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "feat_document_library": getattr(client.settings, 'feat_document_library', False),
             "gdrive_service_account_email": getattr(client.settings, 'gdrive_service_account_email', None) or '',
             "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None)),
-            "gdrive_sync_interval_minutes": getattr(client.settings, 'gdrive_sync_interval_minutes', None) or 480
+            "gdrive_sync_interval_minutes": getattr(client.settings, 'gdrive_sync_interval_minutes', None) or 480,
+            "openai_api_key_configured": bool(getattr(client.settings, 'openai_api_key_encrypted', None))
         }
         
     return {
@@ -4227,6 +4229,14 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
         except RuntimeError as e:
             return JSONResponse(status_code=500, content={"error": f"No se pudo guardar la clave de la cuenta de servicio: {e}. Configurá GDRIVE_TOKEN_ENCRYPTION_KEY en el .env del servidor y reiniciá."})
 
+    openai_key_raw = (settings_data.openai_api_key or "").strip()
+    if openai_key_raw:
+        from src.database.openai_key import save_client_openai_key
+        try:
+            save_client_openai_key(client_id, openai_key_raw)
+        except RuntimeError as e:
+            return JSONResponse(status_code=500, content={"error": f"No se pudo guardar la OpenAI API key: {e}. Configurá GDRIVE_TOKEN_ENCRYPTION_KEY en el .env del servidor y reiniciá."})
+
     # Trigger webhook update in Green API
     client = db.query(Client).filter_by(id=client_id).first()
 
@@ -4250,6 +4260,21 @@ async def clear_client_service_account(client_id: int, db: Session = Depends(get
 
     from src.database.gdrive_sync import clear_service_account_key
     clear_service_account_key(client_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/superadmin/clients/{client_id}/openai_key/clear")
+async def clear_client_openai_key(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Quita la OpenAI API key propia de un cliente (acción explícita y separada del guardado
+    normal, ya que dejar el campo vacío en el form significa 'no tocar', no 'borrar'). El cliente
+    vuelve a usar la key global del .env."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
+
+    from src.database.openai_key import clear_client_openai_key as _clear_openai_key
+    _clear_openai_key(client_id)
     return {"status": "ok"}
 
 
