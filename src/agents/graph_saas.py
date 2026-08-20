@@ -1894,6 +1894,26 @@ def call_model(state: AgentState):
         if any(pkw in last_human_msg_normalized for pkw in product_keywords):
             user_product_intent = True
 
+    # Un trámite (KB con [TIENE_FORMULARIO]) tiene prioridad sobre la Biblioteca de Documentos
+    # cuando el mensaje del usuario matchea directamente su nombre. Bug real: "entrega
+    # documentacion" (nombre exacto de un trámite) disparaba en cambio el refuerzo de
+    # Biblioteca de Documentos (por compartir vocabulario tipo "documento"/"protocolo" con
+    # segmentos como "PROTOCOLOS"), llevando al modelo a preguntar la desambiguación de
+    # segmentos en vez de iniciar el trámite real.
+    user_form_topic_intent = False
+    if last_human_msg:
+        try:
+            db_ft = SessionLocal()
+            form_topics = [k.topic for k in db_ft.query(Knowledge).filter_by(client_id=client_id, has_form=True).all()]
+            db_ft.close()
+            for ft in form_topics:
+                ft_norm = "".join(c for c in unicodedata.normalize("NFD", (ft or "").lower()) if unicodedata.category(c) != "Mn")
+                if ft_norm and ft_norm in last_human_msg_normalized:
+                    user_form_topic_intent = True
+                    break
+        except Exception:
+            pass
+
     tramites_con_turno = []
     if user_scheduling_intent:
         messages.append(SystemMessage(content=(
@@ -2021,7 +2041,7 @@ def call_model(state: AgentState):
             f"`iniciar_busqueda_documento_segmento` en esta misma respuesta (query=la consulta del usuario, "
             f"segmento='{matched_segment.name}'). NO llames a `buscar_documento` en este turno."
         )))
-    elif doc_segments_available and not onboarding_active:
+    elif doc_segments_available and not onboarding_active and not user_form_topic_intent:
         lineas_segmentos = []
         for seg_name, seg_hints, seg_fields in doc_segments_available:
             pistas_str = f" Pistas: {', '.join(seg_hints)}." if seg_hints else ""
@@ -2047,7 +2067,7 @@ def call_model(state: AgentState):
             "segmento correspondiente. Si el pedido ya es específico y sin ambigüedad real (ej. menciona "
             "'resultado', 'protocolo', o datos propios como DNI), no hace falta preguntar: procedé directo."
         )))
-    elif user_doc_intent and not onboarding_active:
+    elif user_doc_intent and not onboarding_active and not user_form_topic_intent:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
 
     if user_product_intent and not user_doc_intent and settings and settings.feat_catalog and not onboarding_active:
