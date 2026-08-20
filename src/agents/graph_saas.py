@@ -1903,12 +1903,18 @@ def call_model(state: AgentState):
     user_form_topic_intent = False
     if last_human_msg:
         try:
+            import re as _re_ft
+            _stopwords_ft = {"de", "del", "la", "el", "los", "las", "un", "una", "para", "por", "con", "y", "en", "al"}
+            msg_words = set(_re_ft.findall(r"\w+", last_human_msg_normalized)) - _stopwords_ft
             db_ft = SessionLocal()
             form_topics = [k.topic for k in db_ft.query(Knowledge).filter_by(client_id=client_id, has_form=True).all()]
             db_ft.close()
             for ft in form_topics:
                 ft_norm = "".join(c for c in unicodedata.normalize("NFD", (ft or "").lower()) if unicodedata.category(c) != "Mn")
-                if ft_norm and ft_norm in last_human_msg_normalized:
+                ft_words = set(_re_ft.findall(r"\w+", ft_norm)) - _stopwords_ft
+                # Subconjunto de palabras (no substring exacto): tolera palabras de más en el
+                # medio como "de" ("entrega DE documentacion" vs el tópico "entrega documentacion").
+                if ft_words and ft_words.issubset(msg_words):
                     user_form_topic_intent = True
                     break
         except Exception:
