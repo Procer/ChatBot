@@ -1680,6 +1680,7 @@ def call_model(state: AgentState):
 1. **EXTRACCIÓN INMEDIATA (OBLIGATORIO):** En cuanto detectes un dato en el mensaje, usá 'registrar_dato_tramite'.
 2. **SIEMPRE USA HERRAMIENTAS:** No confirmes los datos solo con texto.
 3. **CONVERSACIÓN, NO FORMULARIO:** No lo conviertas en un cuestionario. Pedí el próximo dato como parte natural de la charla (por ejemplo, después de comentar algo sobre el producto o responder algo que dijo el cliente), nunca como una lista fría de campos pendientes.
+4. **LISTA CERRADA DE CAMPOS (PROHIBIDO AGREGAR OTROS):** Los ÚNICOS datos que podés pedir para este trámite son EXACTAMENTE los de "FALTAN ESTOS DATOS" de arriba. Tenés TERMINANTEMENTE PROHIBIDO pedir, inventar o registrar con 'registrar_dato_tramite' cualquier otro dato (como "protocolo", "número de expediente", u otro término que hayas visto mencionado en la información general de la empresa, en otro trámite o en la biblioteca de documentos) aunque el tema te parezca relacionado. Si no está literalmente en esa lista, no lo pidas.
 """
                 if is_pedido_topic:
                     system_prompt += "4. **CAMPOS ESPECIALES DEL PEDIDO:** Para 'Cantidad' usá SIEMPRE 'registrar_cantidad_pedido' (nunca 'registrar_dato_tramite'). Para 'Fecha de Entrega' usá SIEMPRE 'registrar_fecha_entrega_pedido'. Si alguna de esas herramientas devuelve un error (cantidad o fecha inválida), NO uses 'registrar_dato_tramite' como respaldo: explicale el motivo al usuario y pedile un valor válido.\n"
