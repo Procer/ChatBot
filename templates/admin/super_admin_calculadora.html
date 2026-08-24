@@ -119,6 +119,7 @@
                         <th class="py-2 pr-3">Anterior</th>
                         <th class="py-2 pr-3">Nuevo</th>
                         <th class="py-2 pr-3">Motivo</th>
+                        <th class="py-2 pr-3"></th>
                     </tr>
                 </thead>
                 <tbody id="historyTableBody"></tbody>
@@ -139,6 +140,7 @@
                         <th class="py-2 pr-3">Abono USD</th>
                         <th class="py-2 pr-3">Ganancia ARS</th>
                         <th class="py-2 pr-3">Estado</th>
+                        <th class="py-2 pr-3"></th>
                     </tr>
                 </thead>
                 <tbody id="simulationsTableBody"></tbody>
@@ -234,9 +236,20 @@
                 <td class="py-2 pr-3 text-slate-400">${h.created_at}</td>
                 <td class="py-2 pr-3 text-slate-400">${h.old_abono_usd != null ? 'USD ' + h.old_abono_usd : '-'}</td>
                 <td class="py-2 pr-3 text-white font-medium">USD ${h.new_abono_usd}</td>
-                <td class="py-2 pr-3 text-slate-400">${h.reason || ''}</td>`;
+                <td class="py-2 pr-3 text-slate-400">${h.reason || ''}</td>
+                <td class="py-2 pr-3"><button onclick="deleteHistoryEntry(${h.id})" title="Eliminar" class="text-rose-400 hover:text-rose-300 text-xs">Eliminar</button></td>`;
             body.appendChild(tr);
         });
+    }
+
+    async function deleteHistoryEntry(id) {
+        if (!confirm('¿Eliminar este registro del historial de precios? No se puede deshacer.')) return;
+        const res = await fetch(`/api/superadmin/pricing/history/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            await onClientChange();
+        } else {
+            alert('No se pudo eliminar el registro.');
+        }
     }
 
     async function saveOfficialPrice() {
@@ -314,9 +327,20 @@
                     <select onchange="updateSimulationStatus(${s.id}, this)" class="px-2 py-1 text-xs rounded-lg border ${STATUS_CLASSES[s.status] || STATUS_CLASSES.borrador} bg-slate-900 focus:ring-1 focus:ring-brand-500 outline-none">
                         ${statusOptions}
                     </select>
-                </td>`;
+                </td>
+                <td class="py-2 pr-3"><button onclick="deleteSimulation(${s.id})" title="Eliminar" class="text-rose-400 hover:text-rose-300 text-xs">Eliminar</button></td>`;
             body.appendChild(tr);
         });
+    }
+
+    async function deleteSimulation(id) {
+        if (!confirm('¿Eliminar esta simulación? No se puede deshacer.')) return;
+        const res = await fetch(`/api/superadmin/pricing/simulations/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            await loadSimulations();
+        } else {
+            alert('No se pudo eliminar la simulación.');
+        }
     }
 
     async function updateSimulationStatus(simId, selectEl) {

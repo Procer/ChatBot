@@ -3991,7 +3991,7 @@ class PricingSimulationPayload(BaseModel):
     server_tramo3: float
     ganancia_ars: float
 
-@app.get("/api/superadmin/pricing/{client_id}")
+@app.get("/api/superadmin/pricing/{client_id:int}")
 async def api_get_client_pricing(request: Request, client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not require_superadmin(current_user):
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
@@ -4002,6 +4002,7 @@ async def api_get_client_pricing(request: Request, client_id: int, db: Session =
         "status": "ok",
         "abono_usd": pricing.abono_usd if pricing else None,
         "history": [{
+            "id": h.id,
             "old_abono_usd": h.old_abono_usd,
             "new_abono_usd": h.new_abono_usd,
             "reason": h.reason,
@@ -4009,7 +4010,7 @@ async def api_get_client_pricing(request: Request, client_id: int, db: Session =
         } for h in history]
     }
 
-@app.put("/api/superadmin/pricing/{client_id}")
+@app.put("/api/superadmin/pricing/{client_id:int}")
 async def api_update_client_pricing(request: Request, client_id: int, payload: ClientPricingUpdatePayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not require_superadmin(current_user):
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
@@ -4100,6 +4101,30 @@ async def api_update_pricing_simulation_status(request: Request, sim_id: int, pa
             reason=f"Simulación aprobada{' (' + sim.label + ')' if sim.label else ''}"
         ))
 
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/superadmin/pricing/history/{history_id:int}")
+async def api_delete_pricing_history(request: Request, history_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPricingHistory
+    entry = db.query(ClientPricingHistory).filter_by(id=history_id).first()
+    if not entry:
+        return JSONResponse(status_code=404, content={"error": "Registro no encontrado"})
+    db.delete(entry)
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/superadmin/pricing/simulations/{sim_id:int}")
+async def api_delete_pricing_simulation(request: Request, sim_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import PricingSimulation
+    sim = db.query(PricingSimulation).filter_by(id=sim_id).first()
+    if not sim:
+        return JSONResponse(status_code=404, content={"error": "Simulación no encontrada"})
+    db.delete(sim)
     db.commit()
     return {"status": "ok"}
 
