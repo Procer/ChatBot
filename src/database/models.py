@@ -547,6 +547,18 @@ class PricingSimulation(Base):
     server_tramo2 = Column(Float, nullable=False)
     server_tramo3 = Column(Float, nullable=False)
     ganancia_ars = Column(Float, nullable=False)
-    status = Column(String(20), nullable=False, default="borrador")  # borrador | enviada | aprobada | rechazada
+    total_costos_ars = Column(Float, nullable=True)
+    status = Column(String(20), nullable=False, default="borrador")  # borrador | enviada (= presupuesto presentado) | aprobada | rechazada
     status_updated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ClientPayment(Base):
+    __tablename__ = "adm_client_payments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    currency = Column(String(10), nullable=False, default="ARS")
+    payment_date = Column(DateTime, nullable=False)
+    payment_method = Column(String(100), nullable=True)
+    notes = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

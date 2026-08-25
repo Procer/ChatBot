@@ -49,7 +49,13 @@
                 </div>
                 <div>
                     <label class="text-xs text-slate-400 block mb-1">Abono Mensual por Cliente (USD)</label>
-                    <input type="number" id="abonoUsd" value="150" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="abonoUsd" value="150" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                        <button type="button" onclick="usarCobroSugerido()" title="Calcular abono para que el cobro total sea el doble del costo total" class="px-2 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold rounded-lg border border-slate-700 shrink-0 whitespace-nowrap">
+                            2× costo
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-1">"2× costo" recalcula el abono para que el cobro total equivalga al doble del costo total de infraestructura (markup 100%).</p>
                 </div>
                 <div>
                     <label class="text-xs text-slate-400 block mb-1">Costo WhatsApp por Cliente (USD)</label>
@@ -138,6 +144,7 @@
                         <th class="py-2 pr-3">Nombre</th>
                         <th class="py-2 pr-3">Clientes</th>
                         <th class="py-2 pr-3">Abono USD</th>
+                        <th class="py-2 pr-3">Total Costos ARS</th>
                         <th class="py-2 pr-3">Ganancia ARS</th>
                         <th class="py-2 pr-3">Estado</th>
                         <th class="py-2 pr-3"></th>
@@ -214,7 +221,21 @@
         document.getElementById('resGanancia').innerText = formatearMoneda(gananciaNetaArs);
         document.getElementById('badgeServidor').innerText = nombrePlan;
 
-        lastResult = { tipoCambio, clientes, abonoUsd, greenApiUsd, openaiUsd, serverTramo1, serverTramo2, serverTramo3, gananciaNetaArs };
+        lastResult = { tipoCambio, clientes, abonoUsd, greenApiUsd, openaiUsd, serverTramo1, serverTramo2, serverTramo3, gananciaNetaArs, totalCostosArs };
+        return { totalCostosArs, ingresosArs };
+    }
+
+    function usarCobroSugerido() {
+        const { totalCostosArs } = calcular();
+        const tipoCambio = parseFloat(document.getElementById('tipoCambio').value) || 0;
+        const clientes = parseInt(document.getElementById('clientesInput').value) || 0;
+        if (clientes <= 0 || tipoCambio <= 0) {
+            alert('Completá cantidad de clientes y cotización antes de calcular el cobro sugerido.');
+            return;
+        }
+        const abonoSugerido = Math.round((2 * totalCostosArs) / (clientes * tipoCambio));
+        document.getElementById('abonoUsd').value = abonoSugerido;
+        calcular();
     }
 
     async function onClientChange() {
@@ -291,13 +312,14 @@
                 server_tramo2: lastResult.serverTramo2,
                 server_tramo3: lastResult.serverTramo3,
                 ganancia_ars: lastResult.gananciaNetaArs,
+                total_costos_ars: lastResult.totalCostosArs,
             })
         });
         document.getElementById('simulationLabel').value = '';
         await loadSimulations();
     }
 
-    const STATUS_LABELS = { borrador: 'Borrador', enviada: 'Enviada', aprobada: 'Aprobada', rechazada: 'Rechazada' };
+    const STATUS_LABELS = { borrador: 'Borrador (simulación)', enviada: 'Presupuesto Presentado', aprobada: 'Aprobada', rechazada: 'Rechazada' };
     const STATUS_CLASSES = {
         borrador: 'bg-slate-800 text-slate-400 border-slate-700',
         enviada: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
@@ -325,6 +347,7 @@
                 <td class="py-2 pr-3 text-white font-medium">${s.label || '(sin nombre)'}</td>
                 <td class="py-2 pr-3 text-slate-400">${s.clientes}</td>
                 <td class="py-2 pr-3 text-slate-400">USD ${s.abono_usd}</td>
+                <td class="py-2 pr-3 text-slate-400">${s.total_costos_ars != null ? formatearMoneda(s.total_costos_ars) : '-'}</td>
                 <td class="py-2 pr-3 text-emerald-400">${formatearMoneda(s.ganancia_ars)}</td>
                 <td class="py-2 pr-3">
                     <select onchange="updateSimulationStatus(${s.id}, this)" class="px-2 py-1 text-xs rounded-lg border ${STATUS_CLASSES[s.status] || STATUS_CLASSES.borrador} bg-slate-900 focus:ring-1 focus:ring-brand-500 outline-none">

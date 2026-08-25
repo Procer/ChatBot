@@ -277,6 +277,41 @@
                         </button>
                     </div>
                 </form>
+
+                <!-- Cobros (pagos recibidos) -->
+                <div id="paymentsSection" class="bg-slate-900/50 rounded-lg p-4 border border-slate-800 mt-6">
+                    <div class="flex items-center justify-between mb-1">
+                        <h4 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="banknote" class="w-4 h-4 text-emerald-500"></i> Cobros</h4>
+                        <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
+                    </div>
+                    <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
+                    <div id="paymentsFormBox" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                        <input type="date" id="payment_date" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                        <input type="number" id="payment_amount" placeholder="Monto" step="0.01" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                        <select id="payment_currency" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                            <option value="ARS">ARS</option>
+                            <option value="USD">USD</option>
+                        </select>
+                        <input type="text" id="payment_method" placeholder="Medio de pago" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                        <button type="button" id="addPaymentBtn" onclick="addPayment()" class="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md px-2 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Agregar cobro</button>
+                        <input type="text" id="payment_notes" placeholder="Nota (opcional)" class="col-span-2 md:col-span-5 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                                    <th class="py-2 pr-3">Fecha</th>
+                                    <th class="py-2 pr-3">Monto</th>
+                                    <th class="py-2 pr-3">Medio</th>
+                                    <th class="py-2 pr-3">Nota</th>
+                                    <th class="py-2 pr-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="paymentsTableBody"></tbody>
+                        </table>
+                        <p id="paymentsEmptyState" class="text-slate-500 text-xs py-3 hidden">Todavía no hay cobros registrados.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -349,7 +384,86 @@
             openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         }
 
+        applyPaymentsGate(data.pricing || {});
+        await loadPayments(id);
+
         openModal('config-client-modal');
+    }
+
+    function applyPaymentsGate(pricing) {
+        const badge = document.getElementById('paymentsGateBadge');
+        const gateMsg = document.getElementById('paymentsGateMessage');
+        const addBtn = document.getElementById('addPaymentBtn');
+        const inputs = ['payment_date', 'payment_amount', 'payment_currency', 'payment_method', 'payment_notes'];
+        if (pricing.has_approved) {
+            badge.textContent = `Precio oficial: USD ${pricing.abono_usd}`;
+            badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            gateMsg.classList.add('hidden');
+            addBtn.disabled = false;
+            inputs.forEach(id => document.getElementById(id).disabled = false);
+        } else {
+            badge.textContent = 'Sin presupuesto aprobado';
+            badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
+            gateMsg.classList.remove('hidden');
+            addBtn.disabled = true;
+            inputs.forEach(id => document.getElementById(id).disabled = true);
+        }
+    }
+
+    async function loadPayments(clientId) {
+        const res = await fetch(`/api/superadmin/clients/${clientId}/payments`);
+        const data = await res.json();
+        const payments = data.payments || [];
+        const body = document.getElementById('paymentsTableBody');
+        body.innerHTML = '';
+        document.getElementById('paymentsEmptyState').classList.toggle('hidden', payments.length > 0);
+        payments.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-b border-slate-800/50';
+            tr.innerHTML = `
+                <td class="py-2 pr-3 text-slate-400">${p.payment_date}</td>
+                <td class="py-2 pr-3 text-white font-medium">${p.currency} ${p.amount}</td>
+                <td class="py-2 pr-3 text-slate-400">${p.payment_method || ''}</td>
+                <td class="py-2 pr-3 text-slate-400">${p.notes || ''}</td>
+                <td class="py-2 pr-3"><button onclick="deletePayment(${p.id})" title="Eliminar" class="text-rose-400 hover:text-rose-300 text-xs">Eliminar</button></td>`;
+            body.appendChild(tr);
+        });
+    }
+
+    async function addPayment() {
+        const id = document.getElementById('edit_client_id').value;
+        const amount = parseFloat(document.getElementById('payment_amount').value);
+        const paymentDate = document.getElementById('payment_date').value;
+        if (!amount || !paymentDate) { alert('Completá fecha y monto del cobro.'); return; }
+        const data = {
+            amount: amount,
+            currency: document.getElementById('payment_currency').value,
+            payment_date: paymentDate,
+            payment_method: document.getElementById('payment_method').value || null,
+            notes: document.getElementById('payment_notes').value || null
+        };
+        const res = await fetch(`/api/superadmin/clients/${id}/payments`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            document.getElementById('payment_amount').value = '';
+            document.getElementById('payment_method').value = '';
+            document.getElementById('payment_notes').value = '';
+            await loadPayments(id);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || 'Error al registrar el cobro');
+        }
+    }
+
+    async function deletePayment(paymentId) {
+        if (!confirm('¿Eliminar este cobro? No se puede deshacer.')) return;
+        const id = document.getElementById('edit_client_id').value;
+        const res = await fetch(`/api/superadmin/clients/${id}/payments/${paymentId}`, { method: 'DELETE' });
+        if (res.ok) await loadPayments(id);
+        else alert('No se pudo eliminar el cobro.');
     }
 
     async function saveClientConfig(e) {

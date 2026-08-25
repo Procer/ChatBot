@@ -3990,6 +3990,7 @@ class PricingSimulationPayload(BaseModel):
     server_tramo2: float
     server_tramo3: float
     ganancia_ars: float
+    total_costos_ars: float | None = None
 
 @app.get("/api/superadmin/pricing/{client_id:int}")
 async def api_get_client_pricing(request: Request, client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -4059,6 +4060,7 @@ async def api_list_pricing_simulations(request: Request, client_id: int = None, 
         "server_tramo2": s.server_tramo2,
         "server_tramo3": s.server_tramo3,
         "ganancia_ars": s.ganancia_ars,
+        "total_costos_ars": s.total_costos_ars,
         "status": s.status,
         "created_at": s.created_at.strftime("%d/%m/%Y %H:%M") if s.created_at else ""
     } for s in sims]}
@@ -4180,7 +4182,10 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
     client = db.query(Client).filter_by(id=client_id).first()
     if not client: return JSONResponse(status_code=404, content={"error": "Not found"})
-    
+
+    from src.database.models import ClientPricing
+    pricing = db.query(ClientPricing).filter_by(client_id=client_id).first()
+
     settings_dict = {}
     if client.settings:
         settings_dict = {
@@ -4213,7 +4218,11 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
         "business_name": client.business_name,
         "slug": client.slug,
         "status": client.status,
-        "settings": settings_dict
+        "settings": settings_dict,
+        "pricing": {
+            "has_approved": bool(pricing),
+            "abono_usd": pricing.abono_usd if pricing else None
+        }
     }
 
 @app.put("/api/superadmin/clients/{client_id}/settings")
@@ -4300,6 +4309,69 @@ async def clear_client_openai_key(client_id: int, db: Session = Depends(get_db),
 
     from src.database.openai_key import clear_client_openai_key as _clear_openai_key
     _clear_openai_key(client_id)
+    return {"status": "ok"}
+
+
+# --- Cobros (pagos recibidos) por cliente, en Gestión de Clientes ---
+# Solo se pueden registrar para clientes que ya tienen un precio oficial (ClientPricing),
+# es decir, con un presupuesto aprobado desde la Calculadora.
+
+class ClientPaymentPayload(BaseModel):
+    amount: float
+    currency: str = "ARS"
+    payment_date: str  # YYYY-MM-DD
+    payment_method: str | None = None
+    notes: str | None = None
+
+@app.get("/api/superadmin/clients/{client_id:int}/payments")
+async def api_list_client_payments(request: Request, client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPayment
+    payments = db.query(ClientPayment).filter_by(client_id=client_id).order_by(ClientPayment.payment_date.desc(), ClientPayment.id.desc()).all()
+    return {"status": "ok", "payments": [{
+        "id": p.id,
+        "amount": p.amount,
+        "currency": p.currency,
+        "payment_date": p.payment_date.strftime("%d/%m/%Y") if p.payment_date else "",
+        "payment_method": p.payment_method,
+        "notes": p.notes,
+    } for p in payments]}
+
+@app.post("/api/superadmin/clients/{client_id:int}/payments")
+async def api_create_client_payment(request: Request, client_id: int, payload: ClientPaymentPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPricing, ClientPayment
+    if not db.query(ClientPricing).filter_by(client_id=client_id).first():
+        return JSONResponse(status_code=400, content={"error": "Este cliente todavía no tiene un presupuesto aprobado — no se pueden registrar cobros."})
+    try:
+        payment_date = datetime.strptime(payload.payment_date, "%Y-%m-%d")
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "Fecha inválida"})
+    payment = ClientPayment(
+        client_id=client_id,
+        amount=payload.amount,
+        currency=(payload.currency or "ARS").upper(),
+        payment_date=payment_date,
+        payment_method=payload.payment_method or None,
+        notes=payload.notes or None,
+    )
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
+    return {"status": "ok", "id": payment.id}
+
+@app.delete("/api/superadmin/clients/{client_id:int}/payments/{payment_id:int}")
+async def api_delete_client_payment(request: Request, client_id: int, payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import ClientPayment
+    payment = db.query(ClientPayment).filter_by(id=payment_id, client_id=client_id).first()
+    if not payment:
+        return JSONResponse(status_code=404, content={"error": "Cobro no encontrado"})
+    db.delete(payment)
+    db.commit()
     return {"status": "ok"}
 
 
