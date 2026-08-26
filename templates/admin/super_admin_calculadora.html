@@ -145,6 +145,7 @@
                         <th class="py-2 pr-3">Clientes</th>
                         <th class="py-2 pr-3">Abono USD</th>
                         <th class="py-2 pr-3">Total Costos ARS</th>
+                        <th class="py-2 pr-3">Total a Cobrar ARS</th>
                         <th class="py-2 pr-3">Ganancia ARS</th>
                         <th class="py-2 pr-3">Estado</th>
                         <th class="py-2 pr-3"></th>
@@ -348,6 +349,7 @@
                 <td class="py-2 pr-3 text-slate-400">${s.clientes}</td>
                 <td class="py-2 pr-3 text-slate-400">USD ${s.abono_usd}</td>
                 <td class="py-2 pr-3 text-slate-400">${s.total_costos_ars != null ? formatearMoneda(s.total_costos_ars) : '-'}</td>
+                <td class="py-2 pr-3 text-white font-medium">${s.total_costos_ars != null ? formatearMoneda(s.total_costos_ars + s.ganancia_ars) : '-'}</td>
                 <td class="py-2 pr-3 text-emerald-400">${formatearMoneda(s.ganancia_ars)}</td>
                 <td class="py-2 pr-3">
                     <select onchange="updateSimulationStatus(${s.id}, this)" class="px-2 py-1 text-xs rounded-lg border ${STATUS_CLASSES[s.status] || STATUS_CLASSES.borrador} bg-slate-900 focus:ring-1 focus:ring-brand-500 outline-none">
