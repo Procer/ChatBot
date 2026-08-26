@@ -78,6 +78,9 @@
                 <button onclick="window.open('/webhook/{{ client.slug }}/greenapi', '_blank')" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white px-3 rounded-lg transition-colors" title="Test Webhook">
                     <i data-lucide="webhook" class="w-4 h-4"></i>
                 </button>
+                <button onclick="openClientPayments({{ client.id }})" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 px-3 rounded-lg transition-colors" title="Cobros">
+                    <i data-lucide="banknote" class="w-4 h-4"></i>
+                </button>
             </div>
         </div>
         {% endfor %}
@@ -277,43 +280,60 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
 
-                <!-- Cobros (pagos recibidos) -->
-                <div id="paymentsSection" class="bg-slate-900/50 rounded-lg p-4 border border-slate-800 mt-6">
-                    <div class="flex items-center justify-between mb-1">
-                        <h4 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="banknote" class="w-4 h-4 text-emerald-500"></i> Cobros</h4>
-                        <div class="flex items-center gap-2">
-                            <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
-                            <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
-                        </div>
+<!-- Modal Cobros -->
+<div id="client-payments-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal('client-payments-modal')"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl">
+        <div class="glass border border-slate-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between p-6 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="banknote" class="w-5 h-5 text-emerald-500"></i>
+                    Cobros — <span id="paymentsClientName" class="text-slate-400 font-normal"></span>
+                </h3>
+                <button onclick="closeModal('client-payments-modal')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+                <input type="hidden" id="payments_client_id">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <button type="button" id="generateProposalBtn" onclick="generateProposalPdf()" disabled class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Generar Presupuesto PDF
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
+                        <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
                     </div>
-                    <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
-                    <div id="paymentsFormBox" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
-                        <input type="date" id="payment_date" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
-                        <input type="number" id="payment_amount" placeholder="Monto" step="0.01" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
-                        <select id="payment_currency" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
-                            <option value="ARS">ARS</option>
-                            <option value="USD">USD</option>
-                        </select>
-                        <input type="text" id="payment_method" placeholder="Medio de pago" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
-                        <button type="button" id="addPaymentBtn" onclick="addPayment()" class="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md px-2 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Agregar cobro</button>
-                        <input type="text" id="payment_notes" placeholder="Nota (opcional)" class="col-span-2 md:col-span-5 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
-                                    <th class="py-2 pr-3">Fecha</th>
-                                    <th class="py-2 pr-3">Monto</th>
-                                    <th class="py-2 pr-3">Medio</th>
-                                    <th class="py-2 pr-3">Nota</th>
-                                    <th class="py-2 pr-3"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="paymentsTableBody"></tbody>
-                        </table>
-                        <p id="paymentsEmptyState" class="text-slate-500 text-xs py-3 hidden">Todavía no hay cobros registrados.</p>
-                    </div>
+                </div>
+                <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
+                <div id="paymentsFormBox" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                    <input type="date" id="payment_date" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                    <input type="number" id="payment_amount" placeholder="Monto" step="0.01" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                    <select id="payment_currency" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                        <option value="ARS">ARS</option>
+                        <option value="USD">USD</option>
+                    </select>
+                    <input type="text" id="payment_method" placeholder="Medio de pago" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                    <button type="button" id="addPaymentBtn" onclick="addPayment()" class="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md px-2 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Agregar cobro</button>
+                    <input type="text" id="payment_notes" placeholder="Nota (opcional)" class="col-span-2 md:col-span-5 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+                                <th class="py-2 pr-3">Fecha</th>
+                                <th class="py-2 pr-3">Monto</th>
+                                <th class="py-2 pr-3">Medio</th>
+                                <th class="py-2 pr-3">Nota</th>
+                                <th class="py-2 pr-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody"></tbody>
+                    </table>
+                    <p id="paymentsEmptyState" class="text-slate-500 text-xs py-3 hidden">Todavía no hay cobros registrados.</p>
                 </div>
             </div>
         </div>
@@ -387,17 +407,29 @@
             openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         }
 
+        openModal('config-client-modal');
+    }
+
+    async function openClientPayments(id) {
+        const res = await fetch(`/api/superadmin/clients/${id}`);
+        const data = await res.json();
+
+        document.getElementById('payments_client_id').value = id;
+        document.getElementById('paymentsClientName').textContent = data.business_name;
         applyPaymentsGate(data.pricing || {});
         await loadPayments(id);
 
-        openModal('config-client-modal');
+        openModal('client-payments-modal');
     }
+
+    let lastArsTotal = null;
 
     function applyPaymentsGate(pricing) {
         const badge = document.getElementById('paymentsGateBadge');
         const arsBadge = document.getElementById('paymentsArsBadge');
         const gateMsg = document.getElementById('paymentsGateMessage');
         const addBtn = document.getElementById('addPaymentBtn');
+        const proposalBtn = document.getElementById('generateProposalBtn');
         const inputs = ['payment_date', 'payment_amount', 'payment_currency', 'payment_method', 'payment_notes'];
         if (pricing.has_approved) {
             badge.textContent = `Precio oficial: USD ${pricing.abono_usd}`;
@@ -413,14 +445,18 @@
             addBtn.disabled = true;
             inputs.forEach(id => document.getElementById(id).disabled = true);
             arsBadge.classList.add('hidden');
+            lastArsTotal = null;
+            proposalBtn.disabled = true;
         }
     }
 
     async function showArsTotal(abonoUsd) {
         const arsBadge = document.getElementById('paymentsArsBadge');
+        const proposalBtn = document.getElementById('generateProposalBtn');
         arsBadge.classList.remove('hidden');
         arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         arsBadge.textContent = 'Calculando ARS...';
+        proposalBtn.disabled = true;
         try {
             const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
             if (!res.ok) throw new Error('respuesta no OK');
@@ -430,9 +466,18 @@
             const formateado = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(totalArs).replace('$', 'ARS $');
             arsBadge.textContent = `Total a cobrar: ${formateado}`;
             arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            lastArsTotal = totalArs;
+            proposalBtn.disabled = false;
         } catch (e) {
             arsBadge.textContent = 'No se pudo calcular ARS';
+            lastArsTotal = null;
         }
+    }
+
+    function generateProposalPdf() {
+        const id = document.getElementById('payments_client_id').value;
+        if (!lastArsTotal) { alert('No se pudo calcular el precio en pesos todavía.'); return; }
+        window.open(`/api/superadmin/clients/${id}/proposal-pdf?precio_ars=${lastArsTotal}`, '_blank');
     }
 
     async function loadPayments(clientId) {
@@ -456,7 +501,7 @@
     }
 
     async function addPayment() {
-        const id = document.getElementById('edit_client_id').value;
+        const id = document.getElementById('payments_client_id').value;
         const amount = parseFloat(document.getElementById('payment_amount').value);
         const paymentDate = document.getElementById('payment_date').value;
         if (!amount || !paymentDate) { alert('Completá fecha y monto del cobro.'); return; }
@@ -485,7 +530,7 @@
 
     async function deletePayment(paymentId) {
         if (!confirm('¿Eliminar este cobro? No se puede deshacer.')) return;
-        const id = document.getElementById('edit_client_id').value;
+        const id = document.getElementById('payments_client_id').value;
         const res = await fetch(`/api/superadmin/clients/${id}/payments/${paymentId}`, { method: 'DELETE' });
         if (res.ok) await loadPayments(id);
         else alert('No se pudo eliminar el cobro.');

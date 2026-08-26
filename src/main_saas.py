@@ -4375,6 +4375,22 @@ async def api_delete_client_payment(request: Request, client_id: int, payment_id
     return {"status": "ok"}
 
 
+@app.get("/api/superadmin/clients/{client_id:int}/proposal-pdf")
+async def api_generate_client_proposal_pdf(client_id: int, precio_ars: float, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    client = db.query(Client).filter_by(id=client_id).first()
+    if not client:
+        return JSONResponse(status_code=404, content={"error": "Cliente no encontrado"})
+    from src.pdf_proposal import generar_pdf_propuesta_chatbot
+    pdf_bytes = generar_pdf_propuesta_chatbot(client.business_name, precio_ars)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="Propuesta_Chatbot_{client.slug}.pdf"'},
+    )
+
+
 @app.post("/admin/config/exceptions/add")
 async def add_exception(
     request: Request,
