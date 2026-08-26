@@ -299,16 +299,26 @@
             </div>
             <div class="p-6 overflow-y-auto custom-scrollbar flex-1">
                 <input type="hidden" id="payments_client_id">
-                <div class="flex items-center justify-between gap-2 mb-3">
-                    <button type="button" id="generateProposalBtn" onclick="generateProposalPdf()" disabled class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5">
-                        <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Generar Presupuesto PDF
-                    </button>
-                    <div class="flex items-center gap-2">
-                        <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
-                        <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
-                    </div>
+                <div class="flex items-center justify-end gap-2 mb-3">
+                    <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
+                    <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
                 </div>
                 <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
+
+                <div id="proposalCardBox" class="bg-slate-950/60 border border-slate-800 rounded-lg p-4 mb-6">
+                    <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="image" class="w-3.5 h-3.5 text-indigo-400"></i> Tarjeta de cobro (para WhatsApp)</h5>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Texto del detalle (editable)</label>
+                    <textarea id="proposal_mensaje" rows="2" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-indigo-500 outline-none resize-y"></textarea>
+                    <div class="flex items-center gap-2 mt-2">
+                        <button type="button" id="generateProposalBtn" onclick="generateProposalPdf()" disabled class="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5">
+                            <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Descargar PDF
+                        </button>
+                        <button type="button" id="copyProposalImageBtn" onclick="copyProposalImage()" disabled class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5">
+                            <i data-lucide="clipboard-copy" class="w-3.5 h-3.5"></i> Copiar como imagen
+                        </button>
+                        <span id="proposalCopyStatus" class="text-xs text-slate-500"></span>
+                    </div>
+                </div>
                 <div id="paymentsFormBox" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
                     <input type="date" id="payment_date" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
                     <input type="number" id="payment_amount" placeholder="Monto" step="0.01" class="col-span-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-white focus:border-emerald-500 outline-none">
@@ -410,12 +420,16 @@
         openModal('config-client-modal');
     }
 
+    const DEFAULT_PROPOSAL_MENSAJE = 'Incluye actualización de la información, pedidos de nuevas funciones y mantenimiento.';
+
     async function openClientPayments(id) {
         const res = await fetch(`/api/superadmin/clients/${id}`);
         const data = await res.json();
 
         document.getElementById('payments_client_id').value = id;
         document.getElementById('paymentsClientName').textContent = data.business_name;
+        document.getElementById('proposal_mensaje').value = DEFAULT_PROPOSAL_MENSAJE;
+        document.getElementById('proposalCopyStatus').textContent = '';
         applyPaymentsGate(data.pricing || {});
         await loadPayments(id);
 
@@ -430,6 +444,7 @@
         const gateMsg = document.getElementById('paymentsGateMessage');
         const addBtn = document.getElementById('addPaymentBtn');
         const proposalBtn = document.getElementById('generateProposalBtn');
+        const copyBtn = document.getElementById('copyProposalImageBtn');
         const inputs = ['payment_date', 'payment_amount', 'payment_currency', 'payment_method', 'payment_notes'];
         if (pricing.has_approved) {
             badge.textContent = `Precio oficial: USD ${pricing.abono_usd}`;
@@ -447,16 +462,19 @@
             arsBadge.classList.add('hidden');
             lastArsTotal = null;
             proposalBtn.disabled = true;
+            copyBtn.disabled = true;
         }
     }
 
     async function showArsTotal(abonoUsd) {
         const arsBadge = document.getElementById('paymentsArsBadge');
         const proposalBtn = document.getElementById('generateProposalBtn');
+        const copyBtn = document.getElementById('copyProposalImageBtn');
         arsBadge.classList.remove('hidden');
         arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         arsBadge.textContent = 'Calculando ARS...';
         proposalBtn.disabled = true;
+        copyBtn.disabled = true;
         try {
             const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
             if (!res.ok) throw new Error('respuesta no OK');
@@ -468,6 +486,7 @@
             arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
             lastArsTotal = totalArs;
             proposalBtn.disabled = false;
+            copyBtn.disabled = false;
         } catch (e) {
             arsBadge.textContent = 'No se pudo calcular ARS';
             lastArsTotal = null;
@@ -477,7 +496,31 @@
     function generateProposalPdf() {
         const id = document.getElementById('payments_client_id').value;
         if (!lastArsTotal) { alert('No se pudo calcular el precio en pesos todavía.'); return; }
-        window.open(`/api/superadmin/clients/${id}/proposal-pdf?precio_ars=${lastArsTotal}`, '_blank');
+        const mensaje = document.getElementById('proposal_mensaje').value || DEFAULT_PROPOSAL_MENSAJE;
+        const url = `/api/superadmin/clients/${id}/proposal-pdf?precio_ars=${lastArsTotal}&mensaje=${encodeURIComponent(mensaje)}`;
+        window.open(url, '_blank');
+    }
+
+    async function copyProposalImage() {
+        const id = document.getElementById('payments_client_id').value;
+        const statusEl = document.getElementById('proposalCopyStatus');
+        if (!lastArsTotal) { alert('No se pudo calcular el precio en pesos todavía.'); return; }
+        if (!navigator.clipboard || !window.ClipboardItem) {
+            statusEl.textContent = 'Tu navegador no permite copiar imágenes al portapapeles.';
+            return;
+        }
+        const mensaje = document.getElementById('proposal_mensaje').value || DEFAULT_PROPOSAL_MENSAJE;
+        statusEl.textContent = 'Generando imagen...';
+        try {
+            const url = `/api/superadmin/clients/${id}/proposal-image?precio_ars=${lastArsTotal}&mensaje=${encodeURIComponent(mensaje)}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('No se pudo generar la imagen');
+            const blob = await res.blob();
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            statusEl.textContent = 'Copiado — pegalo con Ctrl+V en WhatsApp.';
+        } catch (e) {
+            statusEl.textContent = 'No se pudo copiar la imagen.';
+        }
     }
 
     async function loadPayments(clientId) {
