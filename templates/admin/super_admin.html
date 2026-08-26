@@ -282,7 +282,10 @@
                 <div id="paymentsSection" class="bg-slate-900/50 rounded-lg p-4 border border-slate-800 mt-6">
                     <div class="flex items-center justify-between mb-1">
                         <h4 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="banknote" class="w-4 h-4 text-emerald-500"></i> Cobros</h4>
-                        <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
+                        <div class="flex items-center gap-2">
+                            <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
+                            <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
+                        </div>
                     </div>
                     <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
                     <div id="paymentsFormBox" class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
@@ -392,6 +395,7 @@
 
     function applyPaymentsGate(pricing) {
         const badge = document.getElementById('paymentsGateBadge');
+        const arsBadge = document.getElementById('paymentsArsBadge');
         const gateMsg = document.getElementById('paymentsGateMessage');
         const addBtn = document.getElementById('addPaymentBtn');
         const inputs = ['payment_date', 'payment_amount', 'payment_currency', 'payment_method', 'payment_notes'];
@@ -401,12 +405,33 @@
             gateMsg.classList.add('hidden');
             addBtn.disabled = false;
             inputs.forEach(id => document.getElementById(id).disabled = false);
+            showArsTotal(pricing.abono_usd);
         } else {
             badge.textContent = 'Sin presupuesto aprobado';
             badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
             gateMsg.classList.remove('hidden');
             addBtn.disabled = true;
             inputs.forEach(id => document.getElementById(id).disabled = true);
+            arsBadge.classList.add('hidden');
+        }
+    }
+
+    async function showArsTotal(abonoUsd) {
+        const arsBadge = document.getElementById('paymentsArsBadge');
+        arsBadge.classList.remove('hidden');
+        arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
+        arsBadge.textContent = 'Calculando ARS...';
+        try {
+            const res = await fetch('https://dolarapi.com/v1/dolares/oficial');
+            if (!res.ok) throw new Error('respuesta no OK');
+            const data = await res.json();
+            if (!data.venta) throw new Error('sin valor de venta');
+            const totalArs = Math.ceil((abonoUsd * data.venta) / 1000) * 1000;
+            const formateado = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(totalArs).replace('$', 'ARS $');
+            arsBadge.textContent = `Total a cobrar: ${formateado}`;
+            arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        } catch (e) {
+            arsBadge.textContent = 'No se pudo calcular ARS';
         }
     }
 
