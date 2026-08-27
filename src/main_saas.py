@@ -1126,21 +1126,33 @@ async def appointments_panel(request: Request, db: Session = Depends(get_db), cu
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
     
-    from src.database.models import Appointment, Knowledge
+    from src.database.models import Appointment, Knowledge, Employee, ClientSettings
     apps = db.query(Appointment).filter_by(client_id=target_client_id).order_by(Appointment.date.desc(), Appointment.time.desc()).all()
-    appointments = [{"id": a.id, "thread_id": a.thread_id, "client_name": a.client_name, "date": a.date, "time": a.time, "reason": a.reason, "status": a.status} for a in apps]
-    
+    employees_by_id = {e.id: e for e in db.query(Employee).filter_by(client_id=target_client_id).all()}
+    appointments = [{
+        "id": a.id, "thread_id": a.thread_id, "client_name": a.client_name, "date": a.date, "time": a.time,
+        "reason": a.reason, "status": a.status,
+        "employee_name": employees_by_id[a.employee_id].name if a.employee_id and a.employee_id in employees_by_id else None,
+        "employee_color": employees_by_id[a.employee_id].color if a.employee_id and a.employee_id in employees_by_id else None
+    } for a in apps]
+
     services = db.query(Knowledge).filter_by(client_id=target_client_id, allow_scheduling=True).all()
     services_list = [{"id": s.id, "topic": s.topic} for s in services]
-    
+
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    enable_employee_assignment = bool(settings and settings.enable_employee_assignment)
+    employees_list = [{"id": e.id, "name": e.name} for e in employees_by_id.values() if e.is_active] if enable_employee_assignment else []
+
     return templates.TemplateResponse(
-        request=request, 
-        name="admin/appointments.html", 
+        request=request,
+        name="admin/appointments.html",
         context={
-            "appointments": appointments, 
+            "appointments": appointments,
             "services_list": services_list,
-            "active_section": "turnos", 
-            "user": user_mock, 
+            "employees_list": employees_list,
+            "enable_employee_assignment": enable_employee_assignment,
+            "active_section": "turnos",
+            "user": user_mock,
             "is_impersonating": is_impersonating
         }
     )
@@ -1155,6 +1167,7 @@ async def add_appointment_manual(
     service_topic: str = Form(None),
     reason: str = Form(""),
     sync_google: int = Form(0),
+    employee_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1227,7 +1240,8 @@ async def add_appointment_manual(
         time=formatted_time,
         reason=real_reason,
         service=real_reason,
-        status="confirmed"
+        status="confirmed",
+        employee_id=employee_id
     )
     db.add(new_app)
     db.commit()
@@ -1310,6 +1324,7 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "system_prompt": settings.bot_system_prompt if settings else "",
         "working_hours": settings.working_hours if settings else "",
         "enable_working_hours_for_scheduling": "1" if settings and settings.enable_working_hours_for_scheduling else "0",
+        "enable_employee_assignment": "1" if settings and settings.enable_employee_assignment else "0",
         "feat_rag_enabled": "1" if settings and settings.feat_rag_enabled else "0",
         "feat_pdf_export": "1" if settings and settings.feat_pdf_export else "0",
         "feat_human_handoff": "1" if settings and settings.feat_human_handoff else "0",
@@ -1328,12 +1343,17 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
     exceptions_raw = db.query(SchedulingException).filter_by(client_id=target_client_id).order_by(SchedulingException.date.asc()).all()
     exceptions = [{"id": e.id, "date": e.date, "start_time": e.start_time, "end_time": e.end_time, "description": e.description} for e in exceptions_raw]
 
+    from src.database.models import Employee
+    employees_raw = db.query(Employee).filter_by(client_id=target_client_id).order_by(Employee.name.asc()).all()
+    employees = [{"id": e.id, "name": e.name, "phone": e.phone, "color": e.color, "is_active": e.is_active} for e in employees_raw]
+
     from src.database.models import FollowupContent
     followup_raw = db.query(FollowupContent).filter_by(client_id=target_client_id).order_by(FollowupContent.valid_from.asc()).all()
     followup_items = [{"id": f.id, "name": f.name, "message_text": f.message_text, "media_path": f.media_path, "interval_minutes": f.interval_minutes, "valid_from": f.valid_from, "valid_until": f.valid_until, "is_active": f.is_active} for f in followup_raw]
 
     return templates.TemplateResponse(request=request, name="admin/config.html", context={
         "config": config, "external": {}, "knowledge_items": knowledge_items, "exceptions": exceptions,
+        "employees": employees,
         "followup_items": followup_items,
         "data_files": [], "sync_needed": request.query_params.get("sync_needed") == "1", "success_reset": False,
         "error_reset": False, "external_env": {}, "active_tab": active_tab, "active_section": active_section,
@@ -1363,7 +1383,8 @@ async def save_all_config(
     settings.bot_system_prompt = form_data.get("system_prompt", settings.bot_system_prompt)
     settings.working_hours = form_data.get("working_hours", settings.working_hours)
     settings.enable_working_hours_for_scheduling = form_data.get("enable_working_hours_for_scheduling") == "1"
-    
+    settings.enable_employee_assignment = form_data.get("enable_employee_assignment") == "1"
+
     settings.reminder_24h_enabled = form_data.get("reminder_24h_enabled") == "1"
     settings.reminder_24h_template = form_data.get("reminder_24h_template", settings.reminder_24h_template)
     if "reminder_24h_hours" in form_data:
@@ -4451,6 +4472,56 @@ async def delete_exception(
     exc = db.query(SchedulingException).filter_by(client_id=target_client_id, id=exc_id).first()
     if exc:
         db.delete(exc)
+        db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=empresa&success=1", status_code=303)
+
+
+@app.post("/admin/config/employees/add")
+async def add_employee(
+    request: Request,
+    name: str = Form(...),
+    phone: str = Form(None),
+    color: str = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import Employee
+
+    new_emp = Employee(
+        client_id=target_client_id,
+        name=name.strip(),
+        phone=phone.strip() if phone else None,
+        color=color.strip() if color else None
+    )
+    db.add(new_emp)
+    db.commit()
+    return RedirectResponse(url="/admin/config?active_tab=empresa&success=1", status_code=303)
+
+
+@app.post("/admin/config/employees/update/{emp_id}")
+async def update_employee(
+    request: Request,
+    emp_id: int,
+    name: str = Form(...),
+    phone: str = Form(None),
+    color: str = Form(None),
+    is_active: int = Form(1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.models import Employee
+    emp = db.query(Employee).filter_by(client_id=target_client_id, id=emp_id).first()
+    if emp:
+        emp.name = name.strip()
+        emp.phone = phone.strip() if phone else None
+        emp.color = color.strip() if color else None
+        emp.is_active = bool(is_active)
         db.commit()
     return RedirectResponse(url="/admin/config?active_tab=empresa&success=1", status_code=303)
 

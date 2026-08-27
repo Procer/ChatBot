@@ -365,6 +365,94 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- SECCIÓN: EQUIPO DE TRABAJO (PROFESIONALES / ESTILISTAS) -->
+                <div class="p-8 bg-slate-900/20 border border-slate-800 rounded-[2.5rem] space-y-6">
+                    <div class="flex items-center justify-between flex-wrap gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-500">
+                                <i data-lucide="users" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-white">Equipo de Trabajo</h3>
+                                <p class="text-sm text-slate-500">Asigná cada turno a un profesional (ej: estilista, peluquero) y evitá que se pisen dos turnos de la misma persona.</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" name="enable_employee_assignment" value="1" class="sr-only peer" {{ 'checked' if config.enable_employee_assignment == '1' }}>
+                            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Formulario para agregar profesional -->
+                        <div class="lg:col-span-1 p-6 bg-slate-950 border border-slate-800 rounded-2xl space-y-4 h-fit">
+                            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                                <i data-lucide="user-plus" class="w-4 h-4 text-emerald-500"></i> Agregar Profesional
+                            </h4>
+                            <div class="space-y-4">
+                                <div class="space-y-1.5">
+                                    <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Nombre</label>
+                                    <input type="text" id="emp_name" placeholder="Ej: Fernanda" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none">
+                                </div>
+                                <div class="grid grid-cols-3 gap-4 items-end">
+                                    <div class="col-span-2 space-y-1.5">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Teléfono (opcional)</label>
+                                        <input type="text" id="emp_phone" placeholder="Ej: 54911..." class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white focus:border-brand-500 outline-none">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Color</label>
+                                        <input type="color" id="emp_color" value="#10b981" class="w-full h-[38px] bg-slate-900 border border-slate-800 rounded-xl p-1 cursor-pointer">
+                                    </div>
+                                </div>
+                                <button type="button" onclick="submitEmployee()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+                                    <i data-lucide="plus" class="w-3.5 h-3.5"></i> Agregar al Equipo
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Listado de profesionales existentes -->
+                        <div class="lg:col-span-2 space-y-4">
+                            <h4 class="text-sm font-bold text-white">Profesionales Cargados</h4>
+                            <div class="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead class="bg-slate-900/60 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider">
+                                            <tr>
+                                                <th class="p-4">Nombre</th>
+                                                <th class="p-4">Teléfono</th>
+                                                <th class="p-4 text-right">Activo</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-800/50 text-slate-300">
+                                            {% if employees %}
+                                                {% for emp in employees %}
+                                                <tr class="hover:bg-slate-900/20 transition-colors">
+                                                    <td class="p-4 font-bold">
+                                                        <span class="inline-block w-2.5 h-2.5 rounded-full mr-2 align-middle" style="background-color: {{ emp.color or '#10b981' }};"></span>
+                                                        {{ emp.name }}
+                                                    </td>
+                                                    <td class="p-4 text-slate-400 font-medium">{{ emp.phone or '-' }}</td>
+                                                    <td class="p-4 text-right">
+                                                        <label class="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" onchange="toggleEmployeeActive({{ emp.id }}, '{{ emp.name|e }}', '{{ emp.phone or ''|e }}', '{{ emp.color or '#10b981' }}', this.checked)" class="sr-only peer" {{ 'checked' if emp.is_active }}>
+                                                            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                        </label>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            {% else %}
+                                            <tr>
+                                                <td colspan="3" class="p-8 text-center text-slate-500">Todavía no cargaste profesionales en el equipo.</td>
+                                            </tr>
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- SECCIÓN: AVANZADO -->
@@ -1086,6 +1174,58 @@
             }
         } catch (e) {
             alert('Error de red al intentar agregar el bloqueo.');
+        }
+    }
+
+    async function submitEmployee() {
+        const name = document.getElementById('emp_name').value.trim();
+        const phone = document.getElementById('emp_phone').value.trim();
+        const color = document.getElementById('emp_color').value;
+
+        if (!name) {
+            alert('Por favor, ingresá un nombre.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('phone', phone);
+        formData.append('color', color);
+
+        try {
+            const response = await fetch('/admin/config/employees/add', {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                window.location.href = '/admin/config?active_tab=empresa&success=1';
+            } else {
+                alert('Error al agregar el profesional.');
+            }
+        } catch (e) {
+            alert('Error de red al intentar agregar el profesional.');
+        }
+    }
+
+    async function toggleEmployeeActive(id, name, phone, color, isActive) {
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('phone', phone);
+        formData.append('color', color);
+        formData.append('is_active', isActive ? '1' : '0');
+
+        try {
+            const response = await fetch(`/admin/config/employees/update/${id}`, {
+                method: 'POST',
+                body: formData
+            });
+            if (response.ok) {
+                window.location.href = '/admin/config?active_tab=empresa&success=1';
+            } else {
+                alert('Error al actualizar el profesional.');
+            }
+        } catch (e) {
+            alert('Error de red al intentar actualizar el profesional.');
         }
     }
 </script>

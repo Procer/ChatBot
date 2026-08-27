@@ -123,6 +123,18 @@
                 </select>
             </div>
 
+            {% if enable_employee_assignment %}
+            <div class="space-y-2">
+                <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Profesional</label>
+                <select name="employee_id" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                    <option value="">Sin preferencia / Cualquiera disponible</option>
+                    {% for emp in employees_list %}
+                    <option value="{{ emp.id }}">{{ emp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
             <div class="space-y-2">
                 <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest block ml-1">Detalle / Motivo</label>
                 <input type="text" name="reason" placeholder="Ej: Reunión inicial" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
@@ -176,6 +188,11 @@
                 </td>
                 <td class="px-8 py-5">
                     <span class="text-slate-200 font-bold">${a.client_name}</span>
+                    ${a.employee_name ? `
+                    <span class="ml-2 inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                        <span class="inline-block w-2 h-2 rounded-full" style="background-color: ${a.employee_color || '#10b981'};"></span>${a.employee_name}
+                    </span>
+                    ` : ''}
                 </td>
                 <td class="px-8 py-5 text-sm text-slate-500 truncate max-w-xs">${a.reason}</td>
                 <td class="px-8 py-5 text-right flex justify-end items-center gap-4">
@@ -249,6 +266,11 @@
                     </div>
                     <p class="text-sm font-semibold text-slate-200">${a.client_name}</p>
                     <p class="text-[10px] text-slate-500 line-clamp-1">${a.reason}</p>
+                    ${a.employee_name ? `
+                    <span class="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                        <span class="inline-block w-2 h-2 rounded-full" style="background-color: ${a.employee_color || '#10b981'};"></span>${a.employee_name}
+                    </span>
+                    ` : ''}
                 </div>
             `).join('');
         }

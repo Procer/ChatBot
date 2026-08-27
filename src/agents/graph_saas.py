@@ -305,7 +305,7 @@ def registrar_nombre_usuario(nombre_completo: str, config: RunnableConfig = None
 
 # --- Lógica de Negocio de Turnos y Expedientes (SaaS SQL Server) ---
 
-def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: str = None):
+def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: str = None, employee_id: int = None):
     from datetime import datetime, timedelta
     db = SessionLocal()
     try:
@@ -342,6 +342,18 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
         capacity = settings.scheduling_capacity or 1
         if tramite_nombre and match and hasattr(match, "scheduling_capacity") and match.scheduling_capacity is not None:
             capacity = match.scheduling_capacity
+
+        # Si el cliente tiene asignación de profesional/estilista activada, la capacidad real
+        # de cada slot pasa a depender de la cantidad de profesionales (no de scheduling_capacity):
+        # si se pide un profesional puntual, solo él puede ocupar ese slot (capacity=1); si no se
+        # pide ninguno en particular, el slot está libre mientras haya al menos un profesional activo sin turno.
+        if settings.enable_employee_assignment:
+            from src.database.models import Employee
+            if employee_id:
+                capacity = 1
+            else:
+                capacity = db.query(Employee).filter_by(client_id=client_id, is_active=True).count()
+
         # Días habilitados: si el trámite matcheado tiene sus propios días configurados, tienen
         # prioridad sobre los días generales del cliente (permite, ej., que "Extracción de sangre"
         # solo se agende lunes/miércoles/viernes aunque el negocio atienda de lunes a viernes).
@@ -451,11 +463,14 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
                 except Exception as e:
                     logging.error(f"Error consultando Google Calendar: {e}")
         
-        local_apps = db.query(Appointment).filter(
+        local_apps_query = db.query(Appointment).filter(
             Appointment.client_id == client_id,
             Appointment.date == date_str,
             Appointment.status != 'cancelled'
-        ).all()
+        )
+        if settings.enable_employee_assignment and employee_id:
+            local_apps_query = local_apps_query.filter(Appointment.employee_id == employee_id)
+        local_apps = local_apps_query.all()
         for ap in local_apps:
             t = ap.time.strip() if ap.time else "00:00"
             if ":" in t:
@@ -494,7 +509,7 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
         db.close()
 
 
-def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str: str, reason: str, tramite_nombre: str = None):
+def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str: str, reason: str, tramite_nombre: str = None, employee_id: int = None):
     from datetime import datetime, timedelta
     db = SessionLocal()
     try:
@@ -545,7 +560,32 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
                     google_success = False
             else:
                 google_success = False
-                
+
+        assigned_employee_id = None
+        if settings.enable_employee_assignment:
+            from src.database.models import Employee
+            if employee_id:
+                assigned_employee_id = employee_id
+            else:
+                busy_ids = {
+                    e_id for (e_id,) in db.query(Appointment.employee_id).filter(
+                        Appointment.client_id == client_id,
+                        Appointment.date == date_str,
+                        Appointment.time == time_str,
+                        Appointment.status != 'cancelled',
+                        Appointment.employee_id.isnot(None)
+                    ).all()
+                }
+                free_employee_query = db.query(Employee).filter(
+                    Employee.client_id == client_id,
+                    Employee.is_active == True
+                )
+                if busy_ids:
+                    free_employee_query = free_employee_query.filter(~Employee.id.in_(busy_ids))
+                free_employee = free_employee_query.first()
+                if free_employee:
+                    assigned_employee_id = free_employee.id
+
         new_app = Appointment(
             client_id=client_id,
             thread_id=thread_id,
@@ -554,7 +594,8 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
             time=time_str,
             reason=reason,
             service=reason,
-            status="confirmed"
+            status="confirmed",
+            employee_id=assigned_employee_id
         )
         db.add(new_app)
         db.commit()

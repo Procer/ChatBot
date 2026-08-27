@@ -102,7 +102,8 @@ class ClientSettings(Base):
     appointment_duration = Column(Integer, default=30)
     google_calendar_id = Column(String(255), default="primary")
     enable_working_hours_for_scheduling = Column(Boolean, default=False)
-    
+    enable_employee_assignment = Column(Boolean, default=False)
+
     # --- AJUSTES DE RECORDATORIOS AUTOMÁTICOS ---
     reminder_24h_enabled = Column(Boolean, default=False)
     reminder_24h_template = Column(Text, nullable=True)
@@ -308,6 +309,7 @@ class Appointment(Base):
     service = Column(String(255))
     reason = Column(Text)
     status = Column(String(50), default="pending")
+    employee_id = Column(Integer, ForeignKey("data_employees.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Proceeding(Base):
@@ -329,6 +331,16 @@ class SchedulingException(Base):
     start_time = Column(String(20), nullable=True) # HH:MM (None if all day)
     end_time = Column(String(20), nullable=True) # HH:MM (None if all day)
     description = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Employee(Base):
+    __tablename__ = "data_employees"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)
+    phone = Column(String(50), nullable=True)
+    color = Column(String(7), nullable=True)  # hex, para distinguir turnos en el calendario
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Tag(Base):
