@@ -15,7 +15,7 @@
 
     <div class="mb-6">
         <h2 class="text-xl font-bold text-white tracking-tight">Simulador Financiero SaaS</h2>
-        <p class="text-sm text-slate-400 mt-1">Calculá costos e ingresos por cliente y guardá el abono oficial con historial de cambios.</p>
+        <p class="text-sm text-slate-400 mt-1">Cargá los costos de APIs/servidor y tu ganancia deseada en USD; el sistema calcula el total a cobrar por cliente y guardás el abono oficial con historial de cambios.</p>
     </div>
 
     <div class="flex items-center gap-2 mb-4">
@@ -31,7 +31,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <!-- Variables y Abonos -->
         <div class="glass rounded-xl p-5 border border-slate-700/50">
-            <h3 class="text-sm font-bold text-white mb-3">Variables y Abonos</h3>
+            <h3 class="text-sm font-bold text-white mb-3">Variables y Costos</h3>
             <div class="space-y-3">
                 <div>
                     <label class="text-xs text-slate-400 block mb-1">Cotización Dólar Oficial (ARS)</label>
@@ -48,22 +48,18 @@
                     <input type="number" id="clientesInput" value="1" min="1" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
                 </div>
                 <div>
-                    <label class="text-xs text-slate-400 block mb-1">Abono Mensual por Cliente (USD)</label>
-                    <div class="flex items-center gap-2">
-                        <input type="number" id="abonoUsd" value="150" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
-                        <button type="button" onclick="usarCobroSugerido()" title="Calcular abono para que el cobro total sea el doble del costo total" class="px-2 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold rounded-lg border border-slate-700 shrink-0 whitespace-nowrap">
-                            2× costo
-                        </button>
-                    </div>
-                    <p class="text-[11px] text-slate-500 mt-1">"2× costo" recalcula el abono para que el cobro total equivalga al doble del costo total de infraestructura (markup 100%).</p>
-                </div>
-                <div>
                     <label class="text-xs text-slate-400 block mb-1">Costo WhatsApp por Cliente (USD)</label>
                     <input type="number" id="greenApiUsd" value="12" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
                 </div>
                 <div>
                     <label class="text-xs text-slate-400 block mb-1">Consumo OpenAI por Cliente (USD)</label>
                     <input type="number" id="openaiUsd" value="10" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Adicional / Ganancia por Cliente (USD)</label>
+                    <input type="number" id="adicionalUsd" value="20" oninput="calcular()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <p class="text-[11px] text-slate-500 mt-1">Lo que querés ganar por cliente por encima del costo de APIs y servidor. El sistema lo suma a los costos y calcula el total a cobrar.</p>
+                    <p id="precioOficialGuardado" class="text-[11px] text-amber-400 mt-1 hidden"></p>
                 </div>
             </div>
         </div>
@@ -93,12 +89,15 @@
     <div class="glass rounded-xl p-5 border border-brand-500/30 mb-6">
         <h3 class="text-sm font-bold text-white mb-3">Proyección Mensual del Negocio</h3>
         <div class="space-y-2 text-sm">
-            <div class="flex justify-between"><span class="text-slate-400">Ingresos Totales Brutos:</span><span id="resIngresos" class="font-bold text-sky-400">$0</span></div>
             <div class="flex justify-between"><span class="text-slate-400">Costos de APIs de WhatsApp:</span><span id="resCostowha" class="text-rose-400">$0</span></div>
             <div class="flex justify-between"><span class="text-slate-400">Costos de Tokens OpenAI:</span><span id="resCostoIa" class="text-rose-400">$0</span></div>
             <div class="flex justify-between"><span class="text-slate-400">Servidor (<span id="badgeServidor">Plan Base</span>):</span><span id="resCostoServer" class="text-rose-400">$0</span></div>
             <div class="flex justify-between border-t border-slate-800 pt-2"><span class="text-slate-400 font-semibold">Total Costos de Infraestructura:</span><span id="resTotalCostos" class="font-semibold text-slate-300">$0</span></div>
-            <div class="flex justify-between border-t border-slate-700 pt-2 text-base"><span class="text-white font-bold">Ganancia Neta Estimada:</span><span id="resGanancia" class="font-bold text-emerald-400">$0</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Adicional / Ganancia (todos los clientes):</span><span id="resAdicional" class="text-emerald-400">$0</span></div>
+            <div class="flex justify-between border-t border-slate-800 pt-2"><span class="text-slate-400">Costo de infraestructura por cliente:</span><span id="resCostoPorCliente" class="text-slate-300">$0</span></div>
+            <div class="flex justify-between"><span class="text-slate-400">Abono mensual por cliente (lo que paga cada uno):</span><span id="resAbonoPorCliente" class="font-semibold text-white">$0</span></div>
+            <div class="flex justify-between border-t border-slate-700 pt-2 text-base"><span class="text-white font-bold">Total a Cobrar (todos los clientes):</span><span id="resTotalCobrar" class="font-bold text-sky-400">$0</span></div>
+            <div class="flex justify-between text-base"><span class="text-white font-bold">Ganancia Neta Estimada (ARS):</span><span id="resGanancia" class="font-bold text-emerald-400">$0</span></div>
         </div>
 
         <div class="flex flex-wrap gap-3 mt-5">
@@ -143,7 +142,7 @@
                         <th class="py-2 pr-3">Fecha</th>
                         <th class="py-2 pr-3">Nombre</th>
                         <th class="py-2 pr-3">Clientes</th>
-                        <th class="py-2 pr-3">Abono USD</th>
+                        <th class="py-2 pr-3">Abono/cliente USD</th>
                         <th class="py-2 pr-3">Total Costos ARS</th>
                         <th class="py-2 pr-3">Total a Cobrar ARS</th>
                         <th class="py-2 pr-3">Ganancia ARS</th>
@@ -188,7 +187,7 @@
     function calcular() {
         const tipoCambio = parseFloat(document.getElementById('tipoCambio').value) || 0;
         const clientes = parseInt(document.getElementById('clientesInput').value) || 0;
-        const abonoUsd = parseFloat(document.getElementById('abonoUsd').value) || 0;
+        const adicionalUsd = parseFloat(document.getElementById('adicionalUsd').value) || 0;
         const greenApiUsd = parseFloat(document.getElementById('greenApiUsd').value) || 0;
         const openaiUsd = parseFloat(document.getElementById('openaiUsd').value) || 0;
         const serverTramo1 = parseFloat(document.getElementById('serverTramo1').value) || 0;
@@ -197,7 +196,6 @@
 
         const redondearArriba = (valor) => Math.ceil(valor / 1000) * 1000;
 
-        const ingresosArs = redondearArriba(clientes * abonoUsd * tipoCambio);
         const costoWhaArs = redondearArriba(clientes * greenApiUsd * tipoCambio);
         const costoIaArs = redondearArriba(clientes * openaiUsd * tipoCambio);
 
@@ -210,42 +208,48 @@
         costoServerArs = redondearArriba(costoServerArs);
 
         const totalCostosArs = redondearArriba(costoWhaArs + costoIaArs + costoServerArs);
-        const gananciaNetaArs = redondearArriba(ingresosArs - totalCostosArs);
+        const adicionalTotalArs = redondearArriba(clientes * adicionalUsd * tipoCambio);
+        const totalCobrarArs = totalCostosArs + adicionalTotalArs;
+        const gananciaNetaArs = adicionalTotalArs;
+
+        const costoPorClienteArs = clientes > 0 ? redondearArriba(totalCostosArs / clientes) : 0;
+        const costoInfraPorClienteUsd = (clientes > 0 && tipoCambio > 0) ? (totalCostosArs / clientes) / tipoCambio : 0;
+        const abonoPorClienteArs = clientes > 0 ? redondearArriba(totalCobrarArs / clientes) : 0;
+        const abonoUsd = tipoCambio > 0 ? Math.round(abonoPorClienteArs / tipoCambio) : 0;
 
         const formatearMoneda = (valor) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(valor).replace('$', 'ARS $');
 
-        document.getElementById('resIngresos').innerText = formatearMoneda(ingresosArs);
         document.getElementById('resCostowha').innerText = formatearMoneda(costoWhaArs);
         document.getElementById('resCostoIa').innerText = formatearMoneda(costoIaArs);
         document.getElementById('resCostoServer').innerText = formatearMoneda(costoServerArs);
         document.getElementById('resTotalCostos').innerText = formatearMoneda(totalCostosArs);
+        document.getElementById('resAdicional').innerText = formatearMoneda(adicionalTotalArs);
+        document.getElementById('resCostoPorCliente').innerText = formatearMoneda(costoPorClienteArs);
+        document.getElementById('resAbonoPorCliente').innerText = `${formatearMoneda(abonoPorClienteArs)} · USD ${abonoUsd}`;
+        document.getElementById('resTotalCobrar').innerText = formatearMoneda(totalCobrarArs);
         document.getElementById('resGanancia').innerText = formatearMoneda(gananciaNetaArs);
         document.getElementById('badgeServidor').innerText = nombrePlan;
 
-        lastResult = { tipoCambio, clientes, abonoUsd, greenApiUsd, openaiUsd, serverTramo1, serverTramo2, serverTramo3, gananciaNetaArs, totalCostosArs };
-        return { totalCostosArs, ingresosArs };
-    }
-
-    function usarCobroSugerido() {
-        const { totalCostosArs } = calcular();
-        const tipoCambio = parseFloat(document.getElementById('tipoCambio').value) || 0;
-        const clientes = parseInt(document.getElementById('clientesInput').value) || 0;
-        if (clientes <= 0 || tipoCambio <= 0) {
-            alert('Completá cantidad de clientes y cotización antes de calcular el cobro sugerido.');
-            return;
-        }
-        const abonoSugerido = Math.round((2 * totalCostosArs) / (clientes * tipoCambio));
-        document.getElementById('abonoUsd').value = abonoSugerido;
-        calcular();
+        lastResult = { tipoCambio, clientes, abonoUsd, adicionalUsd, greenApiUsd, openaiUsd, serverTramo1, serverTramo2, serverTramo3, gananciaNetaArs, totalCostosArs, totalCobrarArs, costoInfraPorClienteUsd };
+        return { totalCostosArs, totalCobrarArs, costoInfraPorClienteUsd };
     }
 
     async function onClientChange() {
         const clientId = document.getElementById('clientSelect').value;
         document.getElementById('historyBox').classList.toggle('hidden', !clientId);
-        if (!clientId) { await loadSimulations(); return; }
+        const savedNote = document.getElementById('precioOficialGuardado');
+        if (!clientId) { savedNote.classList.add('hidden'); await loadSimulations(); return; }
         const res = await fetch(`/api/superadmin/pricing/${clientId}`);
         const data = await res.json();
-        if (data.abono_usd) document.getElementById('abonoUsd').value = data.abono_usd;
+        calcular();
+        if (data.abono_usd != null) {
+            const adicionalDerivado = Math.max(0, Math.round(data.abono_usd - (lastResult.costoInfraPorClienteUsd || 0)));
+            document.getElementById('adicionalUsd').value = adicionalDerivado;
+            savedNote.textContent = `Precio oficial guardado para este cliente: USD ${data.abono_usd} por mes`;
+            savedNote.classList.remove('hidden');
+        } else {
+            savedNote.classList.add('hidden');
+        }
         calcular();
         renderHistory(data.history || []);
         await loadSimulations();
