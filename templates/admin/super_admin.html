@@ -1,6 +1,6 @@
 {% extends "admin/layout.html" %}
 
-{% block title %}Modo Dios | ZSG SaaS{% endblock %}
+{% block title %}Modo Dios | anka{% endblock %}
 
 {% block breadcrumb %}Plataforma SaaS{% endblock %}
 {% block section_title %}Modo Dios - Súper Admin{% endblock %}
@@ -15,7 +15,7 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h2 class="text-xl font-bold text-white tracking-tight">Gestión de Clientes (Inquilinos)</h2>
-            <p class="text-sm text-slate-400 mt-1">Control maestro de todas las empresas conectadas a ZSG-Bot-iA.</p>
+            <p class="text-sm text-slate-400 mt-1">Control maestro de todas las empresas conectadas a anka.</p>
         </div>
         <button onclick="openModal('new-client-modal')" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center gap-2">
             <i data-lucide="plus" class="w-4 h-4"></i>
@@ -58,10 +58,10 @@
                 </div>
             </div>
 
-            {% if client.id in approved_sims %}
+            {% if client.id in client_tariffs %}
             <a href="/super-admin/calculadora?client_id={{ client.id }}" class="mb-4 flex items-center justify-between px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs hover:bg-emerald-500/20 transition-colors">
                 <span class="text-emerald-400 font-semibold flex items-center gap-1.5">
-                    <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Aprobada: USD {{ approved_sims[client.id].abono_usd }}
+                    <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Tarifa: USD {{ client_tariffs[client.id].abono_usd }}
                 </span>
                 <span class="text-slate-500">Ver →</span>
             </a>
@@ -301,9 +301,9 @@
                 <input type="hidden" id="payments_client_id">
                 <div class="flex items-center justify-end gap-2 mb-3">
                     <span id="paymentsArsBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500 hidden"></span>
-                    <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin presupuesto aprobado</span>
+                    <span id="paymentsGateBadge" class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500">Sin tarifa cargada</span>
                 </div>
-                <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene un presupuesto aprobado en la Calculadora — no se pueden registrar cobros hasta aprobar uno.</p>
+                <p id="paymentsGateMessage" class="text-xs text-amber-400 mb-3">Este cliente todavía no tiene una tarifa guardada en la Calculadora — no se pueden registrar cobros hasta cargar una.</p>
 
                 <div id="proposalCardBox" class="bg-slate-950/60 border border-slate-800 rounded-lg p-4 mb-6">
                     <h5 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5"><i data-lucide="image" class="w-3.5 h-3.5 text-indigo-400"></i> Tarjeta de cobro (para WhatsApp)</h5>
@@ -430,6 +430,9 @@
         document.getElementById('paymentsClientName').textContent = data.business_name;
         document.getElementById('proposal_mensaje').value = DEFAULT_PROPOSAL_MENSAJE;
         document.getElementById('proposalCopyStatus').textContent = '';
+        document.getElementById('payment_date').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('payment_amount').value = '';
+        document.getElementById('payment_currency').value = 'ARS';
         applyPaymentsGate(data.pricing || {});
         await loadPayments(id);
 
@@ -447,14 +450,14 @@
         const copyBtn = document.getElementById('copyProposalImageBtn');
         const inputs = ['payment_date', 'payment_amount', 'payment_currency', 'payment_method', 'payment_notes'];
         if (pricing.has_approved) {
-            badge.textContent = `Precio oficial: USD ${pricing.abono_usd}`;
+            badge.textContent = `Tarifa: USD ${pricing.abono_usd}`;
             badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
             gateMsg.classList.add('hidden');
             addBtn.disabled = false;
             inputs.forEach(id => document.getElementById(id).disabled = false);
             showArsTotal(pricing.abono_usd);
         } else {
-            badge.textContent = 'Sin presupuesto aprobado';
+            badge.textContent = 'Sin tarifa cargada';
             badge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
             gateMsg.classList.remove('hidden');
             addBtn.disabled = true;
@@ -482,9 +485,15 @@
             if (!data.venta) throw new Error('sin valor de venta');
             const totalArs = Math.ceil((abonoUsd * data.venta) / 1000) * 1000;
             const formateado = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(totalArs).replace('$', 'ARS $');
-            arsBadge.textContent = `Total a cobrar: ${formateado}`;
+            arsBadge.textContent = `Tarifa vigente: ${formateado}`;
             arsBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
             lastArsTotal = totalArs;
+            // Precargar el cobro con la última tarifa guardada del cliente (recalculada a hoy).
+            const amountEl = document.getElementById('payment_amount');
+            if (!amountEl.value) {
+                amountEl.value = totalArs;
+                document.getElementById('payment_currency').value = 'ARS';
+            }
             proposalBtn.disabled = false;
             copyBtn.disabled = false;
         } catch (e) {
@@ -561,7 +570,7 @@
             body: JSON.stringify(data)
         });
         if (res.ok) {
-            document.getElementById('payment_amount').value = '';
+            document.getElementById('payment_amount').value = lastArsTotal || '';
             document.getElementById('payment_method').value = '';
             document.getElementById('payment_notes').value = '';
             await loadPayments(id);

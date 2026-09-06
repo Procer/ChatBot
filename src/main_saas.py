@@ -30,7 +30,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Inicialización de FastAPI
-app = FastAPI(title="ZSG-Bot-iA Multi-Tenant SaaS", version="2.5.0")
+app = FastAPI(title="anka Multi-Tenant SaaS", version="2.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -3857,17 +3857,13 @@ async def super_admin_panel(request: Request, db: Session = Depends(get_db), cur
     clients = db.query(Client).all()
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
 
-    from src.database.models import PricingSimulation
-    approved_sims = {}
-    approved_rows = db.query(PricingSimulation).filter_by(status="aprobada").order_by(PricingSimulation.status_updated_at.desc()).all()
-    for s in approved_rows:
-        if s.client_id and s.client_id not in approved_sims:
-            approved_sims[s.client_id] = s
+    from src.database.models import ClientPricing
+    client_tariffs = {p.client_id: p for p in db.query(ClientPricing).all()}
 
     return templates.TemplateResponse(request=request, name="admin/super_admin.html", context={
         "clients": clients,
         "user": user_mock,
-        "approved_sims": approved_sims
+        "client_tariffs": client_tariffs
     })
 
 @app.get("/super-admin/impersonate/{client_id}")
@@ -3999,20 +3995,6 @@ class ClientPricingUpdatePayload(BaseModel):
     abono_usd: float
     reason: str | None = None
 
-class PricingSimulationPayload(BaseModel):
-    client_id: int | None = None
-    label: str | None = None
-    tipo_cambio: float
-    clientes: int
-    abono_usd: float
-    green_api_usd: float
-    openai_usd: float
-    server_tramo1: float
-    server_tramo2: float
-    server_tramo3: float
-    ganancia_ars: float
-    total_costos_ars: float | None = None
-
 @app.get("/api/superadmin/pricing/{client_id:int}")
 async def api_get_client_pricing(request: Request, client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not require_superadmin(current_user):
@@ -4048,85 +4030,6 @@ async def api_update_client_pricing(request: Request, client_id: int, payload: C
     db.commit()
     return {"status": "ok"}
 
-@app.post("/api/superadmin/pricing/simulations")
-async def api_save_pricing_simulation(request: Request, payload: PricingSimulationPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not require_superadmin(current_user):
-        return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    from src.database.models import PricingSimulation
-    sim = PricingSimulation(**payload.dict())
-    db.add(sim)
-    db.commit()
-    db.refresh(sim)
-    return {"status": "ok", "id": sim.id}
-
-@app.get("/api/superadmin/pricing/simulations")
-async def api_list_pricing_simulations(request: Request, client_id: int = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not require_superadmin(current_user):
-        return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    from src.database.models import PricingSimulation
-    query = db.query(PricingSimulation)
-    if client_id:
-        query = query.filter_by(client_id=client_id)
-    sims = query.order_by(PricingSimulation.created_at.desc()).limit(100).all()
-    return {"status": "ok", "simulations": [{
-        "id": s.id,
-        "label": s.label,
-        "client_id": s.client_id,
-        "tipo_cambio": s.tipo_cambio,
-        "clientes": s.clientes,
-        "abono_usd": s.abono_usd,
-        "green_api_usd": s.green_api_usd,
-        "openai_usd": s.openai_usd,
-        "server_tramo1": s.server_tramo1,
-        "server_tramo2": s.server_tramo2,
-        "server_tramo3": s.server_tramo3,
-        "ganancia_ars": s.ganancia_ars,
-        "total_costos_ars": s.total_costos_ars,
-        "status": s.status,
-        "created_at": s.created_at.strftime("%d/%m/%Y %H:%M") if s.created_at else ""
-    } for s in sims]}
-
-PRICING_SIMULATION_STATUSES = ("borrador", "enviada", "aprobada", "rechazada")
-
-class PricingSimulationStatusPayload(BaseModel):
-    status: str
-
-@app.patch("/api/superadmin/pricing/simulations/{sim_id}/status")
-async def api_update_pricing_simulation_status(request: Request, sim_id: int, payload: PricingSimulationStatusPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not require_superadmin(current_user):
-        return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    if payload.status not in PRICING_SIMULATION_STATUSES:
-        return JSONResponse(status_code=400, content={"error": "Estado inválido"})
-
-    from src.database.models import PricingSimulation, ClientPricing, ClientPricingHistory
-    sim = db.query(PricingSimulation).filter_by(id=sim_id).first()
-    if not sim:
-        return JSONResponse(status_code=404, content={"error": "Simulación no encontrada"})
-
-    if payload.status == "aprobada" and not sim.client_id:
-        return JSONResponse(status_code=400, content={"error": "Esta simulación no tiene un cliente asociado, no se puede aprobar"})
-
-    sim.status = payload.status
-    sim.status_updated_at = datetime.now()
-
-    if payload.status == "aprobada":
-        pricing = db.query(ClientPricing).filter_by(client_id=sim.client_id).first()
-        old_value = pricing.abono_usd if pricing else None
-        if not pricing:
-            pricing = ClientPricing(client_id=sim.client_id, abono_usd=sim.abono_usd)
-            db.add(pricing)
-        else:
-            pricing.abono_usd = sim.abono_usd
-        db.add(ClientPricingHistory(
-            client_id=sim.client_id,
-            old_abono_usd=old_value,
-            new_abono_usd=sim.abono_usd,
-            reason=f"Simulación aprobada{' (' + sim.label + ')' if sim.label else ''}"
-        ))
-
-    db.commit()
-    return {"status": "ok"}
-
 @app.delete("/api/superadmin/pricing/history/{history_id:int}")
 async def api_delete_pricing_history(request: Request, history_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not require_superadmin(current_user):
@@ -4136,18 +4039,6 @@ async def api_delete_pricing_history(request: Request, history_id: int, db: Sess
     if not entry:
         return JSONResponse(status_code=404, content={"error": "Registro no encontrado"})
     db.delete(entry)
-    db.commit()
-    return {"status": "ok"}
-
-@app.delete("/api/superadmin/pricing/simulations/{sim_id:int}")
-async def api_delete_pricing_simulation(request: Request, sim_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not require_superadmin(current_user):
-        return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    from src.database.models import PricingSimulation
-    sim = db.query(PricingSimulation).filter_by(id=sim_id).first()
-    if not sim:
-        return JSONResponse(status_code=404, content={"error": "Simulación no encontrada"})
-    db.delete(sim)
     db.commit()
     return {"status": "ok"}
 
@@ -4334,8 +4225,8 @@ async def clear_client_openai_key(client_id: int, db: Session = Depends(get_db),
 
 
 # --- Cobros (pagos recibidos) por cliente, en Gestión de Clientes ---
-# Solo se pueden registrar para clientes que ya tienen un precio oficial (ClientPricing),
-# es decir, con un presupuesto aprobado desde la Calculadora.
+# Solo se pueden registrar para clientes que ya tienen una tarifa guardada (ClientPricing)
+# desde la Calculadora.
 
 class ClientPaymentPayload(BaseModel):
     amount: float
@@ -4365,7 +4256,7 @@ async def api_create_client_payment(request: Request, client_id: int, payload: C
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
     from src.database.models import ClientPricing, ClientPayment
     if not db.query(ClientPricing).filter_by(client_id=client_id).first():
-        return JSONResponse(status_code=400, content={"error": "Este cliente todavía no tiene un presupuesto aprobado — no se pueden registrar cobros."})
+        return JSONResponse(status_code=400, content={"error": "Este cliente todavía no tiene una tarifa guardada en la Calculadora — no se pueden registrar cobros."})
     try:
         payment_date = datetime.strptime(payload.payment_date, "%Y-%m-%d")
     except ValueError:
@@ -4701,6 +4592,6 @@ async def startup_event():
 # ==========================================
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Servidor Multi-Tenant SaaS (ZSG-Bot-iA)")
+    print("🚀 Iniciando Servidor Multi-Tenant SaaS (anka)")
     # Ejecutamos en el puerto 8001 para no pisar el servidor legacy (8000)
     uvicorn.run("src.main_saas:app", host="0.0.0.0", port=8001, reload=True)
