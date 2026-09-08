@@ -4042,6 +4042,70 @@ async def api_delete_pricing_history(request: Request, history_id: int, db: Sess
     db.commit()
     return {"status": "ok"}
 
+# --- Precio de lista público (para la landing anka.ar) ------------------------
+# La landing es estática y vive en el mismo dominio; consume este endpoint sin
+# auth. El precio se calcula server-side (src/pricing.py) con el dólar oficial
+# del día, cacheado en memoria y con fallback a disco si dolarapi está caído.
+_PUBLIC_PRICING_CACHE: dict = {"data": None, "ts": None}
+_PUBLIC_PRICING_TTL = timedelta(hours=6)
+_DOLAR_FALLBACK_FILE = os.path.join("data", "last_dolar.json")
+_DOLAR_HARD_FALLBACK = 1530.0
+
+def _read_dolar_fallback() -> float:
+    try:
+        with open(_DOLAR_FALLBACK_FILE, "r", encoding="utf-8") as f:
+            return float(json.load(f).get("venta") or _DOLAR_HARD_FALLBACK)
+    except Exception:
+        return _DOLAR_HARD_FALLBACK
+
+def _write_dolar_fallback(venta: float):
+    try:
+        os.makedirs("data", exist_ok=True)
+        with open(_DOLAR_FALLBACK_FILE, "w", encoding="utf-8") as f:
+            json.dump({"venta": venta, "updated_at": datetime.now().isoformat()}, f)
+    except Exception as e:
+        logging.warning(f"[public/pricing] no se pudo guardar fallback de dólar: {e}")
+
+@app.get("/api/public/pricing")
+async def api_public_pricing():
+    from src.pricing import compute_saas_list_price_ars
+
+    now = datetime.now()
+    cached = _PUBLIC_PRICING_CACHE
+    if cached["data"] and cached["ts"] and (now - cached["ts"]) < _PUBLIC_PRICING_TTL:
+        return JSONResponse(cached["data"], headers={"Cache-Control": "public, max-age=21600"})
+
+    source = "live"
+    venta = None
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            res = await client.get("https://dolarapi.com/v1/dolares/oficial")
+            res.raise_for_status()
+            venta = float(res.json().get("venta") or 0) or None
+    except Exception as e:
+        logging.warning(f"[public/pricing] dolarapi falló: {e}")
+
+    if venta:
+        _write_dolar_fallback(venta)
+    else:
+        venta = _read_dolar_fallback()
+        source = "fallback"
+
+    calc = compute_saas_list_price_ars(venta)
+    price_ars = calc["price_ars"]
+    payload = {
+        "price_ars": price_ars,
+        "price_display": f"${price_ars:,.0f}".replace(",", "."),
+        "currency": "ARS",
+        "period": "month",
+        "dolar_oficial": venta,
+        "updated_at": now.isoformat(),
+        "source": source,
+    }
+    _PUBLIC_PRICING_CACHE["data"] = payload
+    _PUBLIC_PRICING_CACHE["ts"] = now
+    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=21600"})
+
 DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EMPRESA]. Tu objetivo es brindar una atención al cliente excepcional, rápida y profesional.
 
 ### 🎭 TU IDENTIDAD Y TONO
