@@ -4050,7 +4050,8 @@ async def api_delete_pricing_history(request: Request, history_id: int, db: Sess
 # y se guardan en data/public_pricing.json; si no hay archivo, se usan los
 # SAAS_LIST_PRICE_DEFAULTS de src/pricing.py.
 _PUBLIC_PRICING_CACHE: dict = {"data": None, "ts": None}
-_PUBLIC_PRICING_TTL = timedelta(hours=6)
+_PUBLIC_PRICING_TTL = timedelta(hours=1)          # cache server-side (evita pegarle a dolarapi seguido)
+_PUBLIC_PRICING_CACHE_HEADER = "public, max-age=300"  # cache browser/CDN: 5 min, para que un cambio de precio se vea rápido
 _DOLAR_FALLBACK_FILE = os.path.join("data", "last_dolar.json")
 _DOLAR_HARD_FALLBACK = 1530.0
 _PUBLIC_PRICING_CONFIG_FILE = os.path.join("data", "public_pricing.json")
@@ -4095,7 +4096,7 @@ async def api_public_pricing():
     now = datetime.now()
     cached = _PUBLIC_PRICING_CACHE
     if cached["data"] and cached["ts"] and (now - cached["ts"]) < _PUBLIC_PRICING_TTL:
-        return JSONResponse(cached["data"], headers={"Cache-Control": "public, max-age=21600"})
+        return JSONResponse(cached["data"], headers={"Cache-Control": _PUBLIC_PRICING_CACHE_HEADER})
 
     source = "live"
     venta = None
@@ -4126,7 +4127,7 @@ async def api_public_pricing():
     }
     _PUBLIC_PRICING_CACHE["data"] = payload
     _PUBLIC_PRICING_CACHE["ts"] = now
-    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=21600"})
+    return JSONResponse(payload, headers={"Cache-Control": _PUBLIC_PRICING_CACHE_HEADER})
 
 class PublicPricingConfigPayload(BaseModel):
     clientes: int | None = None
