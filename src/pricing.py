@@ -22,6 +22,26 @@ def _ceil_mil(valor: float) -> float:
     return math.ceil((valor or 0) / 1000) * 1000
 
 
+def sanitize_list_price_overrides(raw: dict) -> dict:
+    """Filtra 'raw' a solo las claves válidas de SAAS_LIST_PRICE_DEFAULTS, casteadas
+    al tipo del default y descartando valores no numéricos, negativos o nulos.
+    Se usa para lo que el super-admin guarda para el precio de lista público."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, default in SAAS_LIST_PRICE_DEFAULTS.items():
+        if raw.get(k) is None:
+            continue
+        try:
+            val = type(default)(raw[k])
+        except (TypeError, ValueError):
+            continue
+        if val is None or (isinstance(val, (int, float)) and val < 0):
+            continue
+        out[k] = val
+    return out
+
+
 def compute_saas_list_price_ars(dolar_venta: float, **overrides) -> dict:
     """Tarifa mensual de lista (ARS por cliente) con los supuestos del 'peor caso'
     (1 cliente, servidor Tramo 1, ganancia 100 USD). Espeja calcular() de la

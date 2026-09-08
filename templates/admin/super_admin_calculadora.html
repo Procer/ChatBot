@@ -133,6 +133,53 @@
         </div>
     </div>
 
+    <!-- Precio de lista público (landing anka.ar) -->
+    <div class="glass rounded-xl p-5 border border-sky-500/30 mb-10">
+        <h3 class="text-sm font-bold text-white mb-1">Precio de lista público <span class="text-xs font-normal text-slate-500">— el que se muestra en anka.ar</span></h3>
+        <p class="text-xs text-slate-400 mb-4">Estos son los insumos con los que se calcula el precio que ve cualquier visitante en la landing. Es un cálculo global (no por cliente): usa el supuesto de "peor caso" (pocos clientes, servidor Tramo 1). Si suben los costos, cambialos acá y guardá — la landing lo toma en la próxima carga (caché de 6 h). El dólar se actualiza solo.</p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Cantidad de clientes (supuesto)</label>
+                <input type="number" id="lpClientes" min="1" value="1" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Costo WhatsApp / cliente (USD)</label>
+                <input type="number" id="lpWhatsapp" step="0.01" value="12" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Consumo OpenAI / cliente (USD)</label>
+                <input type="number" id="lpOpenai" step="0.01" value="10" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Ganancia / cliente (USD)</label>
+                <input type="number" id="lpAdicional" step="0.01" value="100" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Servidor Tramo 1 (ARS)</label>
+                <input type="number" id="lpTramo1" value="22000" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Servidor Tramo 2 (ARS)</label>
+                <input type="number" id="lpTramo2" value="40000" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Servidor Tramo 3 (ARS)</label>
+                <input type="number" id="lpTramo3" value="75000" oninput="previewListPrice()" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none">
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 border-t border-slate-800 pt-4">
+            <div class="text-sm">
+                <span class="text-slate-400">Precio que verá la landing:</span>
+                <span id="lpPreview" class="font-bold text-sky-400 ml-1">—</span>
+                <span id="lpLive" class="text-xs text-slate-500 ml-2"></span>
+            </div>
+            <div class="flex-1"></div>
+            <button onclick="resetListPrice()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-semibold transition-colors">Volver a valores por defecto</button>
+            <button onclick="saveListPrice()" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold transition-colors">Guardar precio de lista</button>
+        </div>
+        <p id="lpStatus" class="text-xs text-emerald-400 mt-2 hidden"></p>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -293,8 +340,98 @@
         }
     }
 
+    // ── Precio de lista público (landing anka.ar) ────────────────────────────
+    const lpCeilMil = (v) => Math.ceil((v || 0) / 1000) * 1000;
+
+    function previewListPrice() {
+        const tc = parseFloat(document.getElementById('tipoCambio').value) || 0;
+        const n = parseInt(document.getElementById('lpClientes').value) || 0;
+        const wha = parseFloat(document.getElementById('lpWhatsapp').value) || 0;
+        const oai = parseFloat(document.getElementById('lpOpenai').value) || 0;
+        const gan = parseFloat(document.getElementById('lpAdicional').value) || 0;
+        const t1 = parseFloat(document.getElementById('lpTramo1').value) || 0;
+        const t2 = parseFloat(document.getElementById('lpTramo2').value) || 0;
+        const t3 = parseFloat(document.getElementById('lpTramo3').value) || 0;
+        const costoWha = lpCeilMil(n * wha * tc);
+        const costoIa = lpCeilMil(n * oai * tc);
+        let server = n <= 0 ? 0 : (n <= 2 ? t1 : (n <= 6 ? t2 : t3));
+        server = lpCeilMil(server);
+        const totalCostos = lpCeilMil(costoWha + costoIa + server);
+        const adicional = lpCeilMil(n * gan * tc);
+        const abono = n > 0 ? lpCeilMil((totalCostos + adicional) / n) : 0;
+        document.getElementById('lpPreview').textContent =
+            new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(abono);
+    }
+
+    async function loadListPrice() {
+        try {
+            const res = await fetch('/api/superadmin/public-pricing');
+            const data = await res.json();
+            if (data.config) {
+                document.getElementById('lpClientes').value = data.config.clientes;
+                document.getElementById('lpWhatsapp').value = data.config.whatsapp_usd;
+                document.getElementById('lpOpenai').value = data.config.openai_usd;
+                document.getElementById('lpAdicional').value = data.config.adicional_usd;
+                document.getElementById('lpTramo1').value = data.config.server_tramo1_ars;
+                document.getElementById('lpTramo2').value = data.config.server_tramo2_ars;
+                document.getElementById('lpTramo3').value = data.config.server_tramo3_ars;
+            }
+        } catch (e) {}
+        previewListPrice();
+        try {
+            const r = await fetch('/api/public/pricing');
+            const d = await r.json();
+            if (d && d.price_display) {
+                document.getElementById('lpLive').textContent =
+                    `· en la landing ahora: ${d.price_display} (dólar $${d.dolar_oficial})`;
+            }
+        } catch (e) {}
+    }
+
+    function collectListPrice() {
+        return {
+            clientes: parseInt(document.getElementById('lpClientes').value) || 1,
+            whatsapp_usd: parseFloat(document.getElementById('lpWhatsapp').value) || 0,
+            openai_usd: parseFloat(document.getElementById('lpOpenai').value) || 0,
+            adicional_usd: parseFloat(document.getElementById('lpAdicional').value) || 0,
+            server_tramo1_ars: parseFloat(document.getElementById('lpTramo1').value) || 0,
+            server_tramo2_ars: parseFloat(document.getElementById('lpTramo2').value) || 0,
+            server_tramo3_ars: parseFloat(document.getElementById('lpTramo3').value) || 0,
+        };
+    }
+
+    async function saveListPrice() {
+        const res = await fetch('/api/superadmin/public-pricing', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(collectListPrice())
+        });
+        const el = document.getElementById('lpStatus');
+        if (res.ok) {
+            el.textContent = 'Guardado. La landing lo toma en la próxima carga (caché de hasta 6 h).';
+            el.classList.remove('hidden');
+            loadListPrice();
+        } else {
+            alert('No se pudo guardar el precio de lista.');
+        }
+    }
+
+    async function resetListPrice() {
+        if (!confirm('¿Volver a los valores por defecto del sistema (WhatsApp 12, OpenAI 10, ganancia 100, servidor 22k/40k/75k)?')) return;
+        const res = await fetch('/api/superadmin/public-pricing', { method: 'DELETE' });
+        const el = document.getElementById('lpStatus');
+        if (res.ok) {
+            el.textContent = 'Restablecido a los valores por defecto.';
+            el.classList.remove('hidden');
+            loadListPrice();
+        } else {
+            alert('No se pudo restablecer.');
+        }
+    }
+
     calcular();
-    fetchDolarOficial();
+    fetchDolarOficial().then(previewListPrice);
+    loadListPrice();
     const preselectClientId = new URLSearchParams(window.location.search).get('client_id');
     if (preselectClientId) {
         document.getElementById('clientSelect').value = preselectClientId;

@@ -4046,10 +4046,14 @@ async def api_delete_pricing_history(request: Request, history_id: int, db: Sess
 # La landing es estática y vive en el mismo dominio; consume este endpoint sin
 # auth. El precio se calcula server-side (src/pricing.py) con el dólar oficial
 # del día, cacheado en memoria y con fallback a disco si dolarapi está caído.
+# Los insumos (costos, ganancia, servidor) se editan desde /super-admin/calculadora
+# y se guardan en data/public_pricing.json; si no hay archivo, se usan los
+# SAAS_LIST_PRICE_DEFAULTS de src/pricing.py.
 _PUBLIC_PRICING_CACHE: dict = {"data": None, "ts": None}
 _PUBLIC_PRICING_TTL = timedelta(hours=6)
 _DOLAR_FALLBACK_FILE = os.path.join("data", "last_dolar.json")
 _DOLAR_HARD_FALLBACK = 1530.0
+_PUBLIC_PRICING_CONFIG_FILE = os.path.join("data", "public_pricing.json")
 
 def _read_dolar_fallback() -> float:
     try:
@@ -4065,6 +4069,24 @@ def _write_dolar_fallback(venta: float):
             json.dump({"venta": venta, "updated_at": datetime.now().isoformat()}, f)
     except Exception as e:
         logging.warning(f"[public/pricing] no se pudo guardar fallback de dólar: {e}")
+
+def _read_public_pricing_overrides() -> dict:
+    from src.pricing import sanitize_list_price_overrides
+    try:
+        with open(_PUBLIC_PRICING_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return sanitize_list_price_overrides(json.load(f))
+    except Exception:
+        return {}
+
+def _write_public_pricing_overrides(raw: dict) -> dict:
+    from src.pricing import sanitize_list_price_overrides
+    clean = sanitize_list_price_overrides(raw)
+    os.makedirs("data", exist_ok=True)
+    with open(_PUBLIC_PRICING_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({**clean, "updated_at": datetime.now().isoformat()}, f)
+    _PUBLIC_PRICING_CACHE["data"] = None
+    _PUBLIC_PRICING_CACHE["ts"] = None
+    return clean
 
 @app.get("/api/public/pricing")
 async def api_public_pricing():
@@ -4091,7 +4113,7 @@ async def api_public_pricing():
         venta = _read_dolar_fallback()
         source = "fallback"
 
-    calc = compute_saas_list_price_ars(venta)
+    calc = compute_saas_list_price_ars(venta, **_read_public_pricing_overrides())
     price_ars = calc["price_ars"]
     payload = {
         "price_ars": price_ars,
@@ -4105,6 +4127,47 @@ async def api_public_pricing():
     _PUBLIC_PRICING_CACHE["data"] = payload
     _PUBLIC_PRICING_CACHE["ts"] = now
     return JSONResponse(payload, headers={"Cache-Control": "public, max-age=21600"})
+
+class PublicPricingConfigPayload(BaseModel):
+    clientes: int | None = None
+    whatsapp_usd: float | None = None
+    openai_usd: float | None = None
+    adicional_usd: float | None = None
+    server_tramo1_ars: float | None = None
+    server_tramo2_ars: float | None = None
+    server_tramo3_ars: float | None = None
+
+@app.get("/api/superadmin/public-pricing")
+async def api_get_public_pricing_config(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.pricing import SAAS_LIST_PRICE_DEFAULTS
+    overrides = _read_public_pricing_overrides()
+    return {
+        "status": "ok",
+        "defaults": SAAS_LIST_PRICE_DEFAULTS,
+        "config": {**SAAS_LIST_PRICE_DEFAULTS, **overrides},
+        "customized": bool(overrides),
+    }
+
+@app.put("/api/superadmin/public-pricing")
+async def api_update_public_pricing_config(request: Request, payload: PublicPricingConfigPayload, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    clean = _write_public_pricing_overrides(payload.model_dump(exclude_none=True))
+    return {"status": "ok", "config": clean}
+
+@app.delete("/api/superadmin/public-pricing")
+async def api_reset_public_pricing_config(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    try:
+        os.remove(_PUBLIC_PRICING_CONFIG_FILE)
+    except FileNotFoundError:
+        pass
+    _PUBLIC_PRICING_CACHE["data"] = None
+    _PUBLIC_PRICING_CACHE["ts"] = None
+    return {"status": "ok"}
 
 DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EMPRESA]. Tu objetivo es brindar una atención al cliente excepcional, rápida y profesional.
 
