@@ -53,7 +53,7 @@ def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None
     w, h = CARD_W_CM * cm, CARD_H_CM * cm
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(w, h))
-    c.setTitle(f"Cobro Chatbot con IA - {client_name}")
+    c.setTitle(f"Cobro anka - {client_name}")
 
     c.setFillColor(colors.white)
     c.rect(0, 0, w, h, fill=1, stroke=0)
@@ -67,15 +67,19 @@ def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None
     right = w - MARGIN_CM * cm
     top = h - MARGIN_CM * cm
 
-    logo_size = 1.7 * cm
+    logo_size = 1.8 * cm
     c.drawImage(LOGO_COLOR, left, top - logo_size, logo_size, logo_size, preserveAspectRatio=True, mask="auto")
 
-    text_x = left + logo_size + 0.4 * cm
-    c.setFillColor(colors.HexColor("#1a1a1a"))
-    c.setFont("Helvetica-Bold", 15)
-    c.drawString(text_x, top - 0.65 * cm, "Chatbot con IA")
+    text_x = left + logo_size + 0.45 * cm
     c.setFillColor(colors.grey)
-    c.setFont("Helvetica", 10)
+    c.setFont("Helvetica", 9)
+    sub_y = top - 0.6 * cm
+    c.drawString(text_x, sub_y, "de ZSG")
+    _dx = c.stringWidth("de ", "Helvetica", 9)
+    _zx = c.stringWidth("ZSG", "Helvetica", 9)
+    c.linkURL("https://www.zaratesystemgroup.com.ar", (text_x + _dx, sub_y - 1, text_x + _dx + _zx, sub_y + 9), relative=0)
+    c.setFillColor(colors.HexColor("#1a1a1a"))
+    c.setFont("Helvetica-Bold", 12)
     c.drawString(text_x, top - 1.25 * cm, client_name)
 
     c.setFont("Helvetica", 8.5)
@@ -134,9 +138,10 @@ def generar_imagen_voucher(client_name: str, precio_ars: float, mensaje: str | N
     right_px = W - int(MARGIN_CM * px_per_cm)
     top_px = int(MARGIN_CM * px_per_cm)
 
-    logo_size_px = int(1.7 * px_per_cm)
-    logo = Image.open(LOGO_COLOR).convert("RGB").resize((logo_size_px, logo_size_px))
-    img.paste(logo, (margin_px, top_px))
+    logo_size_px = int(1.8 * px_per_cm)
+    logo = Image.open(LOGO_COLOR).convert("RGB")
+    logo.thumbnail((logo_size_px, logo_size_px), Image.LANCZOS)  # preserva proporción (logo apaisado)
+    img.paste(logo, (margin_px, top_px + (logo_size_px - logo.height) // 2))
 
     font_title = ImageFont.truetype(FONT_BOLD_TTF, int(0.55 * px_per_cm))
     font_client = ImageFont.truetype(FONT_REGULAR_TTF, int(0.4 * px_per_cm))
@@ -144,10 +149,11 @@ def generar_imagen_voucher(client_name: str, precio_ars: float, mensaje: str | N
     font_label = ImageFont.truetype(FONT_REGULAR_TTF, int(0.42 * px_per_cm))
     font_price = ImageFont.truetype(FONT_BOLD_TTF, int(0.72 * px_per_cm))
     font_msg = ImageFont.truetype(FONT_REGULAR_TTF, int(0.36 * px_per_cm))
+    font_sub = ImageFont.truetype(FONT_REGULAR_TTF, int(0.32 * px_per_cm))
 
-    text_x = margin_px + logo_size_px + int(0.4 * px_per_cm)
-    draw.text((text_x, top_px), "Chatbot con IA", font=font_title, fill=DARK_TEXT_RGB)
-    draw.text((text_x, top_px + int(0.65 * px_per_cm)), client_name, font=font_client, fill=GRAY_TEXT_RGB)
+    text_x = margin_px + logo_size_px + int(0.45 * px_per_cm)
+    draw.text((text_x, top_px + int(0.15 * px_per_cm)), "de ZSG", font=font_sub, fill=GRAY_TEXT_RGB)
+    draw.text((text_x, top_px + int(0.72 * px_per_cm)), client_name, font=font_label, fill=DARK_TEXT_RGB)
 
     date_txt = datetime.now().strftime("%d/%m/%Y")
     dw = draw.textlength(date_txt, font=font_small)

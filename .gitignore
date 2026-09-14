@@ -41,3 +41,4 @@ checkpoints.sqlite.bak
 
 # Binarios de terceros descargados localmente (ej. ngrok)
 tools/
+.gstack/

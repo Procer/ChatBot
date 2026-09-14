@@ -1,0 +1,200 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Textos de la landing | Modo Dios{% endblock %}
+
+{% block breadcrumb %}Plataforma SaaS{% endblock %}
+{% block section_title %}Modo Dios - Súper Admin{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-4 lg:p-0 overflow-y-auto custom-scrollbar">
+    <div class="flex items-center gap-1 mb-6 border-b border-slate-800/50">
+        <a href="/super-admin" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Clientes</a>
+        <a href="/super-admin/users" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Usuarios</a>
+        <a href="/super-admin/calculadora" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Calculadora</a>
+        <a href="/super-admin/landing" class="px-4 py-2.5 text-sm font-semibold text-white border-b-2 border-brand-500">Landing</a>
+    </div>
+
+    <div class="mb-5">
+        <h2 class="text-xl font-bold text-white tracking-tight">Textos de la landing (anka.ar)</h2>
+        <p class="text-sm text-slate-400 mt-1">Editá cualquier texto de las 5 landing estacionales. Cada campo muestra el texto que hay ahora; lo que cambies se guarda como <em>override</em> y se aplica en la próxima carga de la landing (caché de 5 min). Dejar un campo vacío = volver al texto original de esa parte.</p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 mb-5">
+        <label class="text-xs text-slate-400">Versión</label>
+        <select id="seasonSel" class="px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none">
+            <option value="_shared">Compartido (las 5 a la vez): botón, WhatsApp, tagline</option>
+            <option value="primavera">Primavera — scrollytelling (vive en / de sep a dic)</option>
+            <option value="verano">Verano — chat</option>
+            <option value="otono">Otoño — tipografía cinética</option>
+            <option value="invierno">Invierno — mazo de tarjetas</option>
+            <option value="verano-fiestas">Fiestas — Navidad / Año Nuevo</option>
+        </select>
+        <a id="viewLink" href="#" target="_blank" rel="noopener" class="text-xs text-sky-400 hover:underline">Ver esta versión ↗</a>
+        <span id="loadInfo" class="text-xs text-slate-500"></span>
+    </div>
+
+    <div id="fields" class="space-y-6 mb-6"></div>
+
+    <div class="sticky bottom-0 -mx-4 lg:mx-0 px-4 lg:px-0 py-3 bg-slate-950/90 backdrop-blur border-t border-slate-800 flex flex-wrap items-center gap-3">
+        <span id="dirtyInfo" class="text-xs text-slate-500 flex-1"></span>
+        <button id="resetBtn" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-semibold transition-colors">Volver todo a los textos por defecto</button>
+        <button id="saveBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold transition-colors">Guardar cambios</button>
+    </div>
+    <p id="statusMsg" class="text-xs text-emerald-400 mt-2 hidden"></p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    const SEASON_FILE = {
+        primavera: '/primavera.html', verano: '/verano.html', otono: '/otono.html',
+        invierno: '/invierno.html', 'verano-fiestas': '/verano-fiestas.html', _shared: '/'
+    };
+    const SHARED_FIELDS = [
+        { key: 'cta_label', label: 'Texto del botón / CTA', def: 'Pedir una demo' },
+        { key: 'tagline', label: 'Tagline (frase corta al pie del chat)', def: 'Nunca contestás lo mismo dos veces. anka sí.' },
+        { key: 'wa_number', label: 'WhatsApp — número (solo dígitos, con código de país)', def: '5493487587913' },
+        { key: 'wa_message', label: 'WhatsApp — mensaje precargado del botón', def: 'Hola, quiero una demo del chatbot de WhatsApp para mi negocio.' },
+    ];
+    const sel = document.getElementById('seasonSel');
+    const fieldsBox = document.getElementById('fields');
+    const statusMsg = document.getElementById('statusMsg');
+    const dirtyInfo = document.getElementById('dirtyInfo');
+    const loadInfo = document.getElementById('loadInfo');
+    const viewLink = document.getElementById('viewLink');
+    let defaults = {};   // key -> texto actual del HTML (o default shared)
+    let current = {};    // key -> valor a mostrar (override || default)
+
+    function esc(s) { return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+    function fieldHtml(key, label, group, def, val) {
+        return `<div class="field" data-key="${esc(key)}">
+            <label class="text-xs font-semibold text-slate-300 block mb-1">${esc(label)}</label>
+            <textarea rows="2" data-def="${esc(def)}"
+                class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none resize-y">${esc(val)}</textarea>
+            <div class="text-[11px] text-slate-600 mt-1 truncate">clave: <code>${esc(key)}</code>${group ? ' · ' + esc(group) : ''}</div>
+        </div>`;
+    }
+
+    async function load() {
+        const season = sel.value;
+        fieldsBox.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
+        statusMsg.classList.add('hidden');
+        viewLink.href = SEASON_FILE[season] || '/';
+        defaults = {}; current = {};
+
+        let overrides = {};
+        try {
+            const r = await fetch('/api/superadmin/landing-texts?season=' + encodeURIComponent(season));
+            const d = await r.json();
+            overrides = d.overrides || {};
+        } catch (e) {}
+
+        if (season === '_shared') {
+            SHARED_FIELDS.forEach(f => { defaults[f.key] = f.def; });
+            let html = '<div class="rounded-xl p-5 border border-emerald-500/30 space-y-4">';
+            html += '<p class="text-xs text-slate-400">Estos 4 se aplican a las 5 landing a la vez.</p>';
+            SHARED_FIELDS.forEach(f => {
+                current[f.key] = overrides[f.key] != null ? overrides[f.key] : f.def;
+                html += fieldHtml(f.key, f.label, '', f.def, current[f.key]);
+            });
+            html += '</div>';
+            fieldsBox.innerHTML = html;
+            loadInfo.textContent = Object.keys(overrides).length + ' con override';
+            return;
+        }
+
+        // Parsear el HTML de la landing para sacar todos los [data-txt]
+        let doc;
+        try {
+            const res = await fetch(SEASON_FILE[season]);
+            const txt = await res.text();
+            doc = new DOMParser().parseFromString(txt, 'text/html');
+        } catch (e) {
+            fieldsBox.innerHTML = '<p class="text-sm text-rose-400">No se pudo leer la landing.</p>';
+            return;
+        }
+        const els = [...doc.querySelectorAll('[data-txt]')];
+        if (!els.length) {
+            fieldsBox.innerHTML = '<p class="text-sm text-amber-400">Esta versión todavía no tiene textos marcados como editables. (Se van agregando de a poco.)</p>';
+            loadInfo.textContent = '';
+            return;
+        }
+        const groups = {};
+        els.forEach(el => {
+            const key = el.getAttribute('data-txt');
+            if (!key || defaults[key] != null) return; // primera aparición gana
+            const def = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            defaults[key] = def;
+            current[key] = overrides[key] != null ? overrides[key] : def;
+            const g = el.getAttribute('data-txt-group') || 'General';
+            const label = el.getAttribute('data-txt-label') || (def.length > 60 ? def.slice(0, 60) + '…' : def) || key;
+            (groups[g] = groups[g] || []).push({ key, label, group: g });
+        });
+        let html = '';
+        Object.keys(groups).forEach(g => {
+            html += `<div class="rounded-xl p-5 border border-slate-800">
+                <h3 class="text-sm font-bold text-white mb-3">${esc(g)}</h3>
+                <div class="space-y-4">` +
+                groups[g].map(f => fieldHtml(f.key, f.label, '', defaults[f.key], current[f.key])).join('') +
+                `</div></div>`;
+        });
+        fieldsBox.innerHTML = html;
+        const nOv = Object.keys(overrides).filter(k => defaults[k] != null).length;
+        loadInfo.textContent = els.length + ' textos · ' + nOv + ' con override';
+    }
+
+    function collect() {
+        // manda solo los que difieren del default y no están vacíos
+        const out = {};
+        fieldsBox.querySelectorAll('.field').forEach(f => {
+            const key = f.getAttribute('data-key');
+            const ta = f.querySelector('textarea');
+            const val = (ta.value || '').trim();
+            const def = ta.getAttribute('data-def') || '';
+            if (val && val !== def) out[key] = val;
+        });
+        return out;
+    }
+
+    async function save() {
+        const season = sel.value;
+        const texts = collect();
+        const res = await fetch('/api/superadmin/landing-texts', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ season, texts })
+        });
+        if (res.ok) {
+            const n = Object.keys(texts).length;
+            statusMsg.textContent = 'Guardado (' + n + ' texto' + (n === 1 ? '' : 's') + ' cambiado' + (n === 1 ? '' : 's') + '). La landing lo toma en la próxima carga (hasta 5 min de caché).';
+            statusMsg.classList.remove('hidden');
+            load();
+        } else {
+            alert('No se pudo guardar.');
+        }
+    }
+
+    async function resetAll() {
+        if (!confirm('¿Borrar todos los overrides de "' + sel.value + '" y volver a los textos originales?')) return;
+        const res = await fetch('/api/superadmin/landing-texts?season=' + encodeURIComponent(sel.value), { method: 'DELETE' });
+        if (res.ok) {
+            statusMsg.textContent = 'Textos restablecidos a los originales.';
+            statusMsg.classList.remove('hidden');
+            load();
+        } else {
+            alert('No se pudo restablecer.');
+        }
+    }
+
+    fieldsBox.addEventListener('input', () => {
+        const n = Object.keys(collect()).length;
+        dirtyInfo.textContent = n ? (n + ' texto' + (n === 1 ? '' : 's') + ' modificado' + (n === 1 ? '' : 's') + ' sin guardar') : 'Sin cambios';
+    });
+    sel.addEventListener('change', load);
+    document.getElementById('saveBtn').addEventListener('click', save);
+    document.getElementById('resetBtn').addEventListener('click', resetAll);
+    load();
+})();
+</script>
+{% endblock %}

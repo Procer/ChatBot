@@ -358,7 +358,7 @@ def call_model(state: AgentState):
     # 1. GENERACIÓN DEL PROMPT
     system_prompt = get_setting("system_prompt")
     if not system_prompt:
-        bot_name = get_setting("bot_name") or "Zárate IA"
+        bot_name = get_setting("bot_name") or "anka"
         company_name = get_setting("company_name") or "Rondan Escribanía"
         system_prompt = f"Sos {bot_name}, el asistente de {company_name}. Tu objetivo es ayudar a los clientes de forma CÁLIDA, AMABLE y 100% HUMANA."
 
