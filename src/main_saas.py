@@ -1126,14 +1126,21 @@ async def appointments_panel(request: Request, db: Session = Depends(get_db), cu
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
     
-    from src.database.models import Appointment, Knowledge, Employee, ClientSettings
+    from src.database.models import Appointment, Knowledge, Employee, ClientSettings, AppointmentPayment
     apps = db.query(Appointment).filter_by(client_id=target_client_id).order_by(Appointment.date.desc(), Appointment.time.desc()).all()
     employees_by_id = {e.id: e for e in db.query(Employee).filter_by(client_id=target_client_id).all()}
+    payments_raw = db.query(AppointmentPayment).filter_by(client_id=target_client_id).order_by(AppointmentPayment.id.asc()).all()
+    latest_payment_by_app = {}
+    for p in payments_raw:
+        latest_payment_by_app[p.appointment_id] = p  # el último de la lista (ids ascendentes) queda como el más reciente
     appointments = [{
         "id": a.id, "thread_id": a.thread_id, "client_name": a.client_name, "date": a.date, "time": a.time,
         "reason": a.reason, "status": a.status,
         "employee_name": employees_by_id[a.employee_id].name if a.employee_id and a.employee_id in employees_by_id else None,
-        "employee_color": employees_by_id[a.employee_id].color if a.employee_id and a.employee_id in employees_by_id else None
+        "employee_color": employees_by_id[a.employee_id].color if a.employee_id and a.employee_id in employees_by_id else None,
+        "payment_status": latest_payment_by_app[a.id].status if a.id in latest_payment_by_app else None,
+        "payment_amount": latest_payment_by_app[a.id].amount if a.id in latest_payment_by_app else None,
+        "payment_currency": latest_payment_by_app[a.id].currency if a.id in latest_payment_by_app else None
     } for a in apps]
 
     services = db.query(Knowledge).filter_by(client_id=target_client_id, allow_scheduling=True).all()
@@ -1267,6 +1274,35 @@ async def cancel_appointment_route(
     db.commit()
     return {"status": "ok"}
 
+@app.post("/admin/appointments/confirm-payment/{app_id}")
+async def confirm_appointment_payment_manual(
+    request: Request,
+    app_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Confirma manualmente la seña de un turno pending_payment (pago en efectivo/transferencia
+    fuera de Mercado Pago). No toca Mercado Pago para nada, solo el estado local."""
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    from src.database.models import Appointment, AppointmentPayment
+    app_obj = db.query(Appointment).filter_by(client_id=target_client_id, id=app_id).first()
+    if not app_obj:
+        return JSONResponse(status_code=404, content={"error": "Turno no encontrado"})
+    if app_obj.status != "pending_payment":
+        return JSONResponse(status_code=400, content={"error": "Este turno no está pendiente de pago"})
+
+    app_obj.status = "confirmed"
+    payment_row = db.query(AppointmentPayment).filter_by(
+        appointment_id=app_obj.id, client_id=target_client_id
+    ).order_by(AppointmentPayment.id.desc()).first()
+    if payment_row and payment_row.status == "pending":
+        payment_row.status = "approved"
+        payment_row.raw_last_webhook = "confirmado_manualmente_desde_panel"
+    db.commit()
+    return {"status": "ok"}
+
 @app.get("/admin/gaps", response_class=HTMLResponse)
 async def view_gaps(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
@@ -1333,11 +1369,18 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "reminder_24h_hours": settings.reminder_24h_hours if settings and settings.reminder_24h_hours is not None else 24,
         "reminder_2h_enabled": "1" if settings and settings.reminder_2h_enabled else "0",
         "reminder_2h_template": settings.reminder_2h_template if settings else "",
-        "reminder_2h_hours": settings.reminder_2h_hours if settings and settings.reminder_2h_hours is not None else 2
+        "reminder_2h_hours": settings.reminder_2h_hours if settings and settings.reminder_2h_hours is not None else 2,
+        "feat_deposit_payment": "1" if settings and settings.feat_deposit_payment else "0",
+        "mp_access_token_configured": bool(settings and settings.mp_access_token_encrypted),
+        "mp_public_key": settings.mp_public_key if settings else "",
+        "deposit_currency": settings.deposit_currency if settings and settings.deposit_currency else "ARS",
+        "deposit_payment_timeout_minutes": settings.deposit_payment_timeout_minutes if settings and settings.deposit_payment_timeout_minutes else 30,
+        "deposit_confirmed_template": settings.deposit_confirmed_template if settings else "",
+        "deposit_expired_template": settings.deposit_expired_template if settings else ""
     }
-    
+
     knowledge_raw = db.query(Knowledge).filter_by(client_id=target_client_id).order_by(Knowledge.category.asc()).all()
-    knowledge_items = [{"id": k.id, "topic": k.topic, "content": k.content, "category": k.category, "has_form": k.has_form, "form_fields": k.form_fields, "storage_dest": k.storage_dest, "allow_scheduling": k.allow_scheduling, "scheduling_hours": k.scheduling_hours, "appointment_duration": k.appointment_duration, "scheduling_capacity": k.scheduling_capacity, "interactive_options": k.interactive_options, "media_path": k.media_path} for k in knowledge_raw]
+    knowledge_items = [{"id": k.id, "topic": k.topic, "content": k.content, "category": k.category, "has_form": k.has_form, "form_fields": k.form_fields, "storage_dest": k.storage_dest, "allow_scheduling": k.allow_scheduling, "scheduling_hours": k.scheduling_hours, "appointment_duration": k.appointment_duration, "deposit_amount": k.deposit_amount, "scheduling_capacity": k.scheduling_capacity, "interactive_options": k.interactive_options, "media_path": k.media_path} for k in knowledge_raw]
     
     from src.database.models import SchedulingException
     exceptions_raw = db.query(SchedulingException).filter_by(client_id=target_client_id).order_by(SchedulingException.date.asc()).all()
@@ -1415,7 +1458,24 @@ async def save_all_config(
     else: settings.test_mode_enabled = False
     
     if "test_numbers" in form_data: settings.test_numbers = form_data.get("test_numbers")
-    
+
+    if "feat_deposit_payment" in form_data: settings.feat_deposit_payment = form_data.get("feat_deposit_payment") == "1"
+    else: settings.feat_deposit_payment = False
+    if "mp_public_key" in form_data: settings.mp_public_key = form_data.get("mp_public_key")
+    if "deposit_currency" in form_data: settings.deposit_currency = form_data.get("deposit_currency") or "ARS"
+    if "deposit_payment_timeout_minutes" in form_data:
+        try: settings.deposit_payment_timeout_minutes = max(1, int(form_data.get("deposit_payment_timeout_minutes") or 30))
+        except ValueError: pass
+    if "deposit_confirmed_template" in form_data: settings.deposit_confirmed_template = form_data.get("deposit_confirmed_template")
+    if "deposit_expired_template" in form_data: settings.deposit_expired_template = form_data.get("deposit_expired_template")
+
+    mp_token_raw = (form_data.get("mp_access_token") or "").strip()
+    if mp_token_raw:
+        from src.database.mp_credentials import save_client_mp_token
+        db.commit()  # asegura que el ClientSettings recién creado ya tenga PK antes del save fuera de sesión
+        save_client_mp_token(target_client_id, mp_token_raw)
+        db.refresh(settings)
+
     welcome_media = form_data.get("welcome_media")
     if welcome_media and getattr(welcome_media, "filename", None):
         import os, shutil, re
@@ -1445,6 +1505,16 @@ async def remove_welcome_media_route(request: Request, db: Session = Depends(get
         db.commit()
     
     return RedirectResponse(url="/admin/config?active_tab=identidad&success=1", status_code=303)
+
+@app.get("/admin/config/clear-mp-token")
+async def clear_mp_token_route(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+
+    from src.database.mp_credentials import clear_client_mp_token
+    clear_client_mp_token(target_client_id)
+
+    return RedirectResponse(url="/admin/config?active_tab=pagos&success=1", status_code=303)
 
 @app.post("/admin/channels/save")
 async def save_channels_config(
@@ -1488,6 +1558,7 @@ async def add_knowledge(
     has_form: int = Form(0), form_fields: str = Form(""),
     allow_scheduling: int = Form(0), storage_dest: str = Form("database"),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
+    deposit_amount: float = Form(None),
     scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
     appointment_extra_fields: str = Form(None),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
@@ -1522,6 +1593,7 @@ async def add_knowledge(
         scheduling_days=",".join(scheduling_days) if scheduling_days else None,
         appointment_extra_fields=appointment_extra_fields,
         appointment_duration=appointment_duration_kb,
+        deposit_amount=deposit_amount,
         scheduling_capacity=scheduling_capacity,
         storage_dest=storage_dest,
         interactive_options=interactive_options, media_path=media_path_str,
@@ -1538,6 +1610,7 @@ async def update_knowledge(
     category: str = Form(""), has_form: int = Form(0), form_fields: str = Form(None),
     storage_dest: str = Form("database"), allow_scheduling: int = Form(0),
     scheduling_hours: str = Form(None), appointment_duration_kb: int = Form(None),
+    deposit_amount: float = Form(None),
     scheduling_capacity: int = Form(1), scheduling_days: List[str] = Form([]),
     appointment_extra_fields: str = Form(None),
     interactive_options: str = Form(None), media: List[UploadFile] = File(None),
@@ -1546,7 +1619,7 @@ async def update_knowledge(
 ):
     target_client_id, _, _ = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+
     from src.database.models import Knowledge
     k = db.query(Knowledge).filter_by(client_id=target_client_id, id=item_id).first()
     if not k: return RedirectResponse(url="/admin/config?active_tab=conocimiento&error=1", status_code=303)
@@ -1582,6 +1655,7 @@ async def update_knowledge(
     k.scheduling_days = ",".join(scheduling_days) if scheduling_days else None
     k.appointment_extra_fields = appointment_extra_fields
     k.appointment_duration = appointment_duration_kb
+    k.deposit_amount = deposit_amount
     k.scheduling_capacity = scheduling_capacity
     k.interactive_options = interactive_options
     k.analyze_rag = bool(analyze_rag)
@@ -1623,6 +1697,7 @@ async def get_knowledge(request: Request, item_id: int, db: Session = Depends(ge
         "scheduling_days": k.scheduling_days,
         "appointment_extra_fields": k.appointment_extra_fields,
         "appointment_duration": k.appointment_duration,
+        "deposit_amount": k.deposit_amount,
         "scheduling_capacity": k.scheduling_capacity,
         "storage_dest": k.storage_dest,
         "analyze_rag": k.analyze_rag,
@@ -3210,6 +3285,94 @@ def is_within_working_hours(working_hours_str: str) -> bool:
         logging.error(f"Error parseando horario: {e}")
         return True
 
+@app.post("/webhook/{client_slug}/mercadopago")
+async def mercadopago_webhook(client_slug: str, request: Request, db: Session = Depends(get_db)):
+    """Notificación de pago de Mercado Pago para la seña de un turno. Multi-tenant: nunca
+    confiamos en el payload del webhook para el estado del pago (es lo que recomienda MP) -
+    siempre se re-consulta el pago con el access_token PROPIO del cliente dueño del slug, lo
+    que ya evita que un access_token ajeno pueda confirmar el pago de otro negocio."""
+    try:
+        client = db.query(Client).filter(Client.slug == client_slug, Client.status == 'active').first()
+        if not client:
+            return JSONResponse({"status": "ignored", "reason": "Client not found"})
+
+        settings = db.query(ClientSettings).filter_by(client_id=client.id).first()
+        if not settings:
+            return JSONResponse({"status": "ignored", "reason": "No settings"})
+
+        # MP manda tanto el formato IPN viejo (query params) como el webhook nuevo (JSON body)
+        topic = request.query_params.get("topic") or request.query_params.get("type")
+        payment_id = request.query_params.get("id") or request.query_params.get("data.id")
+        if not payment_id:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            topic = topic or body.get("type")
+            payment_id = payment_id or (body.get("data") or {}).get("id")
+
+        if not payment_id or (topic and topic != "payment"):
+            return JSONResponse({"status": "ignored"})
+
+        from src.database.mp_credentials import resolve_client_mp_token
+        mp_token = resolve_client_mp_token(settings)
+        if not mp_token:
+            logging.error(f"[MercadoPago Webhook] Cliente {client.slug} sin access token configurado")
+            return JSONResponse({"status": "ignored", "reason": "No MP token"})
+
+        from src.mercadopago_client import get_payment
+        mp_payment = get_payment(mp_token, payment_id)
+        if not mp_payment:
+            # Puede ser transitorio (red, rate limit) -> devolvemos 500 para que MP reintente
+            return JSONResponse({"status": "error"}, status_code=500)
+
+        external_reference = mp_payment.get("external_reference") or ""
+        parts = external_reference.split(":")
+        if len(parts) != 3 or parts[0] != "appt" or str(parts[1]) != str(client.id):
+            logging.warning(f"[MercadoPago Webhook] external_reference inesperado/ajeno en webhook de {client.slug}: {external_reference}")
+            return JSONResponse({"status": "ignored", "reason": "Bad or foreign external_reference"})
+        appointment_id = int(parts[2])
+
+        from src.database.models import Appointment, AppointmentPayment
+        appt = db.query(Appointment).filter_by(id=appointment_id, client_id=client.id).first()
+        payment_row = db.query(AppointmentPayment).filter_by(appointment_id=appointment_id, client_id=client.id).order_by(AppointmentPayment.id.desc()).first()
+        if not appt or not payment_row:
+            return JSONResponse({"status": "ignored", "reason": "Appointment not found"})
+
+        mp_status = mp_payment.get("status")  # approved | rejected | cancelled | pending | in_process
+        payment_row.mp_payment_id = str(mp_payment.get("id"))
+        payment_row.raw_last_webhook = json.dumps(mp_payment)[:8000]
+
+        if mp_status == "approved" and payment_row.status != "approved":
+            payment_row.status = "approved"
+            if appt.status == "pending_payment":
+                appt.status = "confirmed"
+            db.commit()
+
+            template = settings.deposit_confirmed_template or "¡Gracias {nombre}! Recibimos tu seña de {monto} {moneda} y tu turno del {fecha} a las {hora} hs para {motivo} quedó CONFIRMADO."
+            message = template.format(
+                nombre=appt.client_name or "Cliente", monto=payment_row.amount, moneda=payment_row.currency,
+                fecha=appt.date, hora=appt.time, motivo=appt.reason or "tu turno"
+            )
+            wa_id = appt.thread_id
+            if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
+                wa_id = f"{wa_id}@c.us"
+            await send_whatsapp_message_saas(client.id, wa_id, message)
+
+        elif mp_status in ("rejected", "cancelled") and payment_row.status not in ("approved", mp_status):
+            payment_row.status = mp_status
+            if appt.status == "pending_payment":
+                appt.status = "cancelled"
+            db.commit()
+        else:
+            db.commit()
+
+        return JSONResponse({"status": "ok"})
+    except Exception as e:
+        logging.error(f"[MercadoPago Webhook] Error: {e}")
+        return JSONResponse({"status": "error"}, status_code=500)
+
+
 @app.post("/webhook/{client_slug}/greenapi")
 async def green_api_webhook(client_slug: str, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Recepción de mensajes de WhatsApp filtrados por cliente."""
@@ -3991,6 +4154,13 @@ async def super_admin_calculadora_panel(request: Request, db: Session = Depends(
         "user": user_mock
     })
 
+@app.get("/super-admin/landing", response_class=HTMLResponse)
+async def super_admin_landing_panel(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+    return templates.TemplateResponse(request=request, name="admin/super_admin_landing.html", context={"user": user_mock})
+
 class ClientPricingUpdatePayload(BaseModel):
     abono_usd: float
     reason: str | None = None
@@ -4168,6 +4338,176 @@ async def api_reset_public_pricing_config(request: Request, current_user: User =
         pass
     _PUBLIC_PRICING_CACHE["data"] = None
     _PUBLIC_PRICING_CACHE["ts"] = None
+    return {"status": "ok"}
+
+# --- Textos editables de las landing estacionales (anka.ar) ------------------
+# Las 5 landing son estáticas y viven en el mismo dominio. Cada una hace
+# fetch('/api/public/landing?season=<X>') al cargar y reemplaza:
+#   - el texto de cada elemento con [data-txt="clave"]  (clave libre, la define
+#     el propio HTML de la landing)
+#   - el href de los [data-wa]  (link de WhatsApp armado con los datos shared)
+# Si el fetch falla, quedan los textos horneados en el HTML. El super-admin los
+# edita en /super-admin/landing; se guardan en data/landing_texts.json con la
+# forma { "_shared": {...}, "primavera": {clave: texto}, "verano": {...}, ... }.
+_LANDING_TEXTS_FILE = os.path.join("data", "landing_texts.json")
+_LEGACY_LANDING_FILE = os.path.join("data", "public_landing.json")
+_PUBLIC_LANDING_CACHE_HEADER = "public, max-age=300"
+_LANDING_TEXT_MAXLEN = 800
+_LANDING_SEASONS = ("primavera", "verano", "otono", "invierno", "verano-fiestas")
+
+LANDING_SHARED_DEFAULTS = {
+    "cta_label": "Pedir una demo",
+    "wa_number": "5493487587913",
+    "wa_message": "Hola, quiero una demo del chatbot de WhatsApp para mi negocio.",
+    "tagline": "Nunca contestás lo mismo dos veces. anka sí.",
+}
+
+def _clean_landing_val(k: str, v) -> str:
+    v = " ".join(str(v).split())  # colapsa espacios/saltos
+    if k == "wa_number":
+        v = "".join(ch for ch in v if ch.isdigit())
+    return v[:_LANDING_TEXT_MAXLEN]
+
+def _sanitize_shared(raw: dict) -> dict:
+    out = {}
+    if isinstance(raw, dict):
+        for k in LANDING_SHARED_DEFAULTS:
+            if raw.get(k) is None:
+                continue
+            v = _clean_landing_val(k, raw[k])
+            if v:
+                out[k] = v
+    return out
+
+def _sanitize_season_texts(raw: dict) -> dict:
+    """Claves libres (las define el data-txt del HTML): alfanum + _-.: hasta 80.
+    Valores: texto plano, sin vacíos, con tope de largo."""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        if not isinstance(k, str) or not (0 < len(k) <= 80):
+            continue
+        if not all(c.isalnum() or c in "_-.:" for c in k):
+            continue
+        if v is None:
+            continue
+        v = _clean_landing_val(k, v)
+        if v:
+            out[k] = v
+    return out
+
+def _read_landing_store() -> dict:
+    try:
+        with open(_LANDING_TEXTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    if "_shared" not in data:  # migración one-shot del archivo viejo
+        try:
+            with open(_LEGACY_LANDING_FILE, "r", encoding="utf-8") as f:
+                data["_shared"] = _sanitize_shared(json.load(f))
+        except Exception:
+            pass
+    store = {"_shared": _sanitize_shared(data.get("_shared", {}))}
+    for s in _LANDING_SEASONS:
+        store[s] = _sanitize_season_texts(data.get(s, {}))
+    return store
+
+def _write_landing_store(store: dict) -> dict:
+    clean = {"_shared": _sanitize_shared(store.get("_shared", {}))}
+    for s in _LANDING_SEASONS:
+        clean[s] = _sanitize_season_texts(store.get(s, {}))
+    os.makedirs("data", exist_ok=True)
+    with open(_LANDING_TEXTS_FILE, "w", encoding="utf-8") as f:
+        json.dump({**clean, "updated_at": datetime.now().isoformat()}, f, ensure_ascii=False, indent=1)
+    return clean
+
+def _shared_payload(shared_overrides: dict) -> dict:
+    from urllib.parse import quote
+    s = {**LANDING_SHARED_DEFAULTS, **shared_overrides}
+    msg = s.get("wa_message") or ""
+    s["wa_href"] = "https://wa.me/" + s["wa_number"] + ("?text=" + quote(msg) if msg else "")
+    return s
+
+@app.get("/api/public/landing")
+async def api_public_landing(season: str | None = None):
+    store = _read_landing_store()
+    payload = {"shared": _shared_payload(store["_shared"])}
+    payload["texts"] = store[season] if season in _LANDING_SEASONS else {}
+    return JSONResponse(payload, headers={"Cache-Control": _PUBLIC_LANDING_CACHE_HEADER})
+
+class LandingTextsPayload(BaseModel):
+    season: str
+    texts: dict
+
+@app.get("/api/superadmin/landing-texts")
+async def api_sa_get_landing_texts(request: Request, season: str | None = None, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    store = _read_landing_store()
+    if season == "_shared":
+        return {"status": "ok", "season": "_shared", "defaults": LANDING_SHARED_DEFAULTS, "overrides": store["_shared"]}
+    if season in _LANDING_SEASONS:
+        return {"status": "ok", "season": season, "overrides": store[season]}
+    return {"status": "ok", "store": store, "seasons": list(_LANDING_SEASONS)}
+
+@app.put("/api/superadmin/landing-texts")
+async def api_sa_put_landing_texts(request: Request, payload: LandingTextsPayload, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    store = _read_landing_store()
+    s = payload.season
+    if s == "_shared":
+        store["_shared"] = _sanitize_shared(payload.texts)
+    elif s in _LANDING_SEASONS:
+        store[s] = _sanitize_season_texts(payload.texts)
+    else:
+        return JSONResponse(status_code=400, content={"error": "season inválida"})
+    clean = _write_landing_store(store)
+    return {"status": "ok", "season": s, "overrides": clean["_shared"] if s == "_shared" else clean[s]}
+
+@app.delete("/api/superadmin/landing-texts")
+async def api_sa_del_landing_texts(request: Request, season: str | None = None, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    store = _read_landing_store()
+    if season == "_shared":
+        store["_shared"] = {}
+    elif season in _LANDING_SEASONS:
+        store[season] = {}
+    else:
+        return JSONResponse(status_code=400, content={"error": "season inválida"})
+    _write_landing_store(store)
+    return {"status": "ok"}
+
+# Compat: la sección vieja de /super-admin/calculadora sigue pegándole a estos.
+@app.get("/api/superadmin/public-landing")
+async def api_get_public_landing_texts(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    overrides = _read_landing_store()["_shared"]
+    return {"status": "ok", "defaults": LANDING_SHARED_DEFAULTS,
+            "config": {**LANDING_SHARED_DEFAULTS, **overrides}, "customized": bool(overrides)}
+
+@app.put("/api/superadmin/public-landing")
+async def api_update_public_landing_texts(request: Request, payload: dict, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    store = _read_landing_store()
+    store["_shared"] = _sanitize_shared(payload)
+    clean = _write_landing_store(store)
+    return {"status": "ok", "config": {**LANDING_SHARED_DEFAULTS, **clean["_shared"]}}
+
+@app.delete("/api/superadmin/public-landing")
+async def api_reset_public_landing_texts(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    store = _read_landing_store()
+    store["_shared"] = {}
+    _write_landing_store(store)
     return {"status": "ok"}
 
 DEFAULT_SYSTEM_PROMPT = """Eres el asistente virtual oficial de [NOMBRE DE LA EMPRESA]. Tu objetivo es brindar una atención al cliente excepcional, rápida y profesional.
@@ -4709,10 +5049,63 @@ async def gdrive_sync_loop():
         await asyncio.sleep(GDRIVE_SYNC_TICK_SECONDS)
 
 
+DEPOSIT_EXPIRATION_TICK_SECONDS = 60
+
+async def expire_pending_payments_loop():
+    """Libera los turnos con seña sin pagar pasado el plazo configurado por cliente
+    (ClientSettings.deposit_payment_timeout_minutes). Mismo patrón defensivo que
+    scheduler_reminders_loop (try/except por turno, un error no tumba el loop)."""
+    from src.database.models import Appointment, AppointmentPayment
+
+    logging.info("[DepositExpiration] Starting automatic expiration service...")
+
+    while True:
+        try:
+            db = SessionLocal()
+            pending_apps = db.query(Appointment).filter(Appointment.status == "pending_payment").all()
+
+            for appt in pending_apps:
+                try:
+                    settings = db.query(ClientSettings).filter_by(client_id=appt.client_id).first()
+                    if not settings:
+                        continue
+                    timeout_minutes = settings.deposit_payment_timeout_minutes or 30
+                    if (datetime.utcnow() - appt.created_at).total_seconds() < timeout_minutes * 60:
+                        continue
+
+                    appt.status = "expired"
+                    payment_row = db.query(AppointmentPayment).filter_by(
+                        appointment_id=appt.id, client_id=appt.client_id
+                    ).order_by(AppointmentPayment.id.desc()).first()
+                    if payment_row and payment_row.status == "pending":
+                        payment_row.status = "cancelled"
+                    db.commit()
+
+                    template = settings.deposit_expired_template or "Hola {nombre}, no llegamos a recibir el pago de la seña de tu turno del {fecha} a las {hora} hs para {motivo}, así que liberamos ese horario. Si todavía te interesa, escribinos de nuevo para agendar."
+                    message = template.format(
+                        nombre=appt.client_name or "Cliente", fecha=appt.date, hora=appt.time,
+                        motivo=appt.reason or "tu turno"
+                    )
+                    wa_id = appt.thread_id
+                    if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
+                        wa_id = f"{wa_id}@c.us"
+                    await send_whatsapp_message_saas(appt.client_id, wa_id, message)
+                    logging.info(f"[DepositExpiration] Turno {appt.id} (cliente {appt.client_id}) expirado por falta de pago")
+                except Exception as e:
+                    logging.error(f"[DepositExpiration] Error expirando turno {appt.id}: {e}")
+
+            db.close()
+        except Exception as e:
+            logging.error(f"[DepositExpiration] Error in loop: {e}")
+
+        await asyncio.sleep(DEPOSIT_EXPIRATION_TICK_SECONDS)
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(scheduler_reminders_loop())
     asyncio.create_task(gdrive_sync_loop())
+    asyncio.create_task(expire_pending_payments_loop())
 
 
 # ==========================================

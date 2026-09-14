@@ -27,9 +27,11 @@ from langgraph.prebuilt import ToolNode
 # --- SQLAlchemy ---
 from sqlalchemy.orm import Session
 from src.database.session import SessionLocal
-from src.database.models import Client, ClientSettings, UserProfile, KnowledgeGap, Alert, Knowledge, Submission, Appointment, Proceeding
+from src.database.models import Client, ClientSettings, UserProfile, KnowledgeGap, Alert, Knowledge, Submission, Appointment, Proceeding, AppointmentPayment
 from src.database.forms_saas import process_form_completion
 from src.database.openai_key import resolve_client_openai_key, get_client_embeddings
+from src.database.mp_credentials import resolve_client_mp_token
+from src.mercadopago_client import create_preference
 
 load_dotenv()
 AI_PROVIDER = os.getenv("AI_PROVIDER", "google").lower()
@@ -466,7 +468,7 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
         local_apps_query = db.query(Appointment).filter(
             Appointment.client_id == client_id,
             Appointment.date == date_str,
-            Appointment.status != 'cancelled'
+            ~Appointment.status.in_(['cancelled', 'expired'])
         )
         if settings.enable_employee_assignment and employee_id:
             local_apps_query = local_apps_query.filter(Appointment.employee_id == employee_id)
@@ -515,12 +517,13 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
     try:
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
         if not settings:
-            return False
-            
+            return {"success": False}
+
         provider = settings.scheduling_provider or "local"
         calendar_id = settings.google_calendar_id or "primary"
-        
+
         duration = None
+        deposit_amount = None
         if tramite_nombre:
             from src.database.models import Knowledge
             search_topic = tramite_nombre.lower().strip()
@@ -533,33 +536,29 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
                     break
             if match and match.appointment_duration:
                 duration = match.appointment_duration
+            if match and match.deposit_amount:
+                deposit_amount = match.deposit_amount
 
         if not duration:
             duration = settings.appointment_duration or 30
-            
+
+        requires_deposit = bool(settings.feat_deposit_payment and deposit_amount and deposit_amount > 0)
+
+        # Si el trámite pide seña, chequeamos que Mercado Pago esté configurado ANTES de
+        # tocar la base: si no hay credencial, no queremos reservar un horario que después
+        # nadie va a poder pagar ni liberar hasta el timeout.
+        payment_info = None
+        mp_token = None
+        client_obj = None
+        if requires_deposit:
+            mp_token = resolve_client_mp_token(settings)
+            client_obj = db.query(Client).filter_by(id=client_id).first()
+            if not mp_token or not client_obj:
+                logging.error(f"[MercadoPago] feat_deposit_payment activo pero sin access token configurado para cliente {client_id}")
+                return {"success": False, "payment_config_error": True}
+
         prof = db.query(UserProfile).filter_by(client_id=client_id, user_phone=thread_id).first()
         client_name = prof.full_name if (prof and prof.full_name) else "Cliente"
-        
-        google_success = True
-        if provider == "google":
-            from src.agents.scheduling import get_calendar_service
-            service = get_calendar_service()
-            if service:
-                start_dt = f"{date_str}T{time_str}:00"
-                try:
-                    end_dt = (datetime.strptime(start_dt, "%Y-%m-%dT%H:%M:%S") + timedelta(minutes=duration)).isoformat()
-                    event = {
-                        'summary': f'Turno: {client_name}',
-                        'description': f'Motivo: {reason}\nID Chat: {thread_id}',
-                        'start': {'dateTime': start_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
-                        'end': {'dateTime': end_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
-                    }
-                    service.events().insert(calendarId=calendar_id, body=event).execute()
-                except Exception as e:
-                    logging.error(f"Error registrando en Google Calendar: {e}")
-                    google_success = False
-            else:
-                google_success = False
 
         assigned_employee_id = None
         if settings.enable_employee_assignment:
@@ -572,7 +571,7 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
                         Appointment.client_id == client_id,
                         Appointment.date == date_str,
                         Appointment.time == time_str,
-                        Appointment.status != 'cancelled',
+                        ~Appointment.status.in_(['cancelled', 'expired']),
                         Appointment.employee_id.isnot(None)
                     ).all()
                 }
@@ -594,24 +593,86 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
             time=time_str,
             reason=reason,
             service=reason,
-            status="confirmed",
+            status="pending_payment" if requires_deposit else "confirmed",
             employee_id=assigned_employee_id
         )
         db.add(new_app)
         db.commit()
-        
+        db.refresh(new_app)
+
+        # Recién ahora que existe new_app.id armamos la preferencia de MP, con un
+        # external_reference que el webhook puede resolver de forma inequívoca al turno
+        # y al cliente (aislamiento multi-tenant: ver /webhook/{slug}/mercadopago).
+        if requires_deposit:
+            import os as _os
+            public_base_url = (settings.webhook_base_url or _os.getenv("PUBLIC_BASE_URL", "")).rstrip("/")
+            notification_url = f"{public_base_url}/webhook/{client_obj.slug}/mercadopago"
+            mp_preference = create_preference(
+                access_token=mp_token,
+                title=f"Seña - {reason or tramite_nombre or 'Turno'}",
+                amount=deposit_amount,
+                currency_id=settings.deposit_currency or "ARS",
+                external_reference=f"appt:{client_id}:{new_app.id}",
+                notification_url=notification_url,
+            )
+            if not mp_preference or not mp_preference.get("init_point"):
+                logging.error(f"[MercadoPago] No se pudo crear la preferencia de pago para cliente {client_id}, turno {new_app.id}")
+                db.delete(new_app)
+                db.commit()
+                return {"success": False, "payment_config_error": True}
+
+            payment = AppointmentPayment(
+                client_id=client_id,
+                appointment_id=new_app.id,
+                mp_preference_id=mp_preference.get("id"),
+                status="pending",
+                amount=deposit_amount,
+                currency=settings.deposit_currency or "ARS",
+                init_point=mp_preference.get("init_point"),
+            )
+            db.add(payment)
+            db.commit()
+            payment_info = {
+                "link": mp_preference.get("init_point"),
+                "amount": deposit_amount,
+                "currency": settings.deposit_currency or "ARS",
+                "timeout_minutes": settings.deposit_payment_timeout_minutes or 30,
+            }
+
+        google_success = True
+        if provider == "google":
+            from src.agents.scheduling import get_calendar_service
+            service = get_calendar_service()
+            if service:
+                start_dt = f"{date_str}T{time_str}:00"
+                try:
+                    end_dt = (datetime.strptime(start_dt, "%Y-%m-%dT%H:%M:%S") + timedelta(minutes=duration)).isoformat()
+                    summary = f'Turno (pendiente de seña): {client_name}' if requires_deposit else f'Turno: {client_name}'
+                    event = {
+                        'summary': summary,
+                        'description': f'Motivo: {reason}\nID Chat: {thread_id}',
+                        'start': {'dateTime': start_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
+                        'end': {'dateTime': end_dt, 'timeZone': 'America/Argentina/Buenos_Aires'},
+                    }
+                    service.events().insert(calendarId=calendar_id, body=event).execute()
+                except Exception as e:
+                    logging.error(f"Error registrando en Google Calendar: {e}")
+                    google_success = False
+            else:
+                google_success = False
+
         try:
             from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
             assign_tag_by_name(client_id, thread_id, "🗓️ Turno Agendado")
             remove_tag_by_name(client_id, thread_id, "❌ Turno Cancelado")
         except Exception as te:
             logging.error(f"Error updating tagging in registrar_turno: {te}")
-            
-        return google_success
+
+        return {"success": google_success, "status": new_app.status, "payment": payment_info}
     except Exception as e:
         logging.error(f"Error reservando turno SaaS: {e}")
         db.rollback()
-        return False
+        return {"success": False}
     finally:
         db.close()
 
@@ -847,7 +908,7 @@ def consultar_disponibilidad(fecha: str, tramite_nombre: str = None, config: Run
         local_apps = db_session.query(Appointment).filter(
             Appointment.client_id == client_id,
             Appointment.date == fecha,
-            Appointment.status != 'cancelled'
+            ~Appointment.status.in_(['cancelled', 'expired'])
         ).all()
         for ap in local_apps:
             t = ap.time.strip() if ap.time else "00:00"
@@ -917,7 +978,7 @@ def iniciar_datos_turno(fecha: str, hora: str, tramite_nombre: str, config: Runn
 
 @tool
 def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None, nombre_usuario: str = None, datos_adicionales: str = None, config: RunnableConfig = None):
-    """Registra y agenda un nuevo turno para el usuario en una fecha (YYYY-MM-DD) y hora (HH:MM) específicas. Si el usuario agenda para un trámite o servicio específico, incluir tramite_nombre. Si conoces el nombre y apellido del usuario, pasalo en nombre_usuario. Si ya se recolectaron los datos adicionales del trámite (ver 'REFUERZO DE DATOS DE TURNO'), pasalos en datos_adicionales como texto 'Campo: Valor, Campo2: Valor2'."""
+    """Registra y agenda un nuevo turno para el usuario en una fecha (YYYY-MM-DD) y hora (HH:MM) específicas. Si el usuario agenda para un trámite o servicio específico, incluir tramite_nombre. Si conoces el nombre y apellido del usuario, pasalo en nombre_usuario. Si ya se recolectaron los datos adicionales del trámite (ver 'REFUERZO DE DATOS DE TURNO'), pasalos en datos_adicionales como texto 'Campo: Valor, Campo2: Valor2'. Si el resultado trae 'status':'pending_payment', el turno quedó reservado pero requiere el pago de una seña: seguí la 'instruccion' del resultado al pie de la letra, sobre todo pasar el 'link_pago' TAL CUAL viene, sin acortarlo ni reescribirlo."""
     client_id = config.get("configurable", {}).get("client_id") if config else None
     thread_id = config.get("configurable", {}).get("thread_id") if config else None
     if not client_id or not thread_id:
@@ -984,14 +1045,29 @@ def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None
     if datos_adicionales and datos_adicionales.strip():
         real_reason = f"{real_reason} | {datos_adicionales.strip()}"
 
-    exito = registrar_turno_saas(client_id, thread_id, fecha, hora, real_reason, tramite_nombre)
-    if exito:
+    resultado = registrar_turno_saas(client_id, thread_id, fecha, hora, real_reason, tramite_nombre)
+    if resultado.get("payment_config_error"):
+        return "Este trámite requiere una seña para agendarse, pero el negocio todavía no configuró el cobro. Avisale al usuario que por ahora no se puede agendar este turno y que el negocio lo va a contactar."
+    if not resultado.get("success"):
+        return "No se pudo agendar el turno. Por favor, intentá nuevamente."
+
+    if resultado.get("status") == "pending_payment" and resultado.get("payment"):
+        pago = resultado["payment"]
         return json.dumps({
-            "status": "success",
-            "message": f"Turno agendado con éxito para el {fecha} a las {hora} hs.",
-            "detalle": real_reason
+            "status": "pending_payment",
+            "message": f"Turno reservado para el {fecha} a las {hora} hs para {real_reason}, PENDIENTE de pago de seña.",
+            "monto": pago["amount"],
+            "moneda": pago["currency"],
+            "link_pago": pago["link"],
+            "plazo_minutos": pago["timeout_minutes"],
+            "instruccion": "Decile al usuario el monto y la moneda de la seña, que tiene ese plazo en minutos para pagar o se libera el horario, y pasale el link_pago EXACTAMENTE como viene, sin acortarlo ni modificarlo."
         })
-    return "No se pudo agendar el turno. Por favor, intentá nuevamente."
+
+    return json.dumps({
+        "status": "success",
+        "message": f"Turno agendado con éxito para el {fecha} a las {hora} hs.",
+        "detalle": real_reason
+    })
 
 CATALOG_LEAD_TOPIC = "Datos de Contacto - Catálogo"
 DEFAULT_CATALOG_LEAD_FIELDS = ["Nombre del Cliente", "Email", "Teléfono"]

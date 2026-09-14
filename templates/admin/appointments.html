@@ -1,6 +1,6 @@
 {% extends "admin/layout.html" %}
 
-{% block title %}Agenda | Zárate System IA{% endblock %}
+{% block title %}Agenda | anka{% endblock %}
 {% block breadcrumb %}Agenda{% endblock %}
 {% block section_title %}Gestión de Turnos{% endblock %}
 
@@ -167,6 +167,15 @@
 
     document.addEventListener('DOMContentLoaded', () => { renderCalendar(); });
 
+    function statusBadge(a) {
+        switch (a.status) {
+            case 'cancelled': return { label: 'Cancelado', cls: 'text-red-500/80 bg-red-500/10 border border-red-500/20' };
+            case 'expired': return { label: 'Vencido (sin seña)', cls: 'text-amber-500/80 bg-amber-500/10 border border-amber-500/20' };
+            case 'pending_payment': return { label: `Pendiente seña${a.payment_amount ? ' ($' + a.payment_amount + ' ' + (a.payment_currency || '') + ')' : ''}`, cls: 'text-amber-400 bg-amber-400/10 border border-amber-400/20' };
+            default: return { label: 'Confirmado', cls: 'text-brand-500 bg-brand-500/10 border border-brand-500/20' };
+        }
+    }
+
     function setView(view) {
         document.getElementById('view-list').classList.toggle('hidden', view !== 'list');
         document.getElementById('view-calendar').classList.toggle('hidden', view !== 'calendar');
@@ -195,10 +204,15 @@
                     ` : ''}
                 </td>
                 <td class="px-8 py-5 text-sm text-slate-500 truncate max-w-xs">${a.reason}</td>
-                <td class="px-8 py-5 text-right flex justify-end items-center gap-4">
-                    <span class="text-[10px] font-bold ${a.status === 'cancelled' ? 'text-red-500/80 bg-red-500/10 border border-red-500/20' : 'text-brand-500 bg-brand-500/10 border border-brand-500/20'} px-2.5 py-1 rounded-full uppercase">${a.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}</span>
-                    ${a.status !== 'cancelled' ? `
-                    <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-lg transition-all" title="Cancelar Turno">
+                <td class="px-8 py-5 text-right flex justify-end items-center gap-3">
+                    <span class="text-[10px] font-bold ${statusBadge(a).cls} px-2.5 py-1 rounded-full uppercase whitespace-nowrap">${statusBadge(a).label}</span>
+                    ${a.status === 'pending_payment' ? `
+                    <button onclick="event.stopPropagation(); confirmPaymentManual(${a.id});" class="p-2 hover:bg-emerald-500/20 text-slate-500 hover:text-emerald-500 rounded-lg transition-all" title="Confirmar seña manualmente (efectivo/transferencia)">
+                        <i data-lucide="check-check" class="w-4 h-4"></i>
+                    </button>
+                    ` : ''}
+                    ${(a.status !== 'cancelled' && a.status !== 'expired') ? `
+                    <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-lg transition-all" title="Cancelar / Liberar Turno">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
                     ` : ''}
@@ -229,7 +243,7 @@
                 <div onclick="selectDay('${dateStr}')" class="relative p-2 border-r border-b border-slate-800 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-800/50 transition-all ${isSelected ? 'bg-brand-500/10' : ''}">
                     <span class="text-xs font-bold ${isSelected ? 'text-brand-500 scale-125' : 'text-slate-600'}">${day}</span>
                     <div class="mt-1 flex gap-0.5">
-                        ${dayApps.slice(0,3).map(a => `<div class="w-1 h-1 rounded-full ${a.status === 'cancelled' ? 'bg-red-500/60' : 'bg-brand-500/60'}"></div>`).join('')}
+                        ${dayApps.slice(0,3).map(a => `<div class="w-1 h-1 rounded-full ${(a.status === 'cancelled' || a.status === 'expired') ? 'bg-red-500/60' : (a.status === 'pending_payment' ? 'bg-amber-400/60' : 'bg-brand-500/60')}"></div>`).join('')}
                     </div>
                 </div>
             `;
@@ -256,9 +270,14 @@
                     <div class="flex justify-between items-center">
                         <span class="text-xs font-bold text-white">${a.time} HS</span>
                         <div class="flex items-center gap-2">
-                            <span class="text-[9px] font-bold ${a.status === 'cancelled' ? 'text-red-500' : 'text-brand-500'} uppercase">${a.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}</span>
-                            ${a.status !== 'cancelled' ? `
-                            <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-1 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-md transition-all" title="Cancelar Turno">
+                            <span class="text-[9px] font-bold ${statusBadge(a).cls} px-1.5 py-0.5 rounded uppercase whitespace-nowrap">${statusBadge(a).label}</span>
+                            ${a.status === 'pending_payment' ? `
+                            <button onclick="event.stopPropagation(); confirmPaymentManual(${a.id});" class="p-1 hover:bg-emerald-500/20 text-slate-500 hover:text-emerald-500 rounded-md transition-all" title="Confirmar seña manualmente">
+                                <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
+                            </button>
+                            ` : ''}
+                            ${(a.status !== 'cancelled' && a.status !== 'expired') ? `
+                            <button onclick="event.stopPropagation(); cancelAppointment(${a.id});" class="p-1 hover:bg-red-500/20 text-slate-500 hover:text-red-500 rounded-md transition-all" title="Cancelar / Liberar Turno">
                                 <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             </button>
                             ` : ''}
@@ -297,6 +316,21 @@
                 window.location.reload();
             } else {
                 alert("Error al cancelar el turno.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error de conexión.");
+        }
+    }
+
+    async function confirmPaymentManual(id) {
+        if (!confirm("¿Confirmar que la seña de este turno se cobró por fuera de Mercado Pago (efectivo/transferencia)?")) return;
+        try {
+            const response = await fetch(`/admin/appointments/confirm-payment/${id}`, { method: 'POST' });
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                alert("Error al confirmar la seña.");
             }
         } catch (e) {
             console.error(e);

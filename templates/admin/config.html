@@ -1,6 +1,6 @@
 {% extends "admin/layout.html" %}
 
-{% block title %}Configuración | Zárate System IA{% endblock %}
+{% block title %}Configuración | anka{% endblock %}
 {% block breadcrumb %}Ajustes{% endblock %}
 {% block section_title %}Centro de Entrenamiento{% endblock %}
 
@@ -45,6 +45,9 @@
             </button>
             <button onclick="switchTab('avanzado')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'avanzado' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="avanzado">
                 <i data-lucide="settings-2" class="w-4 h-4"></i> Avanzado
+            </button>
+            <button onclick="switchTab('pagos')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'pagos' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="pagos">
+                <i data-lucide="credit-card" class="w-4 h-4"></i> Pagos
             </button>
         </div>
     </aside>
@@ -500,6 +503,96 @@
                     </div>
                 </div>
             </div>
+
+            <!-- SECCIÓN: PAGOS (SEÑA CON MERCADO PAGO) -->
+            <div id="tab-pagos" class="tab-content {{ '' if active_tab == 'pagos' else 'hidden' }} space-y-10">
+                <div class="border-b border-slate-800 pb-6">
+                    <h2 class="text-2xl font-black text-white">Seña con Mercado Pago</h2>
+                    <p class="text-base text-slate-500 mt-2">El negocio conecta SU PROPIA cuenta de Mercado Pago: el dinero de la seña va directo a esa cuenta, nunca pasa por anka.</p>
+                </div>
+
+                <!-- AYUDA: CÓMO CONSEGUIR LAS CREDENCIALES -->
+                <div class="p-8 bg-sky-500/5 border border-sky-500/20 rounded-[2.5rem] space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-sky-500/20 flex items-center justify-center text-sky-400 shrink-0">
+                            <i data-lucide="help-circle" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-base font-black text-white">¿Cómo consigo el Access Token y la Public Key?</h3>
+                    </div>
+                    <ol class="text-sm text-slate-400 space-y-2 list-decimal list-inside marker:text-sky-400 marker:font-bold">
+                        <li>Entrá a <a href="https://www.mercadopago.com.ar/developers/panel" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300 underline">mercadopago.com.ar/developers/panel</a> con el usuario y contraseña de Mercado Pago <b>del negocio</b> (no el personal).</li>
+                        <li>Si te pide crear una aplicación, elegí un nombre cualquiera (ej: "anka") y seguí los pasos, cualquier opción que te pregunte sirve.</li>
+                        <li>Entrá a la aplicación creada → pestaña <b>"Credenciales de producción"</b>.</li>
+                        <li>Copiá el valor de <b>"Access Token"</b> y pegalo abajo en "Access Token de Mercado Pago". Este dato es secreto, no lo compartas con nadie.</li>
+                        <li>Copiá el valor de <b>"Public Key"</b> y pegalo en el campo de al lado.</li>
+                        <li>Activá el interruptor "Pedir seña para agendar turnos" de abajo, guardá, y después cargá el monto de la seña en cada servicio (pestaña <b>Conocimiento</b>).</li>
+                    </ol>
+                    <p class="text-[11px] text-slate-500">Importante: usá siempre las credenciales de <b>producción</b>, no las de prueba/test — si no, el link de pago que reciben tus clientes no va a funcionar.</p>
+                </div>
+
+                <div class="p-8 bg-brand-500/5 border border-brand-500/10 rounded-[2.5rem] space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-brand-500/20 flex items-center justify-center text-brand-500">
+                                <i data-lucide="credit-card" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-white">Pedir seña para agendar turnos</h3>
+                                <p class="text-sm text-slate-500">Con esto activado, los servicios que tengan un monto de seña cargado (pestaña Conocimiento) van a pedirle el pago al usuario antes de confirmar el turno.</p>
+                            </div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer font-bold shrink-0">
+                            <input type="checkbox" name="feat_deposit_payment" value="1" class="sr-only peer" {{ 'checked' if config.feat_deposit_payment == '1' }}>
+                            <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
+                        </label>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <div class="flex items-center justify-between">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Access Token de Mercado Pago</label>
+                                <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider {{ 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' if config.mp_access_token_configured else 'bg-rose-500/10 text-rose-400 border border-rose-500/20' }}">{{ 'Configurado' if config.mp_access_token_configured else 'Sin configurar' }}</span>
+                            </div>
+                            <input type="password" name="mp_access_token" placeholder="{{ 'Ya configurado — dejar en blanco para no cambiarlo' if config.mp_access_token_configured else 'APP_USR-...' }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">
+                            <p class="text-[9px] text-slate-500">Se saca de la cuenta de Mercado Pago del negocio: Tu negocio → Configuración → Credenciales de producción.
+                                {% if config.mp_access_token_configured %}<a href="/admin/config/clear-mp-token" onclick="return confirm('¿Quitar la credencial de Mercado Pago configurada?')" class="text-red-400 hover:text-red-300 ml-1">Quitar credencial guardada</a>{% endif %}
+                            </p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Public Key de Mercado Pago</label>
+                            <input type="text" name="mp_public_key" value="{{ config.mp_public_key or '' }}" placeholder="APP_USR-..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">
+                            <p class="text-[9px] text-slate-500">Está en la misma pantalla que el Access Token, un poco más arriba. Este dato no es secreto.</p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Moneda</label>
+                            <input type="text" name="deposit_currency" value="{{ config.deposit_currency or 'ARS' }}" placeholder="ARS" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">
+                            <p class="text-[9px] text-slate-500">Dejalo en <code class="text-brand-400">ARS</code> (pesos argentinos) salvo que la cuenta de Mercado Pago sea de otro país.</p>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Plazo para pagar antes de liberar el horario</label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" name="deposit_payment_timeout_minutes" value="{{ config.deposit_payment_timeout_minutes or 30 }}" min="1" class="w-24 bg-slate-950 border border-slate-800 rounded-xl p-2 text-xs text-center text-white focus:border-brand-500 outline-none transition-all">
+                                <span class="text-xs text-slate-400 font-bold">minutos</span>
+                            </div>
+                            <p class="text-[9px] text-slate-500">Si el cliente no paga en este plazo, el turno se cancela solo y el horario queda libre de nuevo. Ni muy corto (que le dé tiempo a pagar) ni muy largo (que no te bloquee la agenda).</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Mensaje al confirmarse el pago</label>
+                            <textarea name="deposit_confirmed_template" rows="3" placeholder="¡Gracias {nombre}! Recibimos tu seña de {monto} {moneda} y tu turno del {fecha} a las {hora} hs para {motivo} quedó CONFIRMADO." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">{{ config.deposit_confirmed_template or '' }}</textarea>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Mensaje al vencer el plazo sin pagar</label>
+                            <textarea name="deposit_expired_template" rows="3" placeholder="Hola {nombre}, no llegamos a recibir el pago de la seña de tu turno del {fecha} a las {hora} hs para {motivo}, así que liberamos ese horario." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">{{ config.deposit_expired_template or '' }}</textarea>
+                        </div>
+                        <p class="text-[9px] text-slate-500 lg:col-span-2">Ambos mensajes son opcionales: si los dejás vacíos, se usa un mensaje predeterminado. Variables disponibles: <code class="text-brand-400">{nombre}</code>, <code class="text-brand-400">{fecha}</code>, <code class="text-brand-400">{hora}</code>, <code class="text-brand-400">{motivo}</code>, <code class="text-brand-400">{monto}</code>, <code class="text-brand-400">{moneda}</code></p>
+                    </div>
+
+                    <p class="text-[10px] text-slate-500 flex items-start gap-2"><i data-lucide="info" class="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-400"></i> El monto de la seña se carga por servicio en la pestaña <b>Conocimiento</b> (editá el servicio → "Monto de Seña"). Si un servicio no tiene monto cargado, ese servicio NO pide seña aunque este interruptor esté activado.</p>
+                </div>
+            </div>
         </form>
 
         <!-- SECCIÓN: CONOCIMIENTO (Independiente por su complejidad) -->
@@ -729,6 +822,11 @@
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Capacidad Simultánea</label>
                         <input type="number" name="scheduling_capacity" id="scheduling_capacity" placeholder="Ej: 1" value="1" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
                         <p class="text-[11px] text-slate-600 ml-1">Atención paralela (ej: 1, 2, 3).</p>
+                    </div>
+                    <div class="space-y-2 md:col-span-3">
+                        <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Monto de Seña (opcional)</label>
+                        <input type="number" step="0.01" name="deposit_amount" id="deposit_amount" placeholder="Ej: 5000" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Si lo cargás, este servicio va a pedir el pago de esta seña antes de confirmar el turno (necesita tener "Seña con Mercado Pago" activada en la pestaña Pagos). Dejalo vacío para que este servicio no pida seña.</p>
                     </div>
                     <div class="space-y-2 md:col-span-3">
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Días Habilitados para Turno</label>
@@ -987,6 +1085,7 @@
             document.getElementById('form_fields').value = data.form_fields || '';
             document.getElementById('scheduling_hours').value = data.scheduling_hours || '';
             document.getElementById('appointment_duration_kb').value = data.appointment_duration || '';
+            document.getElementById('deposit_amount').value = data.deposit_amount || '';
             document.getElementById('scheduling_capacity').value = data.scheduling_capacity || '1';
             const selectedDays = (data.scheduling_days || '').split(',').map(d => d.trim()).filter(Boolean);
             document.querySelectorAll('.scheduling-day-checkbox').forEach(cb => {

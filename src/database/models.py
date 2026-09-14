@@ -125,6 +125,18 @@ class ClientSettings(Base):
     gdrive_share_revoked = Column(Boolean, default=False)  # la SA tiene credenciales válidas pero la carpeta ya no está compartida con ella
     gdrive_sync_interval_minutes = Column(Integer, nullable=False, default=480, server_default="480")  # cada cuánto corre el sync automático para ESTE cliente (default 8hs, igual que antes de hacerse configurable)
 
+    # --- PAGOS / SEÑA (MERCADO PAGO) ---
+    # Cada cliente conecta SU PROPIA cuenta de Mercado Pago (mismo criterio de aislamiento
+    # por tenant que openai_api_key_encrypted/gdrive_service_account_json_encrypted): no hay
+    # cuenta MP central de la plataforma.
+    feat_deposit_payment = Column(Boolean, default=False)  # toggle maestro de la feature para este cliente
+    mp_access_token_encrypted = Column(Text, nullable=True)  # Fernet, mismo cifrado que openai_api_key_encrypted
+    mp_public_key = Column(String(255), nullable=True)  # no sensible, solo referencia
+    deposit_currency = Column(String(10), default="ARS")
+    deposit_payment_timeout_minutes = Column(Integer, default=30)  # plazo antes de liberar el horario si no se paga
+    deposit_confirmed_template = Column(Text, nullable=True)
+    deposit_expired_template = Column(Text, nullable=True)
+
     client = relationship("Client", back_populates="settings")
 
 class User(Base):
@@ -282,6 +294,7 @@ class Knowledge(Base):
     scheduling_days = Column(String(50), nullable=True)  # "mon,wed,fri"; NULL/vacío = usar los días generales del cliente (ClientSettings.scheduling_days)
     appointment_extra_fields = Column(Text, nullable=True)  # "Obra Social, DNI, Edad"; datos puntuales a pedir antes de confirmar el turno de este trámite
     appointment_duration = Column(Integer, nullable=True)
+    deposit_amount = Column(Float, nullable=True)  # None/0 = este trámite no pide seña aunque el cliente tenga feat_deposit_payment activo
     scheduling_capacity = Column(Integer, default=1, nullable=True)
     interactive_options = Column(Text)
     media_path = Column(String(255))
@@ -311,6 +324,21 @@ class Appointment(Base):
     status = Column(String(50), default="pending")
     employee_id = Column(Integer, ForeignKey("data_employees.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class AppointmentPayment(Base):
+    __tablename__ = "data_appointment_payments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    appointment_id = Column(Integer, ForeignKey("data_appointments.id"), nullable=False)
+    mp_preference_id = Column(String(100), nullable=True)
+    mp_payment_id = Column(String(100), nullable=True)
+    status = Column(String(30), default="pending")  # pending | approved | rejected | cancelled
+    amount = Column(Float, nullable=False)
+    currency = Column(String(10), default="ARS")
+    init_point = Column(String(500), nullable=True)  # link de checkout devuelto por MP
+    raw_last_webhook = Column(Text, nullable=True)  # último payload recibido, para debug
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Proceeding(Base):
     __tablename__ = "data_proceedings"
