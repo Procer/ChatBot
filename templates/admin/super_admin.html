@@ -24,6 +24,39 @@
         </button>
     </div>
 
+    <!-- Alerta global de saldo de OpenAI -->
+    <div class="glass rounded-xl p-5 border border-slate-700/50 mb-6">
+        <div class="flex items-center gap-2 mb-1">
+            <i data-lucide="bell-ring" class="w-4 h-4 text-amber-400"></i>
+            <h3 class="font-bold text-white text-sm">Alerta de saldo de OpenAI por WhatsApp</h3>
+        </div>
+        <p class="text-xs text-slate-400 mb-3">Avisa por WhatsApp cuando a un cliente se le está por terminar el crédito de OpenAI, para que le cobres y recargues antes de que el bot deje de responder.</p>
+        <ol class="text-xs text-slate-400 space-y-1 list-decimal list-inside mb-4 marker:text-amber-400 marker:font-bold">
+            <li>Configurá acá abajo <b>una sola vez</b>: a qué número mandar el aviso, y con la instancia de WhatsApp de qué cliente se envía (tiene que ser un cliente que ya tenga WhatsApp conectado).</li>
+            <li>Entrá a cada cliente (tarjetas de abajo → "Editar") y en la sección <b>"Alerta de saldo de OpenAI"</b> definí su umbral mínimo, y cada vez que le cargues crédito real en la cuenta de OpenAI, anotalo ahí con "Marcar recargado".</li>
+            <li>El sistema resta el gasto real de ese cliente desde la última carga y, cuando el saldo estimado cae por debajo del umbral, te llega el WhatsApp <b>una sola vez</b> (no vuelve a avisar hasta que registres una nueva carga).</li>
+        </ol>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase">Número de WhatsApp a avisar</label>
+                <input type="text" id="oaAlertDestNumber" placeholder="54911..." class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1">
+                <p class="text-[10px] text-slate-500 mt-1">Sin espacios, guiones ni "+", con código de país (ej: 5491122334455).</p>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase">Enviar usando el WhatsApp de</label>
+                <select id="oaAlertSenderClient" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1">
+                    <option value="">Elegir cliente...</option>
+                    {% for client in clients %}
+                    <option value="{{ client.id }}">{{ client.business_name }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-[10px] text-slate-500 mt-1">El mensaje sale desde el WhatsApp de ese negocio (Canales → WhatsApp), no es un número aparte.</p>
+            </div>
+            <button onclick="saveOpenAIAlertsConfig()" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-md text-sm font-semibold transition-all">Guardar</button>
+        </div>
+        <p id="oaAlertConfigStatus" class="text-xs text-emerald-400 mt-2 hidden"></p>
+    </div>
+
     <!-- Lista de Clientes -->
     <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {% for client in clients %}
@@ -196,6 +229,39 @@
                                 <input type="password" id="openai_api_key" autocomplete="off" placeholder="sk-..." class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1 font-mono">
                                 <button type="button" onclick="clearOpenAIKey()" class="mt-2 text-xs text-red-400 hover:text-red-300">Quitar key propia</button>
                             </div>
+                        </div>
+
+                        <!-- Alerta de saldo de OpenAI de este cliente -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <h4 class="text-sm font-bold text-white flex items-center gap-2 mb-1"><i data-lucide="bell-ring" class="w-4 h-4 text-amber-400"></i> Alerta de saldo de OpenAI</h4>
+                            <p class="text-xs text-slate-500 mb-3">OpenAI no expone el saldo real por API, así que se estima: lo que cargaste menos el gasto real registrado desde esa carga. Configurá abajo el número/cliente que reciben el aviso.</p>
+                            <div class="grid grid-cols-2 gap-3 text-xs mb-3">
+                                <div class="bg-slate-800/60 rounded-md p-2">
+                                    <p class="text-slate-500 uppercase text-[10px] font-bold">Saldo estimado</p>
+                                    <p id="oaCreditRemaining" class="text-white font-bold text-sm mt-0.5">-</p>
+                                </div>
+                                <div class="bg-slate-800/60 rounded-md p-2">
+                                    <p class="text-slate-500 uppercase text-[10px] font-bold">Última carga</p>
+                                    <p id="oaCreditLoadedAt" class="text-white font-bold text-sm mt-0.5">-</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 items-end mb-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Avisar cuando quede menos de (USD)</label>
+                                    <input type="number" step="0.5" min="0" id="oaAlertThreshold" value="3" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-[1fr_auto] gap-2 items-end">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Registrar nueva carga (USD)</label>
+                                    <input type="number" step="0.5" min="0" id="oaCreditReloadAmount" placeholder="Ej: 15" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white focus:border-sky-500 outline-none mt-1">
+                                </div>
+                                <button type="button" onclick="reloadOpenAICredit()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-all">Marcar recargado</button>
+                            </div>
+                            <p class="text-[10px] text-slate-500 mt-2">
+                                <b>"Marcar recargado"</b> es solo un registro interno: NO carga plata en OpenAI, es para avisarle al sistema "acabo de cargar $X reales en la cuenta de OpenAI de este cliente" — usalo justo después de recargar de verdad en platform.openai.com. Se aplica al instante (no hace falta "Guardar Cambios") y reinicia el aviso para que pueda volver a dispararse.<br>
+                                El <b>umbral</b> de arriba sí queda pendiente hasta que apretés "Guardar Cambios" al final del formulario.
+                            </p>
                         </div>
 
                         <!-- Prompt -->
@@ -418,6 +484,12 @@
             openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         }
 
+        document.getElementById('oaAlertThreshold').value = data.settings?.openai_alert_threshold_usd ?? 3;
+        document.getElementById('oaCreditReloadAmount').value = '';
+        const remaining = data.settings?.openai_credit_estimated_remaining_usd;
+        document.getElementById('oaCreditRemaining').textContent = (remaining === null || remaining === undefined) ? 'Sin cargar' : `$${remaining.toFixed(2)}`;
+        document.getElementById('oaCreditLoadedAt').textContent = data.settings?.openai_credit_loaded_at ? new Date(data.settings.openai_credit_loaded_at).toLocaleString('es-AR') : '-';
+
         openModal('config-client-modal');
     }
 
@@ -613,7 +685,8 @@
             feat_document_library: document.getElementById('feat_document_library').checked,
             gdrive_service_account_json: document.getElementById('gauth_sa_json').value.trim(),
             gdrive_sync_interval_minutes: parseInt(document.getElementById('gdrive_sync_interval').value, 10) || 480,
-            openai_api_key: document.getElementById('openai_api_key').value.trim()
+            openai_api_key: document.getElementById('openai_api_key').value.trim(),
+            openai_alert_threshold_usd: parseFloat(document.getElementById('oaAlertThreshold').value) || 3.0
         };
         const res = await fetch(`/api/superadmin/clients/${id}/settings`, {
             method: 'PUT',
@@ -626,6 +699,52 @@
             alert(err.error || 'Error al guardar configuración');
         }
     }
+
+    async function reloadOpenAICredit() {
+        const id = document.getElementById('edit_client_id').value;
+        const amount = parseFloat(document.getElementById('oaCreditReloadAmount').value);
+        if (!amount || amount <= 0) { alert('Ingresá un monto válido en USD'); return; }
+        const res = await fetch(`/api/superadmin/clients/${id}/openai_credit/reload`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ amount_usd: amount })
+        });
+        if (res.ok) window.location.reload();
+        else {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || 'Error al registrar la carga');
+        }
+    }
+
+    async function loadOpenAIAlertsConfig() {
+        try {
+            const res = await fetch('/api/superadmin/openai-alerts-config');
+            const data = await res.json();
+            document.getElementById('oaAlertDestNumber').value = data.config?.destination_number || '';
+            document.getElementById('oaAlertSenderClient').value = data.config?.sender_client_id || '';
+        } catch (e) { console.error(e); }
+    }
+
+    async function saveOpenAIAlertsConfig() {
+        const payload = {
+            destination_number: document.getElementById('oaAlertDestNumber').value.trim(),
+            sender_client_id: parseInt(document.getElementById('oaAlertSenderClient').value, 10) || null
+        };
+        const res = await fetch('/api/superadmin/openai-alerts-config', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const status = document.getElementById('oaAlertConfigStatus');
+        if (res.ok) {
+            status.textContent = 'Guardado.';
+            status.classList.remove('hidden');
+            setTimeout(() => status.classList.add('hidden'), 3000);
+        } else {
+            alert('Error al guardar la configuración de alertas');
+        }
+    }
+    document.addEventListener('DOMContentLoaded', loadOpenAIAlertsConfig);
 
     async function clearGDriveServiceAccount() {
         const id = document.getElementById('edit_client_id').value;

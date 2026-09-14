@@ -54,7 +54,16 @@ class ClientSettings(Base):
     # openai_key.py). Encriptada con el mismo Fernet que la cuenta de servicio de Drive.
     # None = usar la key global OPENAI_API_KEY del .env del servidor (comportamiento previo).
     openai_api_key_encrypted = Column(Text, nullable=True)
-    
+
+    # --- ALERTA DE SALDO DE OPENAI ---
+    # OpenAI no expone el saldo prepago restante por API con una key estándar, así que se
+    # estima: lo que el super-admin dice que cargó menos el gasto real logueado (TokenUsage,
+    # ver log_token_usage en analytics_engine_saas.py) desde esa carga.
+    openai_credit_loaded_usd = Column(Float, nullable=True)
+    openai_credit_loaded_at = Column(DateTime, nullable=True)
+    openai_alert_threshold_usd = Column(Float, nullable=True, default=3.0)
+    openai_alert_sent_at = Column(DateTime, nullable=True)  # evita reenviar la misma alerta hasta la próxima carga
+
     feat_rag_enabled = Column(Boolean, default=False)
     feat_pdf_export = Column(Boolean, default=False)
     feat_human_handoff = Column(Boolean, default=False)

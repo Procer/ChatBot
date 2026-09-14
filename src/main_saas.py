@@ -112,6 +112,7 @@ class ClientSettingsUpdate(BaseModel):
     gdrive_service_account_json: str = None  # vacío/None = no tocar la clave ya guardada
     gdrive_sync_interval_minutes: int = 480  # cada cuánto sincroniza Drive este cliente (piso de 5min, ver update_client_settings)
     openai_api_key: str = None  # vacío/None = no tocar la key ya guardada (aislamiento de billing por cliente, ver openai_key.py)
+    openai_alert_threshold_usd: float = 3.0  # avisar por WhatsApp cuando el saldo estimado caiga por debajo de esto
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -3806,7 +3807,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             
             # 3. Invocar Inteligencia Artificial
             final_state = chatbot_app.invoke(inputs, config=config)
-            
+            turn_prompt_tokens = 0
+            turn_completion_tokens = 0
+
             # 4. Enviar Respuesta
             if "messages" in final_state and len(final_state["messages"]) > 0:
                 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -3820,9 +3823,21 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     # llegarle al usuario — solo la respuesta corregida que vino después.
                     if isinstance(msg, SystemMessage) and "CORRECCIÓN OBLIGATORIA" in str(getattr(msg, "content", "") or ""):
                         break
-                    if isinstance(msg, AIMessage) and msg.content:
-                        new_ai_texts.append(msg.content)
-                
+                    if isinstance(msg, AIMessage):
+                        if msg.content:
+                            new_ai_texts.append(msg.content)
+                        # Cada AIMessage de este turno viene de un llamado real al modelo (el loop
+                        # de tool-calling puede disparar varios) - se suman todos para loguear el
+                        # consumo real, no una cifra simulada.
+                        usage = getattr(msg, "usage_metadata", None) or {}
+                        if usage:
+                            turn_prompt_tokens += usage.get("input_tokens") or 0
+                            turn_completion_tokens += usage.get("output_tokens") or 0
+                        else:
+                            token_usage = (getattr(msg, "response_metadata", None) or {}).get("token_usage", {})
+                            turn_prompt_tokens += token_usage.get("prompt_tokens") or 0
+                            turn_completion_tokens += token_usage.get("completion_tokens") or 0
+
                 new_ai_texts.reverse()
                 bot_msg = "\n\n".join(new_ai_texts).strip()
 
@@ -3998,8 +4013,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                         else:
                             await send_telegram_file_saas(client_id, user_id, payload["media_path"], "")
                     
-            # 5. Calcular Tokens (Simulado para demostración)
-            log_token_usage(client_id, user_id, "gpt-4o-mini", 100, 50)
+            # 5. Registrar consumo real de tokens de este turno (0 llamadas al modelo = no loguea nada)
+            if turn_prompt_tokens or turn_completion_tokens:
+                log_token_usage(client_id, user_id, "gpt-4o-mini", turn_prompt_tokens, turn_completion_tokens)
             
         except Exception as e:
             logging.error(f"[SaaS Process] Falla Crítica: {e}")
@@ -4340,6 +4356,51 @@ async def api_reset_public_pricing_config(request: Request, current_user: User =
     _PUBLIC_PRICING_CACHE["ts"] = None
     return {"status": "ok"}
 
+# --- Alerta de saldo de OpenAI por WhatsApp -----------------------------------
+# Config global (no es por-cliente): a qué número avisar y con qué instancia de
+# WhatsApp (de qué cliente) se manda. Mismo patrón de archivo que public_pricing.json.
+_OPENAI_ALERTS_CONFIG_FILE = os.path.join("data", "openai_alerts_config.json")
+
+def _read_openai_alerts_config() -> dict:
+    try:
+        with open(_OPENAI_ALERTS_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    return {
+        "destination_number": data.get("destination_number") or "",
+        "sender_client_id": data.get("sender_client_id"),
+    }
+
+def _write_openai_alerts_config(destination_number: str, sender_client_id) -> dict:
+    clean = {
+        "destination_number": "".join(ch for ch in (destination_number or "") if ch.isdigit()),
+        "sender_client_id": int(sender_client_id) if sender_client_id else None,
+    }
+    os.makedirs("data", exist_ok=True)
+    with open(_OPENAI_ALERTS_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(clean, f, ensure_ascii=False, indent=1)
+    return clean
+
+class OpenAIAlertsConfigPayload(BaseModel):
+    destination_number: str
+    sender_client_id: int | None = None
+
+@app.get("/api/superadmin/openai-alerts-config")
+async def api_get_openai_alerts_config(current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    return {"status": "ok", "config": _read_openai_alerts_config()}
+
+@app.put("/api/superadmin/openai-alerts-config")
+async def api_put_openai_alerts_config(payload: OpenAIAlertsConfigPayload, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    clean = _write_openai_alerts_config(payload.destination_number, payload.sender_client_id)
+    return {"status": "ok", "config": clean}
+
 # --- Textos editables de las landing estacionales (anka.ar) ------------------
 # Las 5 landing son estáticas y viven en el mismo dominio. Cada una hace
 # fetch('/api/public/landing?season=<X>') al cargar y reemplaza:
@@ -4555,6 +4616,23 @@ async def create_client(client_data: ClientCreate, db: Session = Depends(get_db)
         db.rollback()
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+def _estimate_openai_credit_remaining(db: Session, settings) -> float | None:
+    """Estima el saldo de OpenAI restante de un cliente: lo que el super-admin dijo que
+    cargó, menos el gasto real logueado (TokenUsage.cost_usd) desde esa carga. OpenAI no
+    expone el saldo prepago real por API con una key estándar, así que esto es una
+    estimación basada en el consumo que el propio bot registra (ver log_token_usage)."""
+    if not settings or getattr(settings, 'openai_credit_loaded_usd', None) is None:
+        return None
+    from sqlalchemy import func
+    from src.database.models import TokenUsage
+    since = settings.openai_credit_loaded_at or datetime.min
+    spent = db.query(func.sum(TokenUsage.cost_usd)).filter(
+        TokenUsage.client_id == settings.client_id,
+        TokenUsage.timestamp >= since
+    ).scalar() or 0.0
+    return round(settings.openai_credit_loaded_usd - spent, 4)
+
+
 @app.get("/api/superadmin/clients/{client_id}")
 async def get_client(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Obtiene los detalles de un cliente específico."""
@@ -4590,9 +4668,13 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "gdrive_service_account_email": getattr(client.settings, 'gdrive_service_account_email', None) or '',
             "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None)),
             "gdrive_sync_interval_minutes": getattr(client.settings, 'gdrive_sync_interval_minutes', None) or 480,
-            "openai_api_key_configured": bool(getattr(client.settings, 'openai_api_key_encrypted', None))
+            "openai_api_key_configured": bool(getattr(client.settings, 'openai_api_key_encrypted', None)),
+            "openai_credit_loaded_usd": getattr(client.settings, 'openai_credit_loaded_usd', None),
+            "openai_credit_loaded_at": client.settings.openai_credit_loaded_at.isoformat() if getattr(client.settings, 'openai_credit_loaded_at', None) else None,
+            "openai_alert_threshold_usd": getattr(client.settings, 'openai_alert_threshold_usd', None) if getattr(client.settings, 'openai_alert_threshold_usd', None) is not None else 3.0,
+            "openai_credit_estimated_remaining_usd": _estimate_openai_credit_remaining(db, client.settings)
         }
-        
+
     return {
         "id": client.id,
         "business_name": client.business_name,
@@ -4632,6 +4714,7 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_catalog_dynamic_fields = settings_data.feat_catalog_dynamic_fields
     settings.feat_document_library = settings_data.feat_document_library
     settings.gdrive_sync_interval_minutes = max(5, settings_data.gdrive_sync_interval_minutes or 480)
+    settings.openai_alert_threshold_usd = settings_data.openai_alert_threshold_usd if settings_data.openai_alert_threshold_usd is not None else 3.0
 
     sa_json_raw = (settings_data.gdrive_service_account_json or "").strip()
     if sa_json_raw:
@@ -4661,6 +4744,29 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
         asyncio.create_task(setup_whatsapp_webhook(public_base_url, client.slug))
 
     return {"status": "ok"}
+
+
+class OpenAICreditReloadPayload(BaseModel):
+    amount_usd: float
+
+
+@app.post("/api/superadmin/clients/{client_id}/openai_credit/reload")
+async def reload_openai_credit(client_id: int, payload: OpenAICreditReloadPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Registra que se cargó crédito a la cuenta de OpenAI de este cliente: reinicia el
+    contador de gasto estimado (cargado - gastado desde ahora) y rearma la alerta para
+    que pueda volver a dispararse en el próximo ciclo bajo del umbral."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if payload.amount_usd is None or payload.amount_usd <= 0:
+        return JSONResponse(status_code=400, content={"error": "El monto tiene que ser mayor a 0"})
+    settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
+
+    settings.openai_credit_loaded_usd = payload.amount_usd
+    settings.openai_credit_loaded_at = datetime.utcnow()
+    settings.openai_alert_sent_at = None
+    db.commit()
+    return {"status": "ok", "loaded_at": settings.openai_credit_loaded_at.isoformat()}
 
 
 @app.post("/api/superadmin/clients/{client_id}/gdrive/clear_service_account")
@@ -5101,11 +5207,67 @@ async def expire_pending_payments_loop():
         await asyncio.sleep(DEPOSIT_EXPIRATION_TICK_SECONDS)
 
 
+OPENAI_ALERT_TICK_SECONDS = 900  # cada 15 min
+
+async def openai_credit_alert_loop():
+    """Chequea el saldo estimado de OpenAI de cada cliente (ver _estimate_openai_credit_remaining)
+    y manda un WhatsApp de alerta -reusando la instancia de Green-API de un cliente configurado
+    como emisor, ver _read_openai_alerts_config- cuando cae debajo del umbral. No reenvía hasta
+    la próxima carga (openai_alert_sent_at se limpia en /openai_credit/reload)."""
+    logging.info("[OpenAICreditAlert] Starting automatic low-balance alert service...")
+
+    while True:
+        try:
+            alerts_config = _read_openai_alerts_config()
+            destination_number = alerts_config.get("destination_number")
+            sender_client_id = alerts_config.get("sender_client_id")
+
+            if destination_number and sender_client_id:
+                db = SessionLocal()
+                try:
+                    clients_with_credit = db.query(ClientSettings).filter(
+                        ClientSettings.openai_credit_loaded_usd.isnot(None),
+                        ClientSettings.openai_alert_sent_at.is_(None)
+                    ).all()
+
+                    for settings in clients_with_credit:
+                        try:
+                            threshold = settings.openai_alert_threshold_usd if settings.openai_alert_threshold_usd is not None else 3.0
+                            remaining = _estimate_openai_credit_remaining(db, settings)
+                            if remaining is None or remaining > threshold:
+                                continue
+
+                            client_obj = db.query(Client).filter_by(id=settings.client_id).first()
+                            business_name = client_obj.business_name if client_obj else f"Cliente {settings.client_id}"
+                            loaded_str = settings.openai_credit_loaded_at.strftime("%d/%m %H:%M") if settings.openai_credit_loaded_at else "-"
+                            message = (
+                                f"⚠️ Saldo de OpenAI bajo para {business_name}\n"
+                                f"Cargado: ${settings.openai_credit_loaded_usd:.2f} el {loaded_str}\n"
+                                f"Saldo estimado restante: ${remaining:.2f} (umbral: ${threshold:.2f})\n"
+                                f"Avisale al cliente para que pague y recargá la cuenta desde el panel Super Admin."
+                            )
+                            wa_dest = destination_number if destination_number.endswith("@c.us") else f"{destination_number}@c.us"
+                            res = await send_whatsapp_message_saas(sender_client_id, wa_dest, message)
+                            if res:
+                                settings.openai_alert_sent_at = datetime.utcnow()
+                                db.commit()
+                                logging.info(f"[OpenAICreditAlert] Alerta enviada para cliente {settings.client_id} (restante ${remaining:.2f})")
+                        except Exception as e:
+                            logging.error(f"[OpenAICreditAlert] Error evaluando cliente {settings.client_id}: {e}")
+                finally:
+                    db.close()
+        except Exception as e:
+            logging.error(f"[OpenAICreditAlert] Error in loop: {e}")
+
+        await asyncio.sleep(OPENAI_ALERT_TICK_SECONDS)
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(scheduler_reminders_loop())
     asyncio.create_task(gdrive_sync_loop())
     asyncio.create_task(expire_pending_payments_loop())
+    asyncio.create_task(openai_credit_alert_loop())
 
 
 # ==========================================
