@@ -106,6 +106,8 @@
                     <a href="/admin/catalog" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/catalog' %}active{% endif %}">
                         <i data-lucide="shopping-bag" class="w-4 h-4 shrink-0"></i> Catálogo / Precios
                     </a>
+                    {% endif %}
+                    {% if not user or 'catalog' in user.permissions or 'catalog_requests' in user.permissions %}
                     <a href="/admin/catalog-requests" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/catalog-requests' %}active{% endif %}">
                         <i data-lucide="shopping-cart" class="w-4 h-4 shrink-0"></i> Consultas y Pedidos
                     </a>

@@ -125,8 +125,9 @@ DEFAULT_MENU_ITEMS = [
     {"key": "submissions", "label": "Formularios Recibidos", "icon": "file-text", "section": "Operación"},
     {"key": "appointments", "label": "Gestión de Turnos", "icon": "calendar", "section": "Operación"},
     {"key": "catalog", "label": "Catálogo de Productos", "icon": "shopping-bag", "section": "Operación"},
+    {"key": "catalog_requests", "label": "Consultas y Pedidos", "icon": "shopping-cart", "section": "Operación"},
     {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
-    {"key": "gaps", "label": "Base de Conocimiento", "icon": "database", "section": "Cerebro"},
+    {"key": "gaps", "label": "Preguntas sin Respuesta", "icon": "help-circle", "section": "Cerebro"},
     {"key": "config", "label": "Configuración del Bot", "icon": "settings", "section": "Configuración"},
     {"key": "channels", "label": "Canales (WhatsApp/TG)", "icon": "share-2", "section": "Configuración"},
     {"key": "audit", "label": "Auditoría de Acciones", "icon": "shield", "section": "Seguridad"},
@@ -180,7 +181,7 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_channels', True): active_modules.append("channels")
         if getattr(settings, 'feat_config', True): active_modules.append("config")
         if getattr(settings, 'feat_audit', True): active_modules.append("audit")
-        if getattr(settings, 'feat_catalog', False): active_modules.append("catalog")
+        if getattr(settings, 'feat_catalog', False): active_modules.extend(["catalog", "catalog_requests"])
         if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
     else:
         active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "config", "audit"]
