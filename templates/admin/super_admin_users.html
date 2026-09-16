@@ -138,6 +138,55 @@
     </div>
 </div>
 
+<!-- Modal Permisos de Acceso -->
+<div id="modal-perms" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeModal('modal-perms')"></div>
+    <div class="relative glass rounded-2xl w-full max-w-lg mx-4 p-6 space-y-5 border border-slate-700/50 shadow-2xl max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+            <div>
+                <h2 class="text-lg font-black text-white">Permisos de Acceso</h2>
+                <p id="perms-username" class="text-xs text-slate-500 mt-0.5"></p>
+            </div>
+            <button onclick="closeModal('modal-perms')" class="text-slate-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <input type="hidden" id="p-id">
+        <div id="perms-grid" class="overflow-y-auto custom-scrollbar flex-1 space-y-4 pr-1">
+            {% set sections = menu_items_list | groupby('section') %}
+            {% for section, items in sections %}
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-[10px] font-black text-slate-600 uppercase tracking-widest">{{ section | capitalize }}</p>
+                    <label class="flex items-center gap-1.5 cursor-pointer group">
+                        <input type="checkbox" id="toggle-{{ section }}" class="sr-only peer" onchange="toggleSection('{{ section }}', this.checked)">
+                        <div class="w-3.5 h-3.5 border border-slate-600 rounded bg-slate-800/50 flex items-center justify-center transition-colors group-hover:border-brand-500 peer-checked:bg-brand-500 peer-checked:border-brand-500">
+                            <i data-lucide="check" class="w-2.5 h-2.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity"></i>
+                        </div>
+                        <span class="text-[10px] font-bold text-slate-500 group-hover:text-slate-300 transition-colors">Seleccionar todo</span>
+                    </label>
+                </div>
+                <div class="space-y-1">
+                    {% for item in items %}
+                    <div class="perm-chip">
+                        <input type="checkbox" id="perm-{{ item.key }}" value="{{ item.key }}" data-section="{{ section }}"
+                            class="perm-checkbox sr-only peer" onchange="updateSectionToggle('{{ section }}')">
+                        <label for="perm-{{ item.key }}"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-800 cursor-pointer transition-all hover:border-slate-700 text-sm font-semibold text-slate-400 peer-checked:bg-brand-500/10 peer-checked:border-brand-500 peer-checked:text-brand-300">
+                            <i data-lucide="{{ item.icon or 'circle' }}" class="w-4 h-4 shrink-0"></i>
+                            {{ item.label }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="flex gap-3 pt-1 shrink-0">
+            <button onclick="closeModal('modal-perms')" class="flex-1 py-2.5 border border-slate-700 rounded-xl text-sm font-bold text-slate-400 hover:text-white">Cancelar</button>
+            <button onclick="savePermissions()" class="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 rounded-xl text-sm font-bold text-white">Guardar Permisos</button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -168,6 +217,7 @@
                 <td class="px-5 py-3.5 text-slate-400">${u.client_name}</td>
                 <td class="px-5 py-3.5 text-slate-400">${u.role}</td>
                 <td class="px-5 py-3.5 text-right space-x-2">
+                    ${u.client_id ? `<button onclick="openPermissionsModal(${u.id}, '${u.email}')" title="Permisos de acceso" class="p-2 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg"><i data-lucide="key" class="w-4 h-4"></i></button>` : ''}
                     <button onclick="openResetModal(${u.id}, '${u.email}')" class="p-2 text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg"><i data-lucide="lock-keyhole" class="w-4 h-4"></i></button>
                     <button onclick="openEditModal(${u.id}, '${u.email}', '${u.role}')" class="p-2 text-slate-500 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                     <button onclick="deleteUser(${u.id})" class="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
@@ -229,6 +279,43 @@
         const res = await api('PATCH', `/api/superadmin/users/${id}/reset-password`, { password: pw });
         if (res.status === 'ok') closeModal('modal-reset');
         else showError('r-error', res.error || 'Error al resetear');
+    }
+
+    async function openPermissionsModal(id, email) {
+        document.getElementById('p-id').value = id;
+        document.getElementById('perms-username').textContent = `Editando permisos de: ${email}`;
+        document.querySelectorAll('#perms-grid input[type=checkbox]').forEach(cb => cb.checked = false);
+        const res = await api('GET', `/api/superadmin/users/${id}/permissions`);
+        if (res.status === 'ok') {
+            res.permissions.forEach(key => {
+                const cb = document.getElementById(`perm-${key}`);
+                if (cb) cb.checked = true;
+            });
+            document.querySelectorAll('[id^="toggle-"]').forEach(toggle => {
+                updateSectionToggle(toggle.id.replace('toggle-', ''));
+            });
+        }
+        openModal('modal-perms');
+    }
+
+    function toggleSection(section, isChecked) {
+        document.querySelectorAll(`.perm-checkbox[data-section="${section}"]`).forEach(cb => { cb.checked = isChecked; });
+    }
+
+    function updateSectionToggle(section) {
+        const checkboxes = document.querySelectorAll(`.perm-checkbox[data-section="${section}"]`);
+        const toggle = document.getElementById(`toggle-${section}`);
+        if (toggle && checkboxes.length > 0) {
+            toggle.checked = Array.from(checkboxes).every(cb => cb.checked);
+        }
+    }
+
+    async function savePermissions() {
+        const id = document.getElementById('p-id').value;
+        const granted = Array.from(document.querySelectorAll('#perms-grid .perm-checkbox:checked')).map(cb => cb.value);
+        const res = await api('POST', `/api/superadmin/users/${id}/permissions`, { permissions: granted });
+        if (res.status === 'ok') closeModal('modal-perms');
+        else alert(res.error || 'Error al guardar permisos');
     }
 
     async function deleteUser(id) {

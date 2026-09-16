@@ -4075,6 +4075,7 @@ async def super_admin_users_panel(request: Request, db: Session = Depends(get_db
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
     return templates.TemplateResponse(request=request, name="admin/super_admin_users.html", context={
         "clients": clients,
+        "menu_items_list": DEFAULT_MENU_ITEMS,
         "user": user_mock
     })
 
@@ -4156,6 +4157,43 @@ async def api_superadmin_delete_user(request: Request, uid: int, db: Session = D
     if user.client_id is None:
         return JSONResponse(status_code=400, content={"error": "No se puede borrar una cuenta de Súper Admin"})
     db.delete(user)
+    db.commit()
+    return {"status": "ok"}
+
+@app.get("/api/superadmin/users/{uid}/permissions")
+async def api_superadmin_get_permissions(uid: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Igual que /api/admin/users/{uid}/permissions pero sin restringir por el client_id del
+    que llama: el súper admin puede editar el acceso a items de menú de un usuario de
+    CUALQUIER cliente desde /super-admin/users, sin necesidad de impersonar."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    user = db.query(User).filter_by(id=uid).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+
+    if user.client_id is None or user.role_name == "superadmin":
+        permissions = [item["key"] for item in DEFAULT_MENU_ITEMS]
+    else:
+        from src.database.models import UserPermission
+        perms = db.query(UserPermission).filter_by(user_id=uid, can_access=True).all()
+        permissions = [p.menu_key for p in perms]
+
+    return {"status": "ok", "permissions": permissions, "role": user.role_name}
+
+@app.post("/api/superadmin/users/{uid}/permissions")
+async def api_superadmin_save_permissions(uid: int, payload: PermissionsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    user = db.query(User).filter_by(id=uid).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"error": "Usuario no encontrado"})
+    if user.client_id is None:
+        return JSONResponse(status_code=400, content={"error": "No aplica: es una cuenta de Súper Admin, ya tiene acceso total"})
+
+    from src.database.models import UserPermission
+    db.query(UserPermission).filter_by(user_id=uid).delete()
+    for key in payload.permissions:
+        db.add(UserPermission(user_id=uid, menu_key=key, can_access=True))
     db.commit()
     return {"status": "ok"}
 
