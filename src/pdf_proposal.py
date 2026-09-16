@@ -44,9 +44,13 @@ def _wrap_text_pillow(draw, text, font, max_width):
     return lines
 
 
-def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None = None) -> bytes:
+def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None = None, client_logo_path: str | None = None) -> bytes:
     """Genera la tarjeta de cobro (rectángulo tipo talonario, una sola página del
-    tamaño de la tarjeta) en PDF. Devuelve los bytes del PDF."""
+    tamaño de la tarjeta) en PDF. Devuelve los bytes del PDF.
+
+    `client_logo_path`: ruta local (filesystem) al logo propio del cliente, si cargó uno desde
+    Super Admin (ver ClientSettings.logo_path) — se dibuja aparte, arriba a la derecha, junto
+    al logo de anka/ZSG que va siempre arriba a la izquierda."""
     mensaje = (mensaje or DEFAULT_MENSAJE).strip() or DEFAULT_MENSAJE
     precio_fmt = f"{precio_ars:,.0f}".replace(",", ".")
 
@@ -82,9 +86,15 @@ def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None
     c.setFont("Helvetica-Bold", 12)
     c.drawString(text_x, top - 1.25 * cm, client_name)
 
+    date_y = top - 0.15 * cm
+    if client_logo_path and os.path.exists(client_logo_path):
+        client_logo_size = 1.3 * cm
+        c.drawImage(client_logo_path, right - client_logo_size, top - client_logo_size, client_logo_size, client_logo_size, preserveAspectRatio=True, mask="auto")
+        date_y = top - client_logo_size - 0.3 * cm
+
     c.setFont("Helvetica", 8.5)
     c.setFillColor(colors.grey)
-    c.drawRightString(right, top - 0.15 * cm, datetime.now().strftime("%d/%m/%Y"))
+    c.drawRightString(right, date_y, datetime.now().strftime("%d/%m/%Y"))
 
     sep_y = top - logo_size - 0.35 * cm
     c.saveState()
@@ -113,9 +123,9 @@ def generar_pdf_voucher(client_name: str, precio_ars: float, mensaje: str | None
     return buf.getvalue()
 
 
-def generar_imagen_voucher(client_name: str, precio_ars: float, mensaje: str | None = None) -> bytes:
+def generar_imagen_voucher(client_name: str, precio_ars: float, mensaje: str | None = None, client_logo_path: str | None = None) -> bytes:
     """Genera la misma tarjeta de cobro como imagen PNG (para copiar/pegar en WhatsApp).
-    Devuelve los bytes del PNG."""
+    Devuelve los bytes del PNG. Ver `client_logo_path` en generar_pdf_voucher."""
     mensaje = (mensaje or DEFAULT_MENSAJE).strip() or DEFAULT_MENSAJE
     precio_fmt = f"{precio_ars:,.0f}".replace(",", ".")
 
@@ -155,9 +165,18 @@ def generar_imagen_voucher(client_name: str, precio_ars: float, mensaje: str | N
     draw.text((text_x, top_px + int(0.15 * px_per_cm)), "de ZSG", font=font_sub, fill=GRAY_TEXT_RGB)
     draw.text((text_x, top_px + int(0.72 * px_per_cm)), client_name, font=font_label, fill=DARK_TEXT_RGB)
 
+    date_y_px = top_px
+    if client_logo_path and os.path.exists(client_logo_path):
+        client_logo_size_px = int(1.3 * px_per_cm)
+        client_logo = Image.open(client_logo_path).convert("RGBA")
+        client_logo.thumbnail((client_logo_size_px, client_logo_size_px), Image.LANCZOS)
+        paste_x = right_px - client_logo.width
+        img.paste(client_logo, (paste_x, top_px), client_logo)
+        date_y_px = top_px + client_logo_size_px + int(0.15 * px_per_cm)
+
     date_txt = datetime.now().strftime("%d/%m/%Y")
     dw = draw.textlength(date_txt, font=font_small)
-    draw.text((right_px - dw, top_px), date_txt, font=font_small, fill=GRAY_TEXT_RGB)
+    draw.text((right_px - dw, date_y_px), date_txt, font=font_small, fill=GRAY_TEXT_RGB)
 
     sep_y = top_px + logo_size_px + int(0.35 * px_per_cm)
     dash_len, gap_len = int(0.08 * px_per_cm), int(0.06 * px_per_cm)

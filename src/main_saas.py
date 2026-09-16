@@ -198,7 +198,8 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         "full_name": f"Súper Admin ({business_name})" if is_impersonating else (current_user.client.business_name if current_user.client else "Admin"),
         "role": "superadmin" if is_impersonating else current_user.role_name,
         "permissions": permissions,
-        "is_real_superadmin": current_user.client_id is None
+        "is_real_superadmin": current_user.client_id is None,
+        "client_logo_path": getattr(settings, 'logo_path', None) if settings else None
     }
 
     return target_client_id, is_impersonating, user_mock
@@ -4902,7 +4903,8 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "openai_credit_loaded_at": client.settings.openai_credit_loaded_at.isoformat() if getattr(client.settings, 'openai_credit_loaded_at', None) else None,
             "openai_alert_threshold_usd": getattr(client.settings, 'openai_alert_threshold_usd', None) if getattr(client.settings, 'openai_alert_threshold_usd', None) is not None else 3.0,
             "openai_project_id": getattr(client.settings, 'openai_project_id', None) or '',
-            "openai_credit_estimated_remaining_usd": await _estimate_openai_credit_remaining(db, client.settings)
+            "openai_credit_estimated_remaining_usd": await _estimate_openai_credit_remaining(db, client.settings),
+            "logo_path": getattr(client.settings, 'logo_path', None) or ''
         }
 
     return {
@@ -5079,6 +5081,41 @@ async def clear_client_openai_key(client_id: int, db: Session = Depends(get_db),
     return {"status": "ok"}
 
 
+@app.post("/api/superadmin/clients/{client_id}/logo")
+async def upload_client_logo(client_id: int, logo: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Sube/reemplaza el logo propio de un cliente: se muestra en su sidebar de /admin y en el
+    PDF/imagen de cobro (ver pdf_proposal.py). Endpoint aparte porque el guardado normal de
+    settings es JSON, no multipart."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
+    if not logo or not getattr(logo, "filename", None):
+        return JSONResponse(status_code=400, content={"error": "No se recibió ningún archivo"})
+
+    import re
+    uploads_dir = os.path.join("uploads", f"client_{client_id}")
+    if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+    clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', logo.filename)
+    file_path = os.path.join(uploads_dir, f"logo_{clean_name}")
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(logo.file, f)
+    settings.logo_path = f"/uploads/client_{client_id}/logo_{clean_name}"
+    db.commit()
+    return {"status": "ok", "logo_path": settings.logo_path}
+
+
+@app.delete("/api/superadmin/clients/{client_id}/logo")
+async def clear_client_logo(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
+    settings.logo_path = None
+    db.commit()
+    return {"status": "ok"}
+
+
 # --- Cobros (pagos recibidos) por cliente, en Gestión de Clientes ---
 # Solo se pueden registrar para clientes que ya tienen una tarifa guardada (ClientPricing)
 # desde la Calculadora.
@@ -5142,6 +5179,13 @@ async def api_delete_client_payment(request: Request, client_id: int, payment_id
     return {"status": "ok"}
 
 
+def _client_logo_local_path(client) -> str | None:
+    logo_path = getattr(client.settings, 'logo_path', None) if client.settings else None
+    if not logo_path or not logo_path.startswith("/uploads/"):
+        return None
+    return os.path.join(os.path.abspath("uploads"), logo_path.replace("/uploads/", ""))
+
+
 @app.get("/api/superadmin/clients/{client_id:int}/proposal-pdf")
 async def api_generate_client_proposal_pdf(client_id: int, precio_ars: float, mensaje: str | None = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not require_superadmin(current_user):
@@ -5150,7 +5194,7 @@ async def api_generate_client_proposal_pdf(client_id: int, precio_ars: float, me
     if not client:
         return JSONResponse(status_code=404, content={"error": "Cliente no encontrado"})
     from src.pdf_proposal import generar_pdf_voucher
-    pdf_bytes = generar_pdf_voucher(client.business_name, precio_ars, mensaje)
+    pdf_bytes = generar_pdf_voucher(client.business_name, precio_ars, mensaje, client_logo_path=_client_logo_local_path(client))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -5166,7 +5210,7 @@ async def api_generate_client_proposal_image(client_id: int, precio_ars: float, 
     if not client:
         return JSONResponse(status_code=404, content={"error": "Cliente no encontrado"})
     from src.pdf_proposal import generar_imagen_voucher
-    png_bytes = generar_imagen_voucher(client.business_name, precio_ars, mensaje)
+    png_bytes = generar_imagen_voucher(client.business_name, precio_ars, mensaje, client_logo_path=_client_logo_local_path(client))
     return Response(
         content=png_bytes,
         media_type="image/png",

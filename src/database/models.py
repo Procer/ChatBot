@@ -68,6 +68,10 @@ class ClientSettings(Base):
     # por OpenAI (Costs API) en vez de la estimación por TokenUsage logueado acá.
     openai_project_id = Column(String(100), nullable=True)
 
+    # Logo propio del cliente (opcional): se muestra en su sidebar de /admin (en vez del logo
+    # de anka) y junto al logo de anka en el PDF/imagen de cobro (ver pdf_proposal.py).
+    logo_path = Column(String(255), nullable=True)  # /uploads/client_{id}/logo_...
+
     feat_rag_enabled = Column(Boolean, default=False)
     feat_pdf_export = Column(Boolean, default=False)
     feat_human_handoff = Column(Boolean, default=False)

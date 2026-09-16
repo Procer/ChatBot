@@ -188,6 +188,26 @@
                     <input type="hidden" id="edit_client_id">
                     
                     <div class="space-y-6">
+                        <!-- Logo del cliente -->
+                        <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
+                            <h4 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="image" class="w-4 h-4 text-fuchsia-400"></i> Logo del cliente</h4>
+                            <p class="text-xs text-slate-500 mb-3">Opcional. Si lo cargás, reemplaza el logo de anka en el sidebar del panel de este cliente, y aparece junto al de anka en el PDF/imagen de cobro.</p>
+                            <div class="flex items-center gap-4">
+                                <div id="clientLogoPreviewBox" class="w-16 h-16 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                    <img id="clientLogoPreview" src="" alt="" class="max-w-full max-h-full object-contain hidden">
+                                    <i id="clientLogoPreviewIcon" data-lucide="image" class="w-6 h-6 text-slate-600"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <input type="file" id="clientLogoInput" accept="image/*" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-xs text-white focus:border-fuchsia-500 outline-none">
+                                    <div class="flex items-center gap-3 mt-2">
+                                        <button type="button" onclick="uploadClientLogo()" class="text-xs bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-3 py-1.5 rounded-md font-semibold transition-all">Subir logo</button>
+                                        <button type="button" onclick="removeClientLogo()" class="text-xs text-red-400 hover:text-red-300">Quitar logo</button>
+                                    </div>
+                                    <p id="clientLogoStatus" class="text-[10px] text-slate-500 mt-1"></p>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Credenciales -->
                         <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-800">
                             <h4 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="key" class="w-4 h-4 text-emerald-500"></i> WhatsApp Green-API</h4>
@@ -530,6 +550,21 @@
             openaiBadge.className = 'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500';
         }
 
+        const logoPath = data.settings?.logo_path || '';
+        const logoImg = document.getElementById('clientLogoPreview');
+        const logoIcon = document.getElementById('clientLogoPreviewIcon');
+        document.getElementById('clientLogoInput').value = '';
+        document.getElementById('clientLogoStatus').textContent = '';
+        if (logoPath) {
+            logoImg.src = logoPath;
+            logoImg.classList.remove('hidden');
+            logoIcon.classList.add('hidden');
+        } else {
+            logoImg.src = '';
+            logoImg.classList.add('hidden');
+            logoIcon.classList.remove('hidden');
+        }
+
         document.getElementById('openai_project_id').value = data.settings?.openai_project_id || '';
         document.getElementById('oaAlertThreshold').value = data.settings?.openai_alert_threshold_usd ?? 3;
         document.getElementById('oaCreditReloadAmount').value = '';
@@ -769,6 +804,49 @@
         else {
             const err = await res.json().catch(() => ({}));
             alert(err.error || 'Error al guardar configuración');
+        }
+    }
+
+    async function uploadClientLogo() {
+        const id = document.getElementById('edit_client_id').value;
+        const input = document.getElementById('clientLogoInput');
+        const status = document.getElementById('clientLogoStatus');
+        if (!input.files[0]) { status.textContent = 'Elegí un archivo primero.'; status.className = 'text-[10px] text-amber-400 mt-1'; return; }
+        const formData = new FormData();
+        formData.append('logo', input.files[0]);
+        status.textContent = 'Subiendo...';
+        status.className = 'text-[10px] text-slate-500 mt-1';
+        try {
+            const res = await fetch(`/api/superadmin/clients/${id}/logo`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (res.ok) {
+                const logoImg = document.getElementById('clientLogoPreview');
+                logoImg.src = data.logo_path + '?t=' + Date.now();
+                logoImg.classList.remove('hidden');
+                document.getElementById('clientLogoPreviewIcon').classList.add('hidden');
+                status.textContent = 'Logo actualizado.';
+                status.className = 'text-[10px] text-emerald-400 mt-1';
+            } else {
+                status.textContent = data.error || 'Error al subir el logo';
+                status.className = 'text-[10px] text-red-400 mt-1';
+            }
+        } catch (e) {
+            status.textContent = 'Error de red al subir el logo';
+            status.className = 'text-[10px] text-red-400 mt-1';
+        }
+    }
+
+    async function removeClientLogo() {
+        const id = document.getElementById('edit_client_id').value;
+        if (!confirm('¿Quitar el logo de este cliente? Vuelve a mostrar el logo de anka en su panel.')) return;
+        const res = await fetch(`/api/superadmin/clients/${id}/logo`, { method: 'DELETE' });
+        if (res.ok) {
+            document.getElementById('clientLogoPreview').classList.add('hidden');
+            document.getElementById('clientLogoPreviewIcon').classList.remove('hidden');
+            document.getElementById('clientLogoStatus').textContent = 'Logo quitado.';
+            document.getElementById('clientLogoStatus').className = 'text-[10px] text-slate-500 mt-1';
+        } else {
+            alert('No se pudo quitar el logo.');
         }
     }
 

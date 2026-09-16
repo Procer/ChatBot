@@ -52,12 +52,18 @@
     <!-- SIDEBAR -->
     <aside id="main-sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-panel border-r border-slate-800/50 flex flex-col shrink-0 transition-transform duration-300 -translate-x-full lg:translate-x-0 lg:static lg:z-auto">
         
-        <!-- Logo compacto -->
+        <!-- Logo compacto: propio del cliente si cargó uno, si no el de anka -->
         <div class="h-20 flex items-center px-5 border-b border-slate-800/50 shrink-0">
+            {% if user.client_logo_path %}
+            <div class="flex items-center gap-2.5 min-w-0">
+                <img src="{{ user.client_logo_path }}" alt="{{ user.full_name }}" class="h-12 w-auto max-w-[9rem] object-contain shrink-0">
+            </div>
+            {% else %}
             <div class="flex items-center gap-2.5">
                 <img src="/static/logo.png" alt="anka" class="h-12 w-auto shrink-0">
                 <span class="text-[11px] font-semibold text-slate-400 tracking-wide">de <a href="https://www.zaratesystemgroup.com.ar" target="_blank" rel="noopener" class="text-slate-300 hover:text-brand-500 transition-colors">ZSG</a></span>
             </div>
+            {% endif %}
         </div>
 
         <!-- Navegación -->
