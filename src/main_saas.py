@@ -4188,6 +4188,29 @@ async def super_admin_consumo_panel(request: Request, current_user: User = Depen
     return templates.TemplateResponse(request=request, name="admin/super_admin_consumo.html", context={"user": user_mock})
 
 
+def _client_daily_cost_series(db: Session, client_id: int, days: int = 30) -> list:
+    """Serie diaria de gasto ESTIMADO (TokenUsage.cost_usd, siempre interno aunque el cliente
+    tenga costo real disponible: sirve para tendencia/sparkline, no para el número "oficial"
+    de gasto del mes) de los últimos `days` días, más viejo primero. Siempre devuelve `days`
+    puntos (0.0 en los días sin uso)."""
+    from src.database.models import TokenUsage
+    since = (datetime.utcnow() - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = db.query(TokenUsage.timestamp, TokenUsage.cost_usd).filter(
+        TokenUsage.client_id == client_id,
+        TokenUsage.timestamp >= since
+    ).all()
+    by_day = {}
+    for ts, cost in rows:
+        key = ts.strftime("%Y-%m-%d")
+        by_day[key] = by_day.get(key, 0.0) + (cost or 0.0)
+    series = []
+    for i in range(days):
+        day = since + timedelta(days=i)
+        key = day.strftime("%Y-%m-%d")
+        series.append({"date": key, "cost_usd": round(by_day.get(key, 0.0), 4)})
+    return series
+
+
 async def _get_client_openai_usage_row(db: Session, client, settings) -> dict:
     from sqlalchemy import func
     from src.database.models import TokenUsage
@@ -4225,6 +4248,36 @@ async def _get_client_openai_usage_row(db: Session, client, settings) -> dict:
     else:
         status = "ok"
 
+    # --- Indicadores extra (siempre en base a TokenUsage interno, ver _client_daily_cost_series) ---
+    lifetime_spent_estimated = db.query(func.sum(TokenUsage.cost_usd)).filter(
+        TokenUsage.client_id == client.id
+    ).scalar() or 0.0
+
+    tokens_this_month = db.query(
+        func.sum(TokenUsage.prompt_tokens + TokenUsage.completion_tokens)
+    ).filter(
+        TokenUsage.client_id == client.id,
+        TokenUsage.timestamp >= month_start
+    ).scalar() or 0
+
+    conversations_this_month = db.query(func.count(func.distinct(TokenUsage.thread_id))).filter(
+        TokenUsage.client_id == client.id,
+        TokenUsage.timestamp >= month_start
+    ).scalar() or 0
+
+    top_model_row = db.query(TokenUsage.model, func.sum(TokenUsage.cost_usd).label("c")).filter(
+        TokenUsage.client_id == client.id,
+        TokenUsage.timestamp >= month_start
+    ).group_by(TokenUsage.model).order_by(func.sum(TokenUsage.cost_usd).desc()).first()
+    top_model = top_model_row[0] if top_model_row else None
+
+    avg_cost_per_conversation = round(spent_this_month / conversations_this_month, 4) if conversations_this_month > 0 else None
+
+    daily_series_30d = _client_daily_cost_series(db, client.id, days=30)
+    last7 = sum(p["cost_usd"] for p in daily_series_30d[-7:])
+    prev7 = sum(p["cost_usd"] for p in daily_series_30d[-14:-7])
+    trend_pct = round((last7 - prev7) / prev7 * 100, 1) if prev7 > 0 else (None if last7 == 0 else "new")
+
     return {
         "client_id": client.id,
         "business_name": client.business_name,
@@ -4232,19 +4285,28 @@ async def _get_client_openai_usage_row(db: Session, client, settings) -> dict:
         "has_own_key": bool(getattr(settings, 'openai_api_key_encrypted', None)) if settings else False,
         "spent_this_month_usd": round(spent_this_month, 4),
         "spent_source": source,
+        "lifetime_spent_estimated_usd": round(lifetime_spent_estimated, 4),
         "total_loaded_usd": total_loaded,
         "estimated_remaining_usd": remaining,
         "alert_threshold_usd": threshold,
         "pct_used": pct_used,
         "status": status,
         "last_reload_at": settings.openai_credit_loaded_at.isoformat() if settings and getattr(settings, 'openai_credit_loaded_at', None) else None,
+        "tokens_this_month": int(tokens_this_month),
+        "conversations_this_month": int(conversations_this_month),
+        "avg_cost_per_conversation_usd": avg_cost_per_conversation,
+        "top_model": top_model,
+        "trend_pct_7d": trend_pct,
+        "daily_series_14d": daily_series_30d[-14:],
+        "daily_series_30d": daily_series_30d,
     }
 
 
 @app.get("/api/superadmin/openai-usage-overview")
 async def api_openai_usage_overview(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Dashboard de consumo de OpenAI por cliente: gasto de este mes (real si hay Project ID
-    + Admin Key, estimado si no), saldo restante y estado de alerta. Ver _get_client_openai_usage_row."""
+    + Admin Key, estimado si no), tokens/conversaciones/tendencia (siempre estimados, ver
+    _client_daily_cost_series), saldo restante y estado de alerta. Ver _get_client_openai_usage_row."""
     if not require_superadmin(current_user):
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
 
@@ -4254,18 +4316,42 @@ async def api_openai_usage_overview(db: Session = Depends(get_db), current_user:
     ])
 
     total_spent_this_month = round(sum(r["spent_this_month_usd"] for r in rows), 4)
+    total_lifetime_spent = round(sum(r["lifetime_spent_estimated_usd"] for r in rows), 4)
     total_loaded = round(sum(r["total_loaded_usd"] or 0 for r in rows), 4)
+    total_remaining = round(sum(r["estimated_remaining_usd"] or 0 for r in rows if r["estimated_remaining_usd"] is not None), 4)
+    total_tokens_this_month = sum(r["tokens_this_month"] for r in rows)
+    total_conversations_this_month = sum(r["conversations_this_month"] for r in rows)
     clients_in_alert = sum(1 for r in rows if r["status"] == "low")
+    avg_cost_per_conversation_global = round(total_spent_this_month / total_conversations_this_month, 4) if total_conversations_this_month > 0 else None
+
+    # Serie global = suma día a día de la serie de 30 días de cada cliente (más viejo primero)
+    global_daily_series = []
+    if rows:
+        n_days = len(rows[0]["daily_series_30d"])
+        for i in range(n_days):
+            date = rows[0]["daily_series_30d"][i]["date"]
+            total = sum(r["daily_series_30d"][i]["cost_usd"] for r in rows)
+            global_daily_series.append({"date": date, "cost_usd": round(total, 4)})
+
+    # No hace falta mandar los 30 días completos de cada cliente al frontend, con los 14 alcanza para el sparkline
+    for r in rows:
+        del r["daily_series_30d"]
 
     return {
         "status": "ok",
         "clients": rows,
         "summary": {
             "total_spent_this_month_usd": total_spent_this_month,
+            "total_lifetime_spent_estimated_usd": total_lifetime_spent,
             "total_loaded_usd": total_loaded,
+            "total_remaining_usd": total_remaining,
+            "total_tokens_this_month": total_tokens_this_month,
+            "total_conversations_this_month": total_conversations_this_month,
+            "avg_cost_per_conversation_usd": avg_cost_per_conversation_global,
             "clients_in_alert": clients_in_alert,
             "clients_count": len(rows)
-        }
+        },
+        "global_daily_series_30d": global_daily_series
     }
 
 

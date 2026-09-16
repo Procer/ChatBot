@@ -18,7 +18,7 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h2 class="text-xl font-bold text-white tracking-tight">Consumo de OpenAI por cliente</h2>
-            <p class="text-sm text-slate-400 mt-1">Gasto real (si el cliente tiene Project ID + hay Admin Key cargada) o estimado, saldo restante y estado de alerta de cada tenant.</p>
+            <p class="text-sm text-slate-400 mt-1">Gasto de este mes (real vía Costs API si el cliente tiene Project ID + Admin Key, estimado si no), tokens, conversaciones, tendencia y saldo de cada tenant.</p>
         </div>
         <button id="refreshBtn" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center gap-2">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
@@ -27,33 +27,61 @@
     </div>
 
     <!-- Resumen -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <div class="glass rounded-xl p-4 border border-slate-700/50">
             <p class="text-[10px] font-bold text-slate-500 uppercase">Gasto de este mes (todos)</p>
             <p id="sumSpentMonth" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Gasto histórico (estimado)</p>
+            <p id="sumLifetime" class="text-2xl font-bold text-white mt-1">-</p>
         </div>
         <div class="glass rounded-xl p-4 border border-slate-700/50">
             <p class="text-[10px] font-bold text-slate-500 uppercase">Total cargado (histórico)</p>
             <p id="sumTotalLoaded" class="text-2xl font-bold text-white mt-1">-</p>
         </div>
         <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Saldo estimado restante</p>
+            <p id="sumRemaining" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Conversaciones (mes)</p>
+            <p id="sumConversations" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Tokens (mes)</p>
+            <p id="sumTokens" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Prom. por conversación</p>
+            <p id="sumAvgConv" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
             <p class="text-[10px] font-bold text-slate-500 uppercase">Clientes en alerta</p>
             <p id="sumInAlert" class="text-2xl font-bold text-amber-400 mt-1">-</p>
         </div>
-        <div class="glass rounded-xl p-4 border border-slate-700/50">
-            <p class="text-[10px] font-bold text-slate-500 uppercase">Clientes totales</p>
-            <p id="sumClients" class="text-2xl font-bold text-white mt-1">-</p>
-        </div>
+    </div>
+
+    <!-- Gráfico global -->
+    <div class="glass rounded-xl p-4 border border-slate-700/50 mb-6">
+        <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">Gasto diario estimado, todos los clientes (últimos 30 días)</p>
+        <div class="h-48"><canvas id="globalChart"></canvas></div>
     </div>
 
     <div class="glass rounded-xl border border-slate-700/50 overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full text-sm whitespace-nowrap">
                 <thead>
                     <tr class="border-b border-slate-800 text-left text-[10px] font-bold text-slate-500 uppercase">
                         <th class="px-4 py-3">Cliente</th>
                         <th class="px-4 py-3">Project ID</th>
+                        <th class="px-4 py-3">Modelo principal</th>
+                        <th class="px-4 py-3">Conversac. (mes)</th>
+                        <th class="px-4 py-3">Tokens (mes)</th>
                         <th class="px-4 py-3">Gasto este mes</th>
+                        <th class="px-4 py-3">Tendencia 7d</th>
+                        <th class="px-4 py-3">Prom/conv</th>
+                        <th class="px-4 py-3">Últimos 14 días</th>
                         <th class="px-4 py-3">Saldo estimado</th>
                         <th class="px-4 py-3">% usado</th>
                         <th class="px-4 py-3">Estado</th>
@@ -62,7 +90,7 @@
                     </tr>
                 </thead>
                 <tbody id="usageTbody">
-                    <tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>
+                    <tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -71,13 +99,20 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function () {
     const tbody = document.getElementById('usageTbody');
+    let chartInstance = null;
 
     function fmtUsd(v) {
         if (v === null || v === undefined) return '-';
-        return `$${Number(v).toFixed(2)}`;
+        return `$${Number(v).toFixed(v < 1 ? 4 : 2)}`;
+    }
+
+    function fmtInt(v) {
+        if (v === null || v === undefined) return '-';
+        return Number(v).toLocaleString('es-AR');
     }
 
     function statusBadge(status) {
@@ -96,6 +131,16 @@
         return '<span class="text-[10px] text-slate-500 ml-1">estimado</span>';
     }
 
+    function trendBadge(pct) {
+        if (pct === null || pct === undefined) return '<span class="text-slate-600 text-xs">-</span>';
+        if (pct === 'new') return '<span class="text-[10px] text-sky-400 font-semibold">nuevo</span>';
+        const up = pct > 0;
+        const flat = pct === 0;
+        const color = flat ? 'text-slate-500' : up ? 'text-rose-400' : 'text-emerald-400';
+        const arrow = flat ? '→' : up ? '↑' : '↓';
+        return `<span class="text-xs font-semibold ${color}">${arrow} ${Math.abs(pct)}%</span>`;
+    }
+
     function pctBar(pct) {
         if (pct === null || pct === undefined) return '<span class="text-slate-600 text-xs">-</span>';
         const color = pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
@@ -105,8 +150,54 @@
         </div>`;
     }
 
+    function sparkline(series) {
+        if (!series || !series.length) return '<span class="text-slate-600 text-xs">-</span>';
+        const w = 90, h = 26, pad = 2;
+        const vals = series.map(p => p.cost_usd);
+        const max = Math.max(...vals, 0.0001);
+        const step = (w - pad * 2) / Math.max(1, series.length - 1);
+        const points = vals.map((v, i) => {
+            const x = pad + i * step;
+            const y = h - pad - (v / max) * (h - pad * 2);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        const last = vals[vals.length - 1];
+        const color = last > 0 ? '#34d399' : '#475569';
+        return `<svg width="${w}" height="${h}" class="inline-block align-middle">
+            <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+        </svg>`;
+    }
+
+    function renderGlobalChart(series) {
+        const ctx = document.getElementById('globalChart').getContext('2d');
+        const labels = series.map(p => p.date.slice(5)); // MM-DD
+        const values = series.map(p => p.cost_usd);
+        if (chartInstance) { chartInstance.destroy(); }
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Gasto estimado (USD)',
+                    data: values,
+                    backgroundColor: 'rgba(16, 185, 129, 0.5)',
+                    borderRadius: 3,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { display: false } },
+                    y: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(148,163,184,0.1)' } }
+                }
+            }
+        });
+    }
+
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>';
         try {
             const res = await fetch('/api/superadmin/openai-usage-overview');
             const data = await res.json();
@@ -114,12 +205,18 @@
             const s = data.summary || {};
 
             document.getElementById('sumSpentMonth').textContent = fmtUsd(s.total_spent_this_month_usd);
+            document.getElementById('sumLifetime').textContent = fmtUsd(s.total_lifetime_spent_estimated_usd);
             document.getElementById('sumTotalLoaded').textContent = fmtUsd(s.total_loaded_usd);
+            document.getElementById('sumRemaining').textContent = fmtUsd(s.total_remaining_usd);
+            document.getElementById('sumConversations').textContent = fmtInt(s.total_conversations_this_month);
+            document.getElementById('sumTokens').textContent = fmtInt(s.total_tokens_this_month);
+            document.getElementById('sumAvgConv').textContent = fmtUsd(s.avg_cost_per_conversation_usd);
             document.getElementById('sumInAlert').textContent = s.clients_in_alert ?? '-';
-            document.getElementById('sumClients').textContent = s.clients_count ?? '-';
+
+            renderGlobalChart(data.global_daily_series_30d || []);
 
             if (!rows.length) {
-                tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Sin clientes todavía.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Sin clientes todavía.</td></tr>';
                 return;
             }
 
@@ -127,7 +224,13 @@
                 <tr class="border-b border-slate-800/50 hover:bg-slate-900/40">
                     <td class="px-4 py-3 font-semibold text-white">${r.business_name}</td>
                     <td class="px-4 py-3 font-mono text-xs text-slate-400">${r.project_id || '<span class="text-slate-600">sin project</span>'}</td>
+                    <td class="px-4 py-3 text-xs text-slate-400">${r.top_model || '-'}</td>
+                    <td class="px-4 py-3">${fmtInt(r.conversations_this_month)}</td>
+                    <td class="px-4 py-3">${fmtInt(r.tokens_this_month)}</td>
                     <td class="px-4 py-3">${fmtUsd(r.spent_this_month_usd)}${sourceBadge(r.spent_source)}</td>
+                    <td class="px-4 py-3">${trendBadge(r.trend_pct_7d)}</td>
+                    <td class="px-4 py-3">${fmtUsd(r.avg_cost_per_conversation_usd)}</td>
+                    <td class="px-4 py-3">${sparkline(r.daily_series_14d)}</td>
                     <td class="px-4 py-3">${fmtUsd(r.estimated_remaining_usd)}</td>
                     <td class="px-4 py-3">${pctBar(r.pct_used)}</td>
                     <td class="px-4 py-3">${statusBadge(r.status)}</td>
@@ -135,8 +238,9 @@
                     <td class="px-4 py-3 text-right"><a href="/super-admin#edit-${r.client_id}" class="text-xs text-sky-400 hover:underline">Ver cliente</a></td>
                 </tr>
             `).join('');
+            if (window.lucide) lucide.createIcons();
         } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-rose-400 text-sm">No se pudo cargar el consumo.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-rose-400 text-sm">No se pudo cargar el consumo.</td></tr>';
         }
     }
 
