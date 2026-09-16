@@ -4178,6 +4178,97 @@ async def super_admin_landing_panel(request: Request, current_user: User = Depen
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
     return templates.TemplateResponse(request=request, name="admin/super_admin_landing.html", context={"user": user_mock})
 
+# --- Consumo de OpenAI por cliente (dashboard de indicadores) ------------------
+
+@app.get("/super-admin/consumo", response_class=HTMLResponse)
+async def super_admin_consumo_panel(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+    return templates.TemplateResponse(request=request, name="admin/super_admin_consumo.html", context={"user": user_mock})
+
+
+async def _get_client_openai_usage_row(db: Session, client, settings) -> dict:
+    from sqlalchemy import func
+    from src.database.models import TokenUsage
+
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    project_id = getattr(settings, 'openai_project_id', None) if settings else None
+
+    spent_this_month = None
+    source = "estimado"
+    if project_id:
+        from src.openai_costs import get_real_spent_usd
+        real = await get_real_spent_usd(project_id, since_unix=int(month_start.timestamp()))
+        if real is not None:
+            spent_this_month = real
+            source = "real"
+    if spent_this_month is None:
+        spent_this_month = db.query(func.sum(TokenUsage.cost_usd)).filter(
+            TokenUsage.client_id == client.id,
+            TokenUsage.timestamp >= month_start
+        ).scalar() or 0.0
+
+    total_loaded = getattr(settings, 'openai_credit_loaded_usd', None) if settings else None
+    remaining = await _estimate_openai_credit_remaining(db, settings) if settings else None
+    threshold = (getattr(settings, 'openai_alert_threshold_usd', None) if settings else None)
+    threshold = threshold if threshold is not None else 3.0
+
+    pct_used = None
+    if total_loaded and total_loaded > 0 and remaining is not None:
+        pct_used = round(max(0.0, min(100.0, (total_loaded - remaining) / total_loaded * 100)), 1)
+
+    if total_loaded is None:
+        status = "unloaded"
+    elif remaining is not None and remaining <= threshold:
+        status = "low"
+    else:
+        status = "ok"
+
+    return {
+        "client_id": client.id,
+        "business_name": client.business_name,
+        "project_id": project_id or "",
+        "has_own_key": bool(getattr(settings, 'openai_api_key_encrypted', None)) if settings else False,
+        "spent_this_month_usd": round(spent_this_month, 4),
+        "spent_source": source,
+        "total_loaded_usd": total_loaded,
+        "estimated_remaining_usd": remaining,
+        "alert_threshold_usd": threshold,
+        "pct_used": pct_used,
+        "status": status,
+        "last_reload_at": settings.openai_credit_loaded_at.isoformat() if settings and getattr(settings, 'openai_credit_loaded_at', None) else None,
+    }
+
+
+@app.get("/api/superadmin/openai-usage-overview")
+async def api_openai_usage_overview(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Dashboard de consumo de OpenAI por cliente: gasto de este mes (real si hay Project ID
+    + Admin Key, estimado si no), saldo restante y estado de alerta. Ver _get_client_openai_usage_row."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+
+    clients = db.query(Client).order_by(Client.business_name).all()
+    rows = await asyncio.gather(*[
+        _get_client_openai_usage_row(db, c, c.settings) for c in clients
+    ])
+
+    total_spent_this_month = round(sum(r["spent_this_month_usd"] for r in rows), 4)
+    total_loaded = round(sum(r["total_loaded_usd"] or 0 for r in rows), 4)
+    clients_in_alert = sum(1 for r in rows if r["status"] == "low")
+
+    return {
+        "status": "ok",
+        "clients": rows,
+        "summary": {
+            "total_spent_this_month_usd": total_spent_this_month,
+            "total_loaded_usd": total_loaded,
+            "clients_in_alert": clients_in_alert,
+            "clients_count": len(rows)
+        }
+    }
+
+
 class ClientPricingUpdatePayload(BaseModel):
     abono_usd: float
     reason: str | None = None

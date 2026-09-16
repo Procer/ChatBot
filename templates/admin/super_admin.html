@@ -12,6 +12,7 @@
         <a href="/super-admin/users" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Usuarios</a>
         <a href="/super-admin/calculadora" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Calculadora</a>
         <a href="/super-admin/landing" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Landing</a>
+        <a href="/super-admin/consumo" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Consumo IA</a>
     </div>
     <div class="flex items-center justify-between mb-6">
         <div>
@@ -873,6 +874,11 @@
         }
     }
     document.addEventListener('DOMContentLoaded', loadOpenAIAdminKeyStatus);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const m = location.hash.match(/^#edit-(\d+)$/);
+        if (m) editClient(parseInt(m[1], 10));
+    });
 
     async function clearGDriveServiceAccount() {
         const id = document.getElementById('edit_client_id').value;

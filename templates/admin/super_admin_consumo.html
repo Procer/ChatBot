@@ -1,0 +1,147 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Consumo de OpenAI | Modo Dios{% endblock %}
+
+{% block breadcrumb %}Plataforma SaaS{% endblock %}
+{% block section_title %}Modo Dios - Súper Admin{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col p-4 lg:p-0 overflow-y-auto custom-scrollbar">
+    <div class="flex items-center gap-1 mb-6 border-b border-slate-800/50">
+        <a href="/super-admin" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Clientes</a>
+        <a href="/super-admin/users" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Usuarios</a>
+        <a href="/super-admin/calculadora" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Calculadora</a>
+        <a href="/super-admin/landing" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Landing</a>
+        <a href="/super-admin/consumo" class="px-4 py-2.5 text-sm font-semibold text-white border-b-2 border-brand-500">Consumo IA</a>
+    </div>
+
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h2 class="text-xl font-bold text-white tracking-tight">Consumo de OpenAI por cliente</h2>
+            <p class="text-sm text-slate-400 mt-1">Gasto real (si el cliente tiene Project ID + hay Admin Key cargada) o estimado, saldo restante y estado de alerta de cada tenant.</p>
+        </div>
+        <button id="refreshBtn" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center gap-2">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            Actualizar
+        </button>
+    </div>
+
+    <!-- Resumen -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Gasto de este mes (todos)</p>
+            <p id="sumSpentMonth" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Total cargado (histórico)</p>
+            <p id="sumTotalLoaded" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Clientes en alerta</p>
+            <p id="sumInAlert" class="text-2xl font-bold text-amber-400 mt-1">-</p>
+        </div>
+        <div class="glass rounded-xl p-4 border border-slate-700/50">
+            <p class="text-[10px] font-bold text-slate-500 uppercase">Clientes totales</p>
+            <p id="sumClients" class="text-2xl font-bold text-white mt-1">-</p>
+        </div>
+    </div>
+
+    <div class="glass rounded-xl border border-slate-700/50 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-800 text-left text-[10px] font-bold text-slate-500 uppercase">
+                        <th class="px-4 py-3">Cliente</th>
+                        <th class="px-4 py-3">Project ID</th>
+                        <th class="px-4 py-3">Gasto este mes</th>
+                        <th class="px-4 py-3">Saldo estimado</th>
+                        <th class="px-4 py-3">% usado</th>
+                        <th class="px-4 py-3">Estado</th>
+                        <th class="px-4 py-3">Última carga</th>
+                        <th class="px-4 py-3"></th>
+                    </tr>
+                </thead>
+                <tbody id="usageTbody">
+                    <tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    const tbody = document.getElementById('usageTbody');
+
+    function fmtUsd(v) {
+        if (v === null || v === undefined) return '-';
+        return `$${Number(v).toFixed(2)}`;
+    }
+
+    function statusBadge(status) {
+        const map = {
+            ok: ['bg-emerald-500/10 text-emerald-400 border-emerald-500/20', 'OK'],
+            low: ['bg-amber-500/10 text-amber-400 border-amber-500/20', 'Saldo bajo'],
+            unloaded: ['bg-slate-800 text-slate-500 border-slate-700', 'Sin cargar'],
+            unknown: ['bg-slate-800 text-slate-500 border-slate-700', 'Sin datos'],
+        };
+        const [cls, label] = map[status] || map.unknown;
+        return `<span class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${cls}">${label}</span>`;
+    }
+
+    function sourceBadge(source) {
+        if (source === 'real') return '<span class="text-[10px] text-sky-400 font-semibold ml-1">real</span>';
+        return '<span class="text-[10px] text-slate-500 ml-1">estimado</span>';
+    }
+
+    function pctBar(pct) {
+        if (pct === null || pct === undefined) return '<span class="text-slate-600 text-xs">-</span>';
+        const color = pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+        return `<div class="w-24">
+            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full ${color}" style="width:${Math.min(100, pct)}%"></div></div>
+            <span class="text-[10px] text-slate-500">${pct}%</span>
+        </div>`;
+    }
+
+    async function load() {
+        tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>';
+        try {
+            const res = await fetch('/api/superadmin/openai-usage-overview');
+            const data = await res.json();
+            const rows = data.clients || [];
+            const s = data.summary || {};
+
+            document.getElementById('sumSpentMonth').textContent = fmtUsd(s.total_spent_this_month_usd);
+            document.getElementById('sumTotalLoaded').textContent = fmtUsd(s.total_loaded_usd);
+            document.getElementById('sumInAlert').textContent = s.clients_in_alert ?? '-';
+            document.getElementById('sumClients').textContent = s.clients_count ?? '-';
+
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-slate-500 text-sm">Sin clientes todavía.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = rows.map(r => `
+                <tr class="border-b border-slate-800/50 hover:bg-slate-900/40">
+                    <td class="px-4 py-3 font-semibold text-white">${r.business_name}</td>
+                    <td class="px-4 py-3 font-mono text-xs text-slate-400">${r.project_id || '<span class="text-slate-600">sin project</span>'}</td>
+                    <td class="px-4 py-3">${fmtUsd(r.spent_this_month_usd)}${sourceBadge(r.spent_source)}</td>
+                    <td class="px-4 py-3">${fmtUsd(r.estimated_remaining_usd)}</td>
+                    <td class="px-4 py-3">${pctBar(r.pct_used)}</td>
+                    <td class="px-4 py-3">${statusBadge(r.status)}</td>
+                    <td class="px-4 py-3 text-xs text-slate-500">${r.last_reload_at ? new Date(r.last_reload_at).toLocaleDateString('es-AR') : '-'}</td>
+                    <td class="px-4 py-3 text-right"><a href="/super-admin#edit-${r.client_id}" class="text-xs text-sky-400 hover:underline">Ver cliente</a></td>
+                </tr>
+            `).join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-rose-400 text-sm">No se pudo cargar el consumo.</td></tr>';
+        }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', load);
+    load();
+})();
+</script>
+{% endblock %}
