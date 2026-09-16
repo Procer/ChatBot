@@ -63,6 +63,10 @@ class ClientSettings(Base):
     openai_credit_loaded_at = Column(DateTime, nullable=True)
     openai_alert_threshold_usd = Column(Float, nullable=True, default=3.0)
     openai_alert_sent_at = Column(DateTime, nullable=True)  # evita reenviar la misma alerta hasta la próxima carga
+    # Project id de OpenAI (Settings > Projects) de este cliente. Si está seteado y hay una
+    # Admin API Key cargada (ver SystemConfig), el gasto se calcula con el costo REAL facturado
+    # por OpenAI (Costs API) en vez de la estimación por TokenUsage logueado acá.
+    openai_project_id = Column(String(100), nullable=True)
 
     feat_rag_enabled = Column(Boolean, default=False)
     feat_pdf_export = Column(Boolean, default=False)
@@ -191,6 +195,29 @@ class TokenUsage(Base):
     completion_tokens = Column(Integer, default=0)
     cost_usd = Column(Float, default=0.0)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class OpenAICreditReload(Base):
+    """Historial de recargas de crédito de OpenAI declaradas por el super-admin para un
+    cliente (previo cobro real al cliente). Cada carga SUMA al total de referencia usado
+    en _estimate_openai_credit_remaining (ver main_saas.py) — no reemplaza lo que quedaba
+    sin gastar de cargas anteriores."""
+    __tablename__ = "adm_openai_credit_reloads"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    amount_usd = Column(Float, nullable=False)
+    receipt_file_path = Column(String(255), nullable=True)  # /uploads/client_{id}/openai_receipts/...
+    note = Column(String(255), nullable=True)
+    created_by = Column(String(150), nullable=True)  # email del super-admin que la cargó
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class SystemConfig(Base):
+    """Config global clave/valor (no por cliente). Por ahora solo la Admin API Key de OpenAI
+    (org-level, para consultar el gasto real de todos los Projects vía Costs API), cifrada
+    con el mismo Fernet que las keys por cliente."""
+    __tablename__ = "adm_system_config"
+    key = Column(String(100), primary_key=True)
+    value_encrypted = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # ==========================================
 # CAPA 2: OPERACIÓN (CHATS Y MÉTRICAS)

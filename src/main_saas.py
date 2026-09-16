@@ -113,6 +113,7 @@ class ClientSettingsUpdate(BaseModel):
     gdrive_sync_interval_minutes: int = 480  # cada cuánto sincroniza Drive este cliente (piso de 5min, ver update_client_settings)
     openai_api_key: str = None  # vacío/None = no tocar la key ya guardada (aislamiento de billing por cliente, ver openai_key.py)
     openai_alert_threshold_usd: float = 3.0  # avisar por WhatsApp cuando el saldo estimado caiga por debajo de esto
+    openai_project_id: str = None  # Project id de OpenAI (Settings > Projects) de este cliente, para costo real vía Costs API
 
 # Locks para evitar Race Conditions por Usuario
 user_locks: Dict[str, asyncio.Lock] = {}
@@ -4401,6 +4402,44 @@ async def api_put_openai_alerts_config(payload: OpenAIAlertsConfigPayload, curre
     clean = _write_openai_alerts_config(payload.destination_number, payload.sender_client_id)
     return {"status": "ok", "config": clean}
 
+
+# --- Admin API Key de OpenAI (org-level, para costo real vía Costs API) --------
+# Una sola, global (no por cliente), cifrada en adm_system_config. Cada cliente con
+# openai_project_id configurado la usa para pedirle a OpenAI su gasto real (ver openai_costs.py).
+
+class OpenAIAdminKeyPayload(BaseModel):
+    admin_api_key: str
+
+@app.get("/api/superadmin/openai-admin-key")
+async def api_get_openai_admin_key_status(current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.system_config import get_system_config, OPENAI_ADMIN_KEY_CONFIG_KEY
+    key = get_system_config(OPENAI_ADMIN_KEY_CONFIG_KEY)
+    return {"status": "ok", "configured": bool(key), "last4": key[-4:] if key else None}
+
+@app.put("/api/superadmin/openai-admin-key")
+async def api_put_openai_admin_key(payload: OpenAIAdminKeyPayload, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    raw = (payload.admin_api_key or "").strip()
+    if not raw:
+        return JSONResponse(status_code=400, content={"error": "La key no puede estar vacía"})
+    from src.database.system_config import set_system_config, OPENAI_ADMIN_KEY_CONFIG_KEY
+    set_system_config(OPENAI_ADMIN_KEY_CONFIG_KEY, raw)
+
+    from src.openai_costs import check_admin_key_valid
+    ok, message = await check_admin_key_valid()
+    return {"status": "ok", "saved": True, "verified": ok, "verify_message": message}
+
+@app.delete("/api/superadmin/openai-admin-key")
+async def api_delete_openai_admin_key(current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.system_config import clear_system_config, OPENAI_ADMIN_KEY_CONFIG_KEY
+    clear_system_config(OPENAI_ADMIN_KEY_CONFIG_KEY)
+    return {"status": "ok"}
+
 # --- Textos editables de las landing estacionales (anka.ar) ------------------
 # Las 5 landing son estáticas y viven en el mismo dominio. Cada una hace
 # fetch('/api/public/landing?season=<X>') al cargar y reemplaza:
@@ -4616,20 +4655,33 @@ async def create_client(client_data: ClientCreate, db: Session = Depends(get_db)
         db.rollback()
         return JSONResponse(status_code=400, content={"error": str(e)})
 
-def _estimate_openai_credit_remaining(db: Session, settings) -> float | None:
-    """Estima el saldo de OpenAI restante de un cliente: lo que el super-admin dijo que
-    cargó, menos el gasto real logueado (TokenUsage.cost_usd) desde esa carga. OpenAI no
-    expone el saldo prepago real por API con una key estándar, así que esto es una
-    estimación basada en el consumo que el propio bot registra (ver log_token_usage)."""
+async def _estimate_openai_credit_remaining(db: Session, settings) -> float | None:
+    """Estima el saldo de OpenAI restante de un cliente: la suma histórica de todas las
+    recargas declaradas (ver OpenAICreditReload / settings.openai_credit_loaded_usd, que
+    ahora es ACUMULATIVO, cada recarga se suma a lo que quedaba sin gastar) menos el gasto
+    total desde siempre.
+
+    El gasto se calcula así, en orden de preferencia:
+    1. Costo REAL facturado por OpenAI (Costs API), si el cliente tiene `openai_project_id`
+       configurado y hay una Admin API Key cargada (ver openai_costs.py).
+    2. Si no, se cae a la estimación interna de siempre: suma de TokenUsage.cost_usd logueado
+       por el propio bot (ver log_token_usage) — puede desviarse del real si algo no se logueó."""
     if not settings or getattr(settings, 'openai_credit_loaded_usd', None) is None:
         return None
-    from sqlalchemy import func
-    from src.database.models import TokenUsage
-    since = settings.openai_credit_loaded_at or datetime.min
-    spent = db.query(func.sum(TokenUsage.cost_usd)).filter(
-        TokenUsage.client_id == settings.client_id,
-        TokenUsage.timestamp >= since
-    ).scalar() or 0.0
+
+    project_id = getattr(settings, 'openai_project_id', None)
+    spent = None
+    if project_id:
+        from src.openai_costs import get_real_spent_usd
+        spent = await get_real_spent_usd(project_id)
+
+    if spent is None:
+        from sqlalchemy import func
+        from src.database.models import TokenUsage
+        spent = db.query(func.sum(TokenUsage.cost_usd)).filter(
+            TokenUsage.client_id == settings.client_id
+        ).scalar() or 0.0
+
     return round(settings.openai_credit_loaded_usd - spent, 4)
 
 
@@ -4672,7 +4724,8 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "openai_credit_loaded_usd": getattr(client.settings, 'openai_credit_loaded_usd', None),
             "openai_credit_loaded_at": client.settings.openai_credit_loaded_at.isoformat() if getattr(client.settings, 'openai_credit_loaded_at', None) else None,
             "openai_alert_threshold_usd": getattr(client.settings, 'openai_alert_threshold_usd', None) if getattr(client.settings, 'openai_alert_threshold_usd', None) is not None else 3.0,
-            "openai_credit_estimated_remaining_usd": _estimate_openai_credit_remaining(db, client.settings)
+            "openai_project_id": getattr(client.settings, 'openai_project_id', None) or '',
+            "openai_credit_estimated_remaining_usd": await _estimate_openai_credit_remaining(db, client.settings)
         }
 
     return {
@@ -4715,6 +4768,7 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_document_library = settings_data.feat_document_library
     settings.gdrive_sync_interval_minutes = max(5, settings_data.gdrive_sync_interval_minutes or 480)
     settings.openai_alert_threshold_usd = settings_data.openai_alert_threshold_usd if settings_data.openai_alert_threshold_usd is not None else 3.0
+    settings.openai_project_id = (settings_data.openai_project_id or "").strip() or None
 
     sa_json_raw = (settings_data.gdrive_service_account_json or "").strip()
     if sa_json_raw:
@@ -4746,27 +4800,77 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     return {"status": "ok"}
 
 
-class OpenAICreditReloadPayload(BaseModel):
-    amount_usd: float
-
-
 @app.post("/api/superadmin/clients/{client_id}/openai_credit/reload")
-async def reload_openai_credit(client_id: int, payload: OpenAICreditReloadPayload, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Registra que se cargó crédito a la cuenta de OpenAI de este cliente: reinicia el
-    contador de gasto estimado (cargado - gastado desde ahora) y rearma la alerta para
-    que pueda volver a dispararse en el próximo ciclo bajo del umbral."""
+async def reload_openai_credit(
+    client_id: int,
+    amount_usd: float = Form(...),
+    note: str = Form(None),
+    receipt: UploadFile = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Registra una recarga de crédito de OpenAI de este cliente (previo cobro real al
+    cliente). Guarda un registro histórico con comprobante opcional en OpenAICreditReload, SUMA el monto al total
+    de referencia (settings.openai_credit_loaded_usd, ya no lo pisa: lo que quedaba sin gastar
+    de cargas anteriores no se pierde) y rearma la alerta para que pueda volver a dispararse
+    en el próximo ciclo bajo del umbral."""
     if not require_superadmin(current_user):
         return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    if payload.amount_usd is None or payload.amount_usd <= 0:
+    if amount_usd is None or amount_usd <= 0:
         return JSONResponse(status_code=400, content={"error": "El monto tiene que ser mayor a 0"})
     settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
     if not settings: return JSONResponse(status_code=404, content={"error": "Not found"})
 
-    settings.openai_credit_loaded_usd = payload.amount_usd
+    from src.database.models import OpenAICreditReload
+    import re
+
+    receipt_path = None
+    if receipt and getattr(receipt, "filename", None):
+        uploads_dir = os.path.join("uploads", f"client_{client_id}", "openai_receipts")
+        if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', receipt.filename)
+        stamped_name = f"{int(datetime.utcnow().timestamp())}_{clean_name}"
+        file_path = os.path.join(uploads_dir, stamped_name)
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(receipt.file, f)
+        receipt_path = f"/uploads/client_{client_id}/openai_receipts/{stamped_name}"
+
+    reload_row = OpenAICreditReload(
+        client_id=client_id,
+        amount_usd=amount_usd,
+        receipt_file_path=receipt_path,
+        note=(note or "").strip() or None,
+        created_by=getattr(current_user, "email", None)
+    )
+    db.add(reload_row)
+
+    settings.openai_credit_loaded_usd = (settings.openai_credit_loaded_usd or 0.0) + amount_usd
     settings.openai_credit_loaded_at = datetime.utcnow()
     settings.openai_alert_sent_at = None
     db.commit()
-    return {"status": "ok", "loaded_at": settings.openai_credit_loaded_at.isoformat()}
+    return {"status": "ok", "loaded_at": settings.openai_credit_loaded_at.isoformat(), "total_loaded_usd": settings.openai_credit_loaded_usd}
+
+
+@app.get("/api/superadmin/clients/{client_id}/openai_credit/reloads")
+async def list_openai_credit_reloads(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Historial de recargas declaradas para este cliente, más reciente primero."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    from src.database.models import OpenAICreditReload
+    rows = db.query(OpenAICreditReload).filter_by(client_id=client_id).order_by(OpenAICreditReload.created_at.desc()).all()
+    return {
+        "status": "ok",
+        "reloads": [
+            {
+                "id": r.id,
+                "amount_usd": r.amount_usd,
+                "receipt_file_path": r.receipt_file_path,
+                "note": r.note,
+                "created_by": r.created_by,
+                "created_at": r.created_at.isoformat() if r.created_at else None
+            } for r in rows
+        ]
+    }
 
 
 @app.post("/api/superadmin/clients/{client_id}/gdrive/clear_service_account")
@@ -5233,7 +5337,7 @@ async def openai_credit_alert_loop():
                     for settings in clients_with_credit:
                         try:
                             threshold = settings.openai_alert_threshold_usd if settings.openai_alert_threshold_usd is not None else 3.0
-                            remaining = _estimate_openai_credit_remaining(db, settings)
+                            remaining = await _estimate_openai_credit_remaining(db, settings)
                             if remaining is None or remaining > threshold:
                                 continue
 
