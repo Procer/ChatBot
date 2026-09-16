@@ -128,7 +128,13 @@ DEFAULT_MENU_ITEMS = [
     {"key": "catalog_requests", "label": "Consultas y Pedidos", "icon": "shopping-cart", "section": "Operación"},
     {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
     {"key": "gaps", "label": "Preguntas sin Respuesta", "icon": "help-circle", "section": "Cerebro"},
-    {"key": "config", "label": "Configuración del Bot", "icon": "settings", "section": "Configuración"},
+    {"key": "config_identidad", "label": "Config: Identidad (nombre, tono, System Prompt)", "icon": "bot", "section": "Configuración"},
+    {"key": "config_bienvenida", "label": "Config: Mensaje de Bienvenida", "icon": "hand-metal", "section": "Configuración"},
+    {"key": "config_conocimiento", "label": "Config: Base de Conocimiento (cargar contenido)", "icon": "brain-circuit", "section": "Configuración"},
+    {"key": "config_seguimiento", "label": "Config: Seguimiento por Inactividad", "icon": "clock", "section": "Configuración"},
+    {"key": "config_empresa", "label": "Config: Empresa (datos, horarios, recordatorios)", "icon": "building-2", "section": "Configuración"},
+    {"key": "config_avanzado", "label": "Config: Avanzado", "icon": "settings-2", "section": "Configuración"},
+    {"key": "config_pagos", "label": "Config: Pagos (Mercado Pago / Seña)", "icon": "credit-card", "section": "Configuración"},
     {"key": "channels", "label": "Canales (WhatsApp/TG)", "icon": "share-2", "section": "Configuración"},
     {"key": "audit", "label": "Auditoría de Acciones", "icon": "shield", "section": "Seguridad"},
     {"key": "users", "label": "Gestión de Usuarios", "icon": "users", "section": "Seguridad"}
@@ -179,12 +185,17 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_appointments', True): active_modules.append("appointments")
         if getattr(settings, 'feat_gaps', True): active_modules.append("gaps")
         if getattr(settings, 'feat_channels', True): active_modules.append("channels")
-        if getattr(settings, 'feat_config', True): active_modules.append("config")
+        if getattr(settings, 'feat_config', True): active_modules.extend([
+            "config", "config_identidad", "config_bienvenida", "config_conocimiento",
+            "config_seguimiento", "config_empresa", "config_avanzado", "config_pagos"
+        ])
         if getattr(settings, 'feat_audit', True): active_modules.append("audit")
         if getattr(settings, 'feat_catalog', False): active_modules.extend(["catalog", "catalog_requests"])
         if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
     else:
-        active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "config", "audit"]
+        active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "audit",
+            "config", "config_identidad", "config_bienvenida", "config_conocimiento",
+            "config_seguimiento", "config_empresa", "config_avanzado", "config_pagos"]
     
     active_modules.append("users")
     
@@ -204,6 +215,70 @@ def get_admin_context(request: Request, current_user: User, db: Session):
     }
 
     return target_client_id, is_impersonating, user_mock
+
+CONFIG_TAB_ORDER = ["identidad", "conocimiento", "seguimiento", "empresa", "avanzado", "pagos"]
+
+def get_config_permissions(user_mock) -> dict:
+    """Config ya no es un solo permiso: cada pestaña (y 'Mensaje de Bienvenida', que vive
+    adentro de la pestaña Identidad junto al System Prompt) se otorga por separado. Alguien
+    con el permiso 'config' viejo (de antes de este split) sigue teniendo acceso a las 7,
+    para no romper permisos ya guardados."""
+    perms = (user_mock or {}).get("permissions") or []
+    legacy_full = "config" in perms
+    def has(key):
+        return legacy_full or key in perms
+    return {
+        "identidad": has("config_identidad"),
+        "bienvenida": has("config_bienvenida"),
+        "conocimiento": has("config_conocimiento"),
+        "seguimiento": has("config_seguimiento"),
+        "empresa": has("config_empresa"),
+        "avanzado": has("config_avanzado"),
+        "pagos": has("config_pagos"),
+    }
+
+def get_config_tab_access(cfg_perm: dict) -> dict:
+    return {
+        "identidad": cfg_perm["identidad"] or cfg_perm["bienvenida"],
+        "conocimiento": cfg_perm["conocimiento"],
+        "seguimiento": cfg_perm["seguimiento"],
+        "empresa": cfg_perm["empresa"],
+        "avanzado": cfg_perm["avanzado"],
+        "pagos": cfg_perm["pagos"],
+    }
+
+def fallback_admin_redirect(user_mock):
+    """A dónde mandar a alguien que pidió una página para la que no tiene permiso. No asume
+    que '/admin' (dashboard) esté permitido -evita un loop de redirects si justo ese es el
+    módulo que no tiene-, manda a la primera sección a la que sí tenga acceso."""
+    order = [
+        ("dashboard", "/admin"), ("history", "/admin/history"), ("contacts", "/admin/contacts"),
+        ("submissions", "/admin/submissions"), ("appointments", "/admin/appointments"),
+        ("catalog", "/admin/catalog"), ("catalog_requests", "/admin/catalog-requests"),
+        ("document_library", "/admin/document-library"),
+        ("gaps", "/admin/gaps"), ("channels", "/admin/channels"), ("audit", "/admin/audit"),
+        ("users", "/admin/users"),
+    ]
+    perms = (user_mock or {}).get("permissions") or []
+    for key, url in order:
+        if key in perms:
+            return RedirectResponse(url=url)
+    if any(get_config_permissions(user_mock).values()):
+        return RedirectResponse(url="/admin/config")
+    return HTMLResponse("<body style='background:#0c0f16;color:#94a3b8;font-family:sans-serif;padding:3rem;text-align:center'>"
+                         "Tu usuario no tiene ningún permiso de acceso configurado todavía. Pedile a un administrador que te asigne al menos uno desde Usuarios &rarr; Permisos.</body>", status_code=403)
+
+def has_menu_access(user_mock, *keys) -> bool:
+    """True si el usuario (user_mock de get_admin_context) tiene acceso a CUALQUIERA de los
+    `keys` dados. Bloqueo real (no solo cosmético del sidebar): se usa al principio de cada
+    página de /admin para rechazar el acceso directo por URL a quien no tiene el permiso,
+    aunque el link esté oculto en el menú. Los súper-admin reales e impersonando ya vienen
+    con permissions=todos los módulos activos (ver get_admin_context), así que quedan
+    cubiertos sin chequeo aparte."""
+    if not user_mock:
+        return False
+    perms = user_mock.get("permissions") or []
+    return any(k in perms for k in keys)
 
 def require_document_library_access(current_user: User, is_impersonating: bool, db: Session) -> bool:
     """Permite si el super-admin está impersonando, o si el usuario del cliente tiene el permiso 'document_library'."""
@@ -318,7 +393,8 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db), curre
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if not current_user: return RedirectResponse(url="/admin/login")
     if target_client_id is None: return RedirectResponse(url="/super-admin")
-        
+    if not has_menu_access(user_mock, "dashboard"): return fallback_admin_redirect(user_mock)
+
     metrics = get_dashboard_metrics(target_client_id)
     stats = metrics
     
@@ -352,6 +428,7 @@ async def view_all_history(request: Request, db: Session = Depends(get_db), curr
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if not current_user: return RedirectResponse(url="/admin/login")
     if target_client_id is None: return RedirectResponse(url="/super-admin")
+    if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
 
     from src.database.models import Message, Pause, UserProfile, Submission
     from sqlalchemy import func
@@ -413,7 +490,8 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if not current_user: return RedirectResponse(url="/admin/login")
     if target_client_id is None: return RedirectResponse(url="/super-admin")
-    
+    if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Message, Pause, UserProfile, ChatNote, Attachment, Appointment, Proceeding, Submission
     from sqlalchemy import func
     import datetime
@@ -653,9 +731,10 @@ async def chat_send_file(request: Request, thread_id: str, file: UploadFile = Fi
 
 @app.get("/admin/chat/resume/{thread_id}")
 async def resume_bot(request: Request, thread_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Pause
     db.query(Pause).filter_by(client_id=target_client_id, user_id=thread_id).delete()
     db.commit()
@@ -663,9 +742,10 @@ async def resume_bot(request: Request, thread_id: str, db: Session = Depends(get
 
 @app.get("/admin/chat/pause/{thread_id}")
 async def pause_bot(request: Request, thread_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Pause
     from datetime import datetime, timedelta
     paused_until = datetime.utcnow() + timedelta(days=365)
@@ -681,9 +761,10 @@ async def pause_bot(request: Request, thread_id: str, db: Session = Depends(get_
 
 @app.get("/admin/chat/{thread_id}/delete")
 async def delete_chat_session(request: Request, thread_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Message, Pause, Attachment, Appointment, Proceeding, ChatNote, Submission, SessionAnalytics, TokenUsage
     db.query(Message).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
     db.query(Pause).filter_by(client_id=target_client_id, user_id=thread_id).delete()
@@ -771,6 +852,7 @@ async def send_knowledge_to_chat(request: Request, thread_id: str, knowledge_id:
 async def view_analytics(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "analytics"): return fallback_admin_redirect(user_mock)
     metrics = get_dashboard_metrics(target_client_id)
     return templates.TemplateResponse(request=request, name="admin/analytics.html", context={"stats": metrics, "user": user_mock, "is_impersonating": is_impersonating})
 
@@ -778,7 +860,8 @@ async def view_analytics(request: Request, db: Session = Depends(get_db), curren
 async def view_submissions(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "submissions"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Submission, UserProfile, Attachment
     import json
     
@@ -839,10 +922,11 @@ async def delete_submission(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None:
         return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "submissions"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Submission, Attachment
     # Eliminar adjuntos asociados al trámite
     db.query(Attachment).filter_by(client_id=target_client_id, form_id=sub_id).delete()
@@ -856,7 +940,8 @@ async def delete_submission(
 async def view_contacts(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login", status_code=303)
-    
+    if not has_menu_access(user_mock, "contacts"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import UserProfile, Tag
     profiles = db.query(UserProfile).filter_by(client_id=target_client_id).order_by(UserProfile.full_name.asc()).all()
     all_tags = db.query(Tag).filter_by(client_id=target_client_id).all()
@@ -1129,7 +1214,8 @@ async def view_attachment(
 async def appointments_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "appointments"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import Appointment, Knowledge, Employee, ClientSettings, AppointmentPayment
     apps = db.query(Appointment).filter_by(client_id=target_client_id).order_by(Appointment.date.desc(), Appointment.time.desc()).all()
     employees_by_id = {e.id: e for e in db.query(Employee).filter_by(client_id=target_client_id).all()}
@@ -1311,7 +1397,8 @@ async def confirm_appointment_payment_manual(
 async def view_gaps(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "gaps"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import KnowledgeGap
     gaps_raw = db.query(KnowledgeGap).filter_by(client_id=target_client_id, status='pending').order_by(KnowledgeGap.frequency.desc()).all()
     gaps = [{"id": g.id, "topic": g.topic, "frequency": g.frequency, "status": g.status} for g in gaps_raw]
@@ -1322,7 +1409,8 @@ async def view_gaps(request: Request, db: Session = Depends(get_db), current_use
 async def view_channels(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "channels"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import ClientSettings
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     config = {
@@ -1342,7 +1430,14 @@ async def view_channels(request: Request, db: Session = Depends(get_db), current
 async def config_panel(request: Request, active_tab: str = "identidad", active_section: str = "control", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+
+    cfg_perm = get_config_permissions(user_mock)
+    tab_access = get_config_tab_access(cfg_perm)
+    if not any(tab_access.values()):
+        return RedirectResponse(url="/admin")
+    if not tab_access.get(active_tab):
+        active_tab = next((t for t in CONFIG_TAB_ORDER if tab_access.get(t)), CONFIG_TAB_ORDER[0])
+
     from src.database.models import ClientSettings, Knowledge, Client
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     client_obj = db.query(Client).filter_by(id=target_client_id).first()
@@ -1404,7 +1499,8 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "followup_items": followup_items,
         "data_files": [], "sync_needed": request.query_params.get("sync_needed") == "1", "success_reset": False,
         "error_reset": False, "external_env": {}, "active_tab": active_tab, "active_section": active_section,
-        "ai_config": {}, "user": user_mock, "is_impersonating": is_impersonating
+        "ai_config": {}, "user": user_mock, "is_impersonating": is_impersonating,
+        "cfg_perm": cfg_perm, "tab_access": tab_access
     })
 
 @app.post("/admin/config/save-all")
@@ -1412,108 +1508,119 @@ async def save_all_config(
     request: Request,
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+
+    cfg_perm = get_config_permissions(user_mock)
+    if not any(cfg_perm.values()):
+        return RedirectResponse(url="/admin")
+
     form_data = await request.form()
     from src.database.models import Client
-    
+
     client_obj = db.query(Client).filter_by(id=target_client_id).first()
-    if client_obj and "company_name" in form_data:
-        client_obj.business_name = form_data.get("company_name")
-    
+
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings:
         settings = ClientSettings(client_id=target_client_id)
         db.add(settings)
-        
-    settings.bot_system_prompt = form_data.get("system_prompt", settings.bot_system_prompt)
-    settings.working_hours = form_data.get("working_hours", settings.working_hours)
-    settings.enable_working_hours_for_scheduling = form_data.get("enable_working_hours_for_scheduling") == "1"
-    settings.enable_employee_assignment = form_data.get("enable_employee_assignment") == "1"
 
-    settings.reminder_24h_enabled = form_data.get("reminder_24h_enabled") == "1"
-    settings.reminder_24h_template = form_data.get("reminder_24h_template", settings.reminder_24h_template)
-    if "reminder_24h_hours" in form_data:
-        try: settings.reminder_24h_hours = int(form_data.get("reminder_24h_hours") or 24)
-        except ValueError: pass
-    settings.reminder_2h_enabled = form_data.get("reminder_2h_enabled") == "1"
-    settings.reminder_2h_template = form_data.get("reminder_2h_template", settings.reminder_2h_template)
-    if "reminder_2h_hours" in form_data:
-        try: settings.reminder_2h_hours = int(form_data.get("reminder_2h_hours") or 2)
-        except ValueError: pass
-    
-    if "company_address" in form_data: settings.company_address = form_data.get("company_address")
-    if "company_phone" in form_data: settings.company_phone = form_data.get("company_phone")
-    if "bot_name" in form_data: settings.bot_name = form_data.get("bot_name")
-    if "bot_tone" in form_data: settings.bot_tone = form_data.get("bot_tone")
-    if "out_of_office_enabled" in form_data: settings.out_of_office_enabled = form_data.get("out_of_office_enabled") == "1"
-    else: settings.out_of_office_enabled = False
-    
-    if "out_of_office_message" in form_data: settings.out_of_office_message = form_data.get("out_of_office_message")
-    
-    if "welcome_message_enabled" in form_data: settings.welcome_message_enabled = form_data.get("welcome_message_enabled") == "1"
-    else: settings.welcome_message_enabled = False
-    
-    if "welcome_message_text" in form_data: settings.welcome_message_text = form_data.get("welcome_message_text")
-    if "welcome_threshold_days" in form_data: settings.welcome_threshold_days = int(form_data.get("welcome_threshold_days") or 7)
-    
-    if "test_mode_enabled" in form_data: settings.test_mode_enabled = form_data.get("test_mode_enabled") == "1"
-    else: settings.test_mode_enabled = False
-    
-    if "test_numbers" in form_data: settings.test_numbers = form_data.get("test_numbers")
+    # Cada bloque de abajo SOLO toca los campos de su sección si el usuario tiene el permiso
+    # correspondiente — así, aunque alguien mande el form completo a mano (curl, devtools),
+    # las secciones que no le corresponden quedan intactas en vez de pisarse con "apagado"
+    # solo porque el campo no vino en el POST (ver nota histórica: antes esto asumía que el
+    # form completo siempre estaba presente, cosa que dejó de ser cierta con permisos por tab).
 
-    if "feat_deposit_payment" in form_data: settings.feat_deposit_payment = form_data.get("feat_deposit_payment") == "1"
-    else: settings.feat_deposit_payment = False
-    if "mp_public_key" in form_data: settings.mp_public_key = form_data.get("mp_public_key")
-    if "deposit_currency" in form_data: settings.deposit_currency = form_data.get("deposit_currency") or "ARS"
-    if "deposit_payment_timeout_minutes" in form_data:
-        try: settings.deposit_payment_timeout_minutes = max(1, int(form_data.get("deposit_payment_timeout_minutes") or 30))
-        except ValueError: pass
-    if "deposit_confirmed_template" in form_data: settings.deposit_confirmed_template = form_data.get("deposit_confirmed_template")
-    if "deposit_expired_template" in form_data: settings.deposit_expired_template = form_data.get("deposit_expired_template")
+    if cfg_perm["identidad"]:
+        if "system_prompt" in form_data: settings.bot_system_prompt = form_data.get("system_prompt")
+        if "bot_name" in form_data: settings.bot_name = form_data.get("bot_name")
+        if "bot_tone" in form_data: settings.bot_tone = form_data.get("bot_tone")
 
-    mp_token_raw = (form_data.get("mp_access_token") or "").strip()
-    if mp_token_raw:
-        from src.database.mp_credentials import save_client_mp_token
-        db.commit()  # asegura que el ClientSettings recién creado ya tenga PK antes del save fuera de sesión
-        save_client_mp_token(target_client_id, mp_token_raw)
-        db.refresh(settings)
+    if cfg_perm["bienvenida"]:
+        settings.welcome_message_enabled = form_data.get("welcome_message_enabled") == "1"
+        if "welcome_message_text" in form_data: settings.welcome_message_text = form_data.get("welcome_message_text")
+        if "welcome_threshold_days" in form_data: settings.welcome_threshold_days = int(form_data.get("welcome_threshold_days") or 7)
 
-    welcome_media = form_data.get("welcome_media")
-    if welcome_media and getattr(welcome_media, "filename", None):
-        import os, shutil, re
-        uploads_dir = os.path.join("uploads", f"client_{target_client_id}")
-        if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
-        clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', welcome_media.filename)
-        file_path = os.path.join(uploads_dir, f"welcome_{clean_name}")
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(welcome_media.file, f)
-        settings.welcome_media_path = f"/uploads/client_{target_client_id}/welcome_{clean_name}"
-    elif "remove_welcome_media" in form_data and form_data.get("remove_welcome_media") == "1":
-        settings.welcome_media_path = None
-    
+        welcome_media = form_data.get("welcome_media")
+        if welcome_media and getattr(welcome_media, "filename", None):
+            import os, shutil, re
+            uploads_dir = os.path.join("uploads", f"client_{target_client_id}")
+            if not os.path.exists(uploads_dir): os.makedirs(uploads_dir)
+            clean_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', welcome_media.filename)
+            file_path = os.path.join(uploads_dir, f"welcome_{clean_name}")
+            with open(file_path, "wb") as f:
+                shutil.copyfileobj(welcome_media.file, f)
+            settings.welcome_media_path = f"/uploads/client_{target_client_id}/welcome_{clean_name}"
+        elif form_data.get("remove_welcome_media") == "1":
+            settings.welcome_media_path = None
+
+    if cfg_perm["empresa"]:
+        if client_obj and "company_name" in form_data:
+            client_obj.business_name = form_data.get("company_name")
+        if "company_address" in form_data: settings.company_address = form_data.get("company_address")
+        if "company_phone" in form_data: settings.company_phone = form_data.get("company_phone")
+        if "working_hours" in form_data: settings.working_hours = form_data.get("working_hours")
+        settings.enable_working_hours_for_scheduling = form_data.get("enable_working_hours_for_scheduling") == "1"
+        settings.enable_employee_assignment = form_data.get("enable_employee_assignment") == "1"
+
+        settings.out_of_office_enabled = form_data.get("out_of_office_enabled") == "1"
+        if "out_of_office_message" in form_data: settings.out_of_office_message = form_data.get("out_of_office_message")
+
+        settings.reminder_24h_enabled = form_data.get("reminder_24h_enabled") == "1"
+        if "reminder_24h_template" in form_data: settings.reminder_24h_template = form_data.get("reminder_24h_template")
+        if "reminder_24h_hours" in form_data:
+            try: settings.reminder_24h_hours = int(form_data.get("reminder_24h_hours") or 24)
+            except ValueError: pass
+        settings.reminder_2h_enabled = form_data.get("reminder_2h_enabled") == "1"
+        if "reminder_2h_template" in form_data: settings.reminder_2h_template = form_data.get("reminder_2h_template")
+        if "reminder_2h_hours" in form_data:
+            try: settings.reminder_2h_hours = int(form_data.get("reminder_2h_hours") or 2)
+            except ValueError: pass
+
+    if cfg_perm["avanzado"]:
+        settings.test_mode_enabled = form_data.get("test_mode_enabled") == "1"
+        if "test_numbers" in form_data: settings.test_numbers = form_data.get("test_numbers")
+
+    if cfg_perm["pagos"]:
+        settings.feat_deposit_payment = form_data.get("feat_deposit_payment") == "1"
+        if "mp_public_key" in form_data: settings.mp_public_key = form_data.get("mp_public_key")
+        if "deposit_currency" in form_data: settings.deposit_currency = form_data.get("deposit_currency") or "ARS"
+        if "deposit_payment_timeout_minutes" in form_data:
+            try: settings.deposit_payment_timeout_minutes = max(1, int(form_data.get("deposit_payment_timeout_minutes") or 30))
+            except ValueError: pass
+        if "deposit_confirmed_template" in form_data: settings.deposit_confirmed_template = form_data.get("deposit_confirmed_template")
+        if "deposit_expired_template" in form_data: settings.deposit_expired_template = form_data.get("deposit_expired_template")
+
+        mp_token_raw = (form_data.get("mp_access_token") or "").strip()
+        if mp_token_raw:
+            from src.database.mp_credentials import save_client_mp_token
+            db.commit()  # asegura que el ClientSettings recién creado ya tenga PK antes del save fuera de sesión
+            save_client_mp_token(target_client_id, mp_token_raw)
+            db.refresh(settings)
+
     db.commit()
-    
+
     tab = form_data.get("active_tab", "identidad")
     return RedirectResponse(url=f"/admin/config?active_tab={tab}&success=1", status_code=303)
 
 @app.get("/admin/config/remove-welcome-media")
 async def remove_welcome_media_route(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["bienvenida"]: return RedirectResponse(url="/admin")
+
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if settings:
         settings.welcome_media_path = None
         db.commit()
-    
+
     return RedirectResponse(url="/admin/config?active_tab=identidad&success=1", status_code=303)
 
 @app.get("/admin/config/clear-mp-token")
 async def clear_mp_token_route(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["pagos"]: return RedirectResponse(url="/admin")
 
     from src.database.mp_credentials import clear_client_mp_token
     clear_client_mp_token(target_client_id)
@@ -1533,14 +1640,15 @@ async def save_channels_config(
     telegram_token: str = Form(""),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "channels"): return RedirectResponse(url="/admin")
+
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings:
         settings = ClientSettings(client_id=target_client_id)
         db.add(settings)
-        
+
     settings.webhook_base_url = webhook_base_url
     settings.whatsapp_enabled = (whatsapp_enabled == "1")
     settings.whatsapp_instance_id = whatsapp_instance_id
@@ -1569,8 +1677,9 @@ async def add_knowledge(
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["conocimiento"]: return RedirectResponse(url="/admin")
 
     saved_paths = []
     if media:
@@ -1621,8 +1730,9 @@ async def update_knowledge(
     analyze_rag: int = Form(0), send_as_file: int = Form(0),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["conocimiento"]: return RedirectResponse(url="/admin")
 
     from src.database.models import Knowledge
     k = db.query(Knowledge).filter_by(client_id=target_client_id, id=item_id).first()
@@ -1670,9 +1780,10 @@ async def update_knowledge(
 
 @app.get("/admin/knowledge/delete/{item_id}")
 async def delete_knowledge(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["conocimiento"]: return RedirectResponse(url="/admin")
+
     from src.database.models import Knowledge
     db.query(Knowledge).filter_by(client_id=target_client_id, id=item_id).delete()
     db.commit()
@@ -1680,9 +1791,10 @@ async def delete_knowledge(request: Request, item_id: int, db: Session = Depends
 
 @app.get("/admin/knowledge/get/{item_id}")
 async def get_knowledge(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
-    
+    if not get_config_permissions(user_mock)["conocimiento"]: return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
     from src.database.models import Knowledge
     k = db.query(Knowledge).filter_by(client_id=target_client_id, id=item_id).first()
     if not k: return JSONResponse(content={"error": "Not Found"}, status_code=404)
@@ -1710,9 +1822,10 @@ async def get_knowledge(request: Request, item_id: int, db: Session = Depends(ge
 
 @app.get("/admin/knowledge/remove-media/{item_id}")
 async def remove_knowledge_media(request: Request, item_id: int, index: int = -1, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["conocimiento"]: return RedirectResponse(url="/admin")
+
     from src.database.models import Knowledge
     k = db.query(Knowledge).filter_by(client_id=target_client_id, id=item_id).first()
     if k and k.media_path:
@@ -1737,8 +1850,9 @@ async def add_followup(
     is_active: int = Form(0), media: UploadFile = File(None),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["seguimiento"]: return RedirectResponse(url="/admin")
 
     from src.database.models import FollowupContent
     active_flag = bool(is_active)
@@ -1777,8 +1891,9 @@ async def update_followup(
     is_active: int = Form(0), media: UploadFile = File(None),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["seguimiento"]: return RedirectResponse(url="/admin")
 
     from src.database.models import FollowupContent
     f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
@@ -1813,8 +1928,9 @@ async def update_followup(
 
 @app.get("/admin/followup/delete/{item_id}")
 async def delete_followup(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["seguimiento"]: return RedirectResponse(url="/admin")
 
     from src.database.models import FollowupContent
     db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).delete()
@@ -1823,8 +1939,9 @@ async def delete_followup(request: Request, item_id: int, db: Session = Depends(
 
 @app.get("/admin/followup/get/{item_id}")
 async def get_followup(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+    if not get_config_permissions(user_mock)["seguimiento"]: return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
 
     from src.database.models import FollowupContent
     f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
@@ -1838,8 +1955,9 @@ async def get_followup(request: Request, item_id: int, db: Session = Depends(get
 
 @app.get("/admin/followup/remove-media/{item_id}")
 async def remove_followup_media(request: Request, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["seguimiento"]: return RedirectResponse(url="/admin")
 
     from src.database.models import FollowupContent
     f = db.query(FollowupContent).filter_by(client_id=target_client_id, id=item_id).first()
@@ -1855,9 +1973,10 @@ async def sync_knowledge_saas(
     active_tab: str = Form("conocimiento"),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["conocimiento"]: return RedirectResponse(url="/admin")
+
     from src.database.ingest_saas import ingest_data_saas
     background_tasks.add_task(ingest_data_saas, target_client_id)
     
@@ -1867,7 +1986,8 @@ async def sync_knowledge_saas(
 async def view_audit(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "audit"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import AuditLog
     logs_raw = db.query(AuditLog).filter_by(client_id=target_client_id).order_by(AuditLog.timestamp.desc()).limit(100).all()
     logs = [{"id": l.id, "user_id": l.user_id, "action": l.action, "details": l.details, "timestamp": l.timestamp.strftime("%d/%m/%Y %H:%M")} for l in logs_raw]
@@ -1878,7 +1998,8 @@ async def view_audit(request: Request, db: Session = Depends(get_db), current_us
 async def users_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "users"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import User as DBUser
     users_raw = db.query(DBUser).filter_by(client_id=target_client_id).all()
     
@@ -1925,10 +2046,11 @@ class CatalogProductPayload(BaseModel):
 async def catalog_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not has_menu_access(user_mock, "catalog"): return fallback_admin_redirect(user_mock)
+
     from src.database.models import ClientSettings
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
-    
+
     if not settings or not getattr(settings, 'feat_catalog', False):
         return RedirectResponse(url="/admin") # No tiene permiso
         
@@ -1947,6 +2069,7 @@ async def catalog_panel(request: Request, db: Session = Depends(get_db), current
 async def catalog_requests_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "catalog", "catalog_requests"): return fallback_admin_redirect(user_mock)
 
     from src.database.models import CatalogRequest, CatalogSearchLog
     import json
@@ -2343,6 +2466,7 @@ class DocLibrarySettingsPayload(BaseModel):
 async def document_library_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "document_library"): return fallback_admin_redirect(user_mock)
 
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings or not getattr(settings, 'feat_document_library', False):
@@ -2363,6 +2487,7 @@ async def document_library_panel(request: Request, db: Session = Depends(get_db)
 async def document_library_logs_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "document_library"): return fallback_admin_redirect(user_mock)
 
     from src.database.models import DocSearchLog
     raw_logs = db.query(DocSearchLog).filter_by(client_id=target_client_id).order_by(DocSearchLog.created_at.desc()).limit(300).all()
@@ -5267,11 +5392,12 @@ async def add_exception(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["empresa"]: return RedirectResponse(url="/admin")
+
     from src.database.models import SchedulingException
-    
+
     s_time = start_time.strip() if start_time and start_time.strip() else None
     e_time = end_time.strip() if end_time and end_time.strip() else None
     
@@ -5294,9 +5420,10 @@ async def delete_exception(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    
+    if not get_config_permissions(user_mock)["empresa"]: return RedirectResponse(url="/admin")
+
     from src.database.models import SchedulingException
     exc = db.query(SchedulingException).filter_by(client_id=target_client_id, id=exc_id).first()
     if exc:
@@ -5314,8 +5441,9 @@ async def add_employee(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["empresa"]: return RedirectResponse(url="/admin")
 
     from src.database.models import Employee
 
@@ -5341,8 +5469,9 @@ async def update_employee(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not get_config_permissions(user_mock)["empresa"]: return RedirectResponse(url="/admin")
 
     from src.database.models import Employee
     emp = db.query(Employee).filter_by(client_id=target_client_id, id=emp_id).first()

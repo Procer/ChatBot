@@ -137,7 +137,8 @@
                         <i data-lucide="share-2" class="w-4 h-4 shrink-0"></i> Conectividad
                     </a>
                     {% endif %}
-                    {% if not user or 'config' in user.permissions %}
+                    {% set has_any_config = not user or 'config' in user.permissions or 'config_identidad' in user.permissions or 'config_bienvenida' in user.permissions or 'config_conocimiento' in user.permissions or 'config_seguimiento' in user.permissions or 'config_empresa' in user.permissions or 'config_avanzado' in user.permissions or 'config_pagos' in user.permissions %}
+                    {% if has_any_config %}
                     <a href="/admin/config" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/config' %}active{% endif %}">
                         <i data-lucide="brain-circuit" class="w-4 h-4 shrink-0"></i> Entrenamiento IA
                     </a>

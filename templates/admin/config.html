@@ -6,7 +6,7 @@
 
 {% block header_actions %}
     <div class="flex items-center gap-3">
-        {% if sync_needed %}
+        {% if sync_needed and cfg_perm.conocimiento %}
         <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-lg text-[13px] font-bold uppercase animate-pulse">
             <i data-lucide="refresh-cw" class="w-3 h-3"></i> Sincronización Pendiente
         </div>
@@ -18,10 +18,12 @@
             </button>
         </form>
         {% endif %}
+        {% if cfg_perm.identidad or cfg_perm.bienvenida or cfg_perm.empresa or cfg_perm.avanzado or cfg_perm.pagos %}
         <button type="submit" form="mainConfigForm" class="bg-brand-600 hover:bg-brand-500 text-white px-8 py-2.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all shadow-lg shadow-brand-600/20 flex items-center gap-2">
             <i data-lucide="save" class="w-4 h-4"></i>
             Guardar Todo
         </button>
+        {% endif %}
     </div>
 {% endblock %}
 
@@ -31,24 +33,36 @@
     <!-- Navegación Lateral -->
     <aside class="w-full lg:w-48 shrink-0">
         <div class="sticky top-10 space-y-1.5">
+            {% if tab_access.identidad %}
             <button onclick="switchTab('identidad')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'identidad' or not active_tab else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="identidad">
                 <i data-lucide="bot" class="w-4 h-4"></i> Identidad
             </button>
+            {% endif %}
+            {% if tab_access.conocimiento %}
             <button onclick="switchTab('conocimiento')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'conocimiento' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="conocimiento">
                 <i data-lucide="brain-circuit" class="w-4 h-4"></i> Conocimiento
             </button>
+            {% endif %}
+            {% if tab_access.seguimiento %}
             <button onclick="switchTab('seguimiento')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'seguimiento' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="seguimiento">
                 <i data-lucide="clock" class="w-4 h-4"></i> Seguimiento
             </button>
+            {% endif %}
+            {% if tab_access.empresa %}
             <button onclick="switchTab('empresa')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'empresa' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="empresa">
                 <i data-lucide="building-2" class="w-4 h-4"></i> Empresa
             </button>
+            {% endif %}
+            {% if tab_access.avanzado %}
             <button onclick="switchTab('avanzado')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'avanzado' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="avanzado">
                 <i data-lucide="settings-2" class="w-4 h-4"></i> Avanzado
             </button>
+            {% endif %}
+            {% if tab_access.pagos %}
             <button onclick="switchTab('pagos')" class="nav-btn w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-3 {{ 'active-tab' if active_tab == 'pagos' else 'text-slate-500 hover:bg-slate-800/50' }}" data-tab="pagos">
                 <i data-lucide="credit-card" class="w-4 h-4"></i> Pagos
             </button>
+            {% endif %}
         </div>
     </aside>
 
@@ -61,6 +75,7 @@
             
             <!-- SECCIÓN: IDENTIDAD -->
             <div id="tab-identidad" class="tab-content {{ '' if active_tab == 'identidad' or not active_tab else 'hidden' }} space-y-10">
+                {% if cfg_perm.identidad %}
                 <div class="border-b border-slate-800 pb-6">
                     <h2 class="text-2xl font-black text-white">Personalidad del Asistente</h2>
                     <p class="text-base text-slate-500 mt-2">Configurá cómo se presenta y se comporta el bot con tus clientes.</p>
@@ -86,7 +101,9 @@
                         <textarea name="system_prompt" rows="12" class="w-full bg-slate-950 border border-slate-800 rounded-2xl p-6 text-base text-slate-300 font-mono leading-relaxed focus:border-brand-500 outline-none transition-all custom-scrollbar">{{ config.system_prompt }}</textarea>
                     </div>
                 </div>
+                {% endif %}
 
+                {% if cfg_perm.bienvenida %}
                 <!-- SECCIÓN: BIENVENIDA -->
                 <div class="p-8 bg-brand-500/5 border border-brand-500/10 rounded-[2.5rem] space-y-6">
                     <div class="flex items-center justify-between">
@@ -138,10 +155,12 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
 
             <!-- SECCIÓN: EMPRESA -->
             <div id="tab-empresa" class="tab-content {{ '' if active_tab == 'empresa' else 'hidden' }} space-y-10">
+                {% if cfg_perm.empresa %}
                 <div class="border-b border-slate-800 pb-6">
                     <h2 class="text-2xl font-black text-white">Información Institucional</h2>
                     <p class="text-base text-slate-500 mt-2">Estos datos son la "ficha" que el bot usará para dar información básica.</p>
@@ -456,10 +475,12 @@
                         </div>
                     </div>
                 </div>
+                {% endif %}
             </div>
 
             <!-- SECCIÓN: AVANZADO -->
             <div id="tab-avanzado" class="tab-content {{ '' if active_tab == 'avanzado' else 'hidden' }} space-y-10">
+                {% if cfg_perm.avanzado %}
                 <div class="border-b border-slate-800 pb-6">
                     <h2 class="text-2xl font-black text-white">Mantenimiento Técnico</h2>
                     <p class="text-base text-slate-500 mt-2">Herramientas de recuperación y depuración del sistema.</p>
@@ -502,10 +523,12 @@
                         </button>
                     </div>
                 </div>
+                {% endif %}
             </div>
 
             <!-- SECCIÓN: PAGOS (SEÑA CON MERCADO PAGO) -->
             <div id="tab-pagos" class="tab-content {{ '' if active_tab == 'pagos' else 'hidden' }} space-y-10">
+                {% if cfg_perm.pagos %}
                 <div class="border-b border-slate-800 pb-6">
                     <h2 class="text-2xl font-black text-white">Seña con Mercado Pago</h2>
                     <p class="text-base text-slate-500 mt-2">El negocio conecta SU PROPIA cuenta de Mercado Pago: el dinero de la seña va directo a esa cuenta, nunca pasa por anka.</p>
@@ -592,11 +615,13 @@
 
                     <p class="text-[10px] text-slate-500 flex items-start gap-2"><i data-lucide="info" class="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-400"></i> El monto de la seña se carga por servicio en la pestaña <b>Conocimiento</b> (editá el servicio → "Monto de Seña"). Si un servicio no tiene monto cargado, ese servicio NO pide seña aunque este interruptor esté activado.</p>
                 </div>
+                {% endif %}
             </div>
         </form>
 
         <!-- SECCIÓN: CONOCIMIENTO (Independiente por su complejidad) -->
         <div id="tab-conocimiento" class="tab-content {{ '' if active_tab == 'conocimiento' else 'hidden' }} space-y-10">
+            {% if cfg_perm.conocimiento %}
             <div class="border-b border-slate-800 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                     <h2 class="text-2xl font-black text-white">Cerebro e Interactividad</h2>
@@ -684,10 +709,12 @@
                 {% endif %}
                 {% endfor %}
             </div>
+            {% endif %}
         </div>
 
         <!-- SECCIÓN: SEGUIMIENTO POR INACTIVIDAD -->
         <div id="tab-seguimiento" class="tab-content {{ '' if active_tab == 'seguimiento' else 'hidden' }} space-y-10">
+            {% if cfg_perm.seguimiento %}
             <div class="border-b border-slate-800 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                     <h2 class="text-2xl font-black text-white">Seguimiento por Inactividad</h2>
@@ -740,6 +767,7 @@
                 </div>
                 {% endfor %}
             </div>
+            {% endif %}
         </div>
 
     </main>
