@@ -310,6 +310,12 @@ def sync_client_drive(client_id: int) -> dict:
                 logging.error(f"[GDrive] Error listando archivos de '{folder['name']}' (client_id={client_id}): {e}")
                 continue
 
+            # Diagnóstico: se vio que una corrida devuelve 0 archivos para la carpeta (todos los docs
+            # del segmento quedan como "missing_in_drive") sin ningún error. Dejar rastro del conteo.
+            logging.info(f"[GDrive] Carpeta '{folder['name']}' (client_id={client_id}): {len(files)} archivos listados")
+            if not files:
+                logging.warning(f"[GDrive] Carpeta '{folder['name']}' (client_id={client_id}) devolvió 0 archivos: posible listado vacío transitorio de Drive")
+
             for f in files:
                 doc = db.query(Document).filter_by(client_id=client_id, external_file_id=f["id"]).first()
                 if doc:

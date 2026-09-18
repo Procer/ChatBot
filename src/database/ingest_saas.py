@@ -168,7 +168,7 @@ def ingest_data_saas(client_id: int):
         logging.info(f"Guardando {len(chunks)} fragmentos en ChromaDB...")
         vector_db = Chroma.from_documents(
             documents=chunks,
-            embedding=embeddings,
+            embedding=_embeddings_for(client_id),
             persist_directory=CHROMA_PATH
         )
         logging.info(f"--- CONOCIMIENTO SINCRONIZADO EXITOSAMENTE PARA CLIENTE {client_id} ---")

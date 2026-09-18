@@ -1831,7 +1831,22 @@ def call_model(state: AgentState):
     onboarding_active = state.get("onboarding_active", False)
     collected_data = state.get("collected_data", {})
     fields_to_collect = state.get("fields_to_collect", [])
-    
+    form_topic_abandoned = False
+
+    # Salida del formulario de búsqueda de documentos: si el usuario aclara que NO busca un
+    # documento (ej: "no estoy buscando un documento, escribí para pedir un turno"), se cierra el
+    # formulario en vez de seguir pidiéndole DNI/Protocolo. Bug real: un turno agendado activó por
+    # error el formulario de PROTOCOLOS y el bot no soltaba al usuario.
+    if onboarding_active and str(state.get("form_topic") or "").startswith(DOC_SEARCH_TOPIC_PREFIX):
+        import re as _re_ab, unicodedata as _ud_ab
+        _last_h = next((str(m.content) for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), "")
+        _norm = "".join(c for c in _ud_ab.normalize("NFD", _last_h.lower()) if _ud_ab.category(c) != "Mn")
+        if _re_ab.search(r"\bno\s+(estoy\s+)?(busco|buscando|quiero|necesito|es\s+para)\b.*\b(document|protocolo|resultado|analisis|estudio)|\bcancel(a|ar|o)\b|\bdeja(lo|r)?\s+(asi|nomas)\b|\bescribi\s+para\b", _norm):
+            onboarding_active = False
+            fields_to_collect = []
+            collected_data = {}
+            form_topic_abandoned = True
+
     if not client_id:
         return {"messages": [SystemMessage(content="Error Interno: client_id no proporcionado al LLM.")]}
         
@@ -2218,6 +2233,15 @@ def call_model(state: AgentState):
         except Exception:
             pass
 
+    # Si estamos en medio de un agendamiento (ya se consultó disponibilidad hace pocos mensajes) y el
+    # usuario no pide un documento, un mensaje como "Elijo el de las 6" no debe disparar el menú de
+    # documentos: el modelo lo interpretaba como pedido de "resultados" y abría el formulario de
+    # DNI/Protocolo justo después de agendar.
+    scheduling_flow_active = any(
+        type(m).__name__ == "ToolMessage" and "horarios_disponibles" in str(m.content)
+        for m in messages[-8:]
+    )
+
     tramites_con_turno = []
     if user_scheduling_intent:
         messages.append(SystemMessage(content=(
@@ -2345,7 +2369,7 @@ def call_model(state: AgentState):
             f"`iniciar_busqueda_documento_segmento` en esta misma respuesta (query=la consulta del usuario, "
             f"segmento='{matched_segment.name}'). NO llames a `buscar_documento` en este turno."
         )))
-    elif doc_segments_available and not onboarding_active and not user_form_topic_intent:
+    elif doc_segments_available and not onboarding_active and not user_form_topic_intent and not scheduling_flow_active:
         lineas_segmentos = []
         for seg_name, seg_hints, seg_fields in doc_segments_available:
             pistas_str = f" Pistas: {', '.join(seg_hints)}." if seg_hints else ""
@@ -2358,7 +2382,9 @@ def call_model(state: AgentState):
             "decirlo, no hace falta que use las palabras exactas de las pistas-, DEBES llamar "
             "obligatoriamente a `iniciar_busqueda_documento_segmento` en esta misma respuesta, con "
             "segmento=el nombre EXACTO listado arriba (entre comillas) y query=la consulta del usuario. NO "
-            "llames a `buscar_documento` en ese caso. Si el pedido es por otro documento/manual/reglamento "
+            "llames a `buscar_documento` en ese caso. SOLO aplica si el ÚLTIMO mensaje del usuario pide un documento: nunca uses la pregunta del saludo ni "
+            "el historial como pedido, y si el usuario está pidiendo o eligiendo un turno, NO llames a esta herramienta. "
+            "Si el pedido es por otro documento/manual/reglamento "
             "que NO corresponde a ninguno de estos segmentos, llamá a `buscar_documento` en su lugar. Si el "
             "mensaje no tiene nada que ver con documentos, ignorá esta instrucción por completo.\n"
             "DESAMBIGUACIÓN ENTRE SEGMENTOS: si el pedido del usuario es genérico y PODRÍA corresponder a "
@@ -2531,7 +2557,8 @@ def call_model(state: AgentState):
         "onboarding_active": onboarding_active,
         "fields_to_collect": fields_to_collect,
         "collected_data": collected_data,
-        "greeting_offer_topic": greeting_offer_topic_next
+        "greeting_offer_topic": greeting_offer_topic_next,
+        **({"form_topic": None, "form_just_completed": False} if form_topic_abandoned else {}),
     }
 
 def _find_availability_contradiction(ai_text: str, messages: list):
