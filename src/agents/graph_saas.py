@@ -2369,7 +2369,14 @@ def call_model(state: AgentState):
             "sobre qué análisis hacemos, o el resultado de un análisis que ya te hiciste?\"). Recién cuando "
             "el usuario aclare cuál de las dos quiere, llamá a `iniciar_busqueda_documento_segmento` con el "
             "segmento correspondiente. Si el pedido ya es específico y sin ambigüedad real (ej. menciona "
-            "'resultado', 'protocolo', o datos propios como DNI), no hace falta preguntar: procedé directo."
+            "'resultado', 'protocolo', o datos propios como DNI), no hace falta preguntar: procedé directo.\n"
+            "CONTINUIDAD DE SEGMENTO: si en esta misma conversación ya buscaste o entregaste exitosamente un "
+            "documento de alguno de estos segmentos, y el pedido actual es una continuación genérica sin "
+            "mencionar otro tema (ej. 'busco otro', 'otro más', 'quiero otro estudio para descargar', "
+            "'necesito uno más'), NO vuelvas a desambiguar: asumí que se refiere al MISMO segmento que "
+            "recién usaste y llamá directo a `iniciar_busqueda_documento_segmento` con ese segmento. Solo "
+            "volvé a preguntar si el usuario menciona explícitamente el otro segmento (ej. catálogo, tipos "
+            "de estudios, precios)."
         )))
     elif user_doc_intent and not onboarding_active and not user_form_topic_intent:
         messages.append(SystemMessage(content="REFUERZO DE BIBLIOTECA DE DOCUMENTOS: El usuario está pidiendo un documento/manual/reglamento. DEBES llamar obligatoriamente a `buscar_documento` en esta misma respuesta con esa consulta antes de responder."))
