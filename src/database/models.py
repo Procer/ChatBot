@@ -30,7 +30,10 @@ class ClientSettings(Base):
     bot_system_prompt = Column(Text)
     google_sheet_id = Column(String(255))
     working_hours = Column(Text)
-    
+    # Horario semanal estructurado (JSON por día con turnos múltiples, ver src/scheduling_hours.py).
+    # None = el cliente todavía usa el texto libre legacy de 'working_hours'.
+    working_hours_json = Column(Text, nullable=True)
+
     company_address = Column(String(255))
     company_phone = Column(String(50))
     bot_name = Column(String(100))

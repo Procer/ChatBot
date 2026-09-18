@@ -32,6 +32,7 @@ from src.database.forms_saas import process_form_completion
 from src.database.openai_key import resolve_client_openai_key, get_client_embeddings
 from src.database.mp_credentials import resolve_client_mp_token
 from src.mercadopago_client import create_preference
+from src.scheduling_hours import parse_schedule, get_ranges_for_date, format_schedule_text
 
 load_dotenv()
 AI_PROVIDER = os.getenv("AI_PROVIDER", "google").lower()
@@ -317,7 +318,8 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
             
         working_hours = None
         duration = None
-        
+        client_schedule = None  # horario semanal estructurado del cliente (ver src/scheduling_hours.py)
+
         if tramite_nombre:
             from src.database.models import Knowledge
             search_topic = tramite_nombre.lower().strip()
@@ -331,14 +333,16 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
             if match and match.scheduling_hours:
                 working_hours = match.scheduling_hours
                 duration = match.appointment_duration or settings.appointment_duration or 30
-        
+
         if not working_hours:
             if settings and settings.enable_working_hours_for_scheduling:
-                working_hours = settings.working_hours or "09:00-13:00, 16:00-20:00"
                 duration = settings.appointment_duration or 30
+                client_schedule = parse_schedule(settings.working_hours_json)
+                if not client_schedule:
+                    working_hours = settings.working_hours or "09:00-13:00, 16:00-20:00"
             else:
                 return []
-                
+
         provider = settings.scheduling_provider or "local"
         calendar_id = settings.google_calendar_id or "primary"
         capacity = settings.scheduling_capacity or 1
@@ -356,20 +360,11 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
             else:
                 capacity = db.query(Employee).filter_by(client_id=client_id, is_active=True).count()
 
-        # Días habilitados: si el trámite matcheado tiene sus propios días configurados, tienen
-        # prioridad sobre los días generales del cliente (permite, ej., que "Extracción de sangre"
-        # solo se agende lunes/miércoles/viernes aunque el negocio atienda de lunes a viernes).
-        enabled_days = None
-        if tramite_nombre and match and match.scheduling_days:
-            enabled_days = [d.strip() for d in match.scheduling_days.split(",") if d.strip()]
-        if not enabled_days:
-            enabled_days = (settings.scheduling_days or "mon,tue,wed,thu,fri").split(",")
-        
         try:
             requested_date = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
             return []
-            
+
         # weekday() -> 0: mon, 1: tue, 2: wed, 3: thu, 4: fri, 5: sat, 6: sun
         weekday_map = {
             0: "mon",
@@ -381,9 +376,26 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
             6: "sun"
         }
         day_mapped = weekday_map[requested_date.weekday()]
-        if day_mapped not in enabled_days:
-            return []
-            
+
+        # Días habilitados: si el trámite matcheado tiene sus propios días configurados, tienen
+        # prioridad sobre el horario general (permite, ej., que "Extracción de sangre" solo se
+        # agende lunes/miércoles/viernes aunque el negocio atienda de lunes a viernes). Si no hay
+        # override de trámite y el cliente ya tiene el horario semanal estructurado configurado,
+        # ese horario decide directamente qué días están abiertos (cada día trae sus propios rangos).
+        structured_ranges = None
+        if tramite_nombre and match and match.scheduling_days:
+            enabled_days = [d.strip() for d in match.scheduling_days.split(",") if d.strip()]
+            if day_mapped not in enabled_days:
+                return []
+        elif client_schedule is not None:
+            structured_ranges = get_ranges_for_date(client_schedule, date_str)
+            if not structured_ranges:
+                return []
+        else:
+            enabled_days = (settings.scheduling_days or "mon,tue,wed,thu,fri").split(",")
+            if day_mapped not in enabled_days:
+                return []
+
         # Filtrar excepciones y bloqueos detallados
         from src.database.models import SchedulingException
         exceptions = db.query(SchedulingException).filter(
@@ -399,32 +411,35 @@ def get_slots_disponibles_saas(client_id: int, date_str: str, tramite_nombre: st
             if exc.start_time and exc.end_time:
                 blocked_ranges.append((exc.start_time.strip(), exc.end_time.strip()))
             
-        import re
-        ranges = []
-        try:
-            # Reemplazar " a " por "-" para soportar formatos como "de 08 a 13"
-            normalized_str = re.sub(r'\s+a\s+', '-', working_hours)
-            
-            # Buscar patrones tipo "HH:MM-HH:MM"
-            matches_hm = re.findall(r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})', normalized_str)
-            if matches_hm:
-                for start, end in matches_hm:
-                    ranges.append((start.strip(), end.strip()))
-            else:
-                # Buscar patrones tipo "HH-HH" (ej: "de 08 a 13" -> "08-13")
-                matches_h = re.findall(r'(\d{1,2})\s*-\s*(\d{1,2})', normalized_str)
-                for start_h, end_h in matches_h:
-                    ranges.append((f"{start_h.zfill(2)}:00", f"{end_h.zfill(2)}:00"))
-        except Exception as parse_err:
-            logging.error(f"Error parseando working_hours con regex: {parse_err}")
-            
-        if not ranges:
+        if structured_ranges is not None:
+            ranges = structured_ranges
+        else:
+            import re
+            ranges = []
             try:
-                for range_part in working_hours.split(","):
-                    start_str, end_str = range_part.strip().split("-")
-                    ranges.append((start_str.strip(), end_str.strip()))
-            except Exception:
-                return []
+                # Reemplazar " a " por "-" para soportar formatos como "de 08 a 13"
+                normalized_str = re.sub(r'\s+a\s+', '-', working_hours)
+
+                # Buscar patrones tipo "HH:MM-HH:MM"
+                matches_hm = re.findall(r'(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})', normalized_str)
+                if matches_hm:
+                    for start, end in matches_hm:
+                        ranges.append((start.strip(), end.strip()))
+                else:
+                    # Buscar patrones tipo "HH-HH" (ej: "de 08 a 13" -> "08-13")
+                    matches_h = re.findall(r'(\d{1,2})\s*-\s*(\d{1,2})', normalized_str)
+                    for start_h, end_h in matches_h:
+                        ranges.append((f"{start_h.zfill(2)}:00", f"{end_h.zfill(2)}:00"))
+            except Exception as parse_err:
+                logging.error(f"Error parseando working_hours con regex: {parse_err}")
+
+            if not ranges:
+                try:
+                    for range_part in working_hours.split(","):
+                        start_str, end_str = range_part.strip().split("-")
+                        ranges.append((start_str.strip(), end_str.strip()))
+                except Exception:
+                    return []
                 
         all_slots = []
         for start_str, end_str in ranges:
@@ -685,32 +700,61 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
         db.close()
 
 
-def cancelar_turno_saas(client_id: int, thread_id: str):
+def _turno_service_label(reason):
+    """Nombre corto del servicio para mostrarle al usuario en listados (ej. al desambiguar
+    entre varios turnos activos), sin los datos extra del trámite ni el detalle largo."""
+    if not reason:
+        return "Turno"
+    main_part = reason.split(" | ")[0]
+    return (main_part.split(" - ")[0].strip() if " - " in main_part else main_part.strip()) or "Turno"
+
+
+def _turnos_info(turnos):
+    return [{"date": t.date, "time": t.time, "service": _turno_service_label(t.reason)} for t in turnos]
+
+
+def cancelar_turno_saas(client_id: int, thread_id: str, fecha: str = None, hora: str = None):
+    """Cancela un turno confirmado del usuario. Si hay más de un turno activo y no se pasa
+    fecha/hora puntual, NO cancela nada (bug real detectado en producción 2026-09-17: con dos
+    turnos activos para el mismo número, se cancelaba el más próximo sin avisar ni preguntar
+    cuál) - en su lugar devuelve la lista para que el llamador se lo pregunte al usuario."""
     db = SessionLocal()
     try:
-        app = db.query(Appointment).filter(
+        turnos = db.query(Appointment).filter(
             Appointment.client_id == client_id,
             Appointment.thread_id == thread_id,
             Appointment.status == 'confirmed'
-        ).order_by(Appointment.date.asc(), Appointment.time.asc()).first()
-        
-        if app:
-            app.status = 'cancelled'
-            db.commit()
-            
-            try:
-                from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
-                assign_tag_by_name(client_id, thread_id, "❌ Turno Cancelado")
-                remove_tag_by_name(client_id, thread_id, "🗓️ Turno Agendado")
-            except Exception as te:
-                logging.error(f"Error updating tagging in cancelar_turno: {te}")
-                
-            return True
-        return False
+        ).order_by(Appointment.date.asc(), Appointment.time.asc()).all()
+
+        if not turnos:
+            return {"status": "none"}
+
+        target = None
+        if fecha and hora:
+            target = next((t for t in turnos if t.date == fecha and t.time == hora), None)
+            if not target:
+                return {"status": "not_found", "turnos": _turnos_info(turnos)}
+        elif len(turnos) > 1:
+            return {"status": "multiple", "turnos": _turnos_info(turnos)}
+        else:
+            target = turnos[0]
+
+        info = {"date": target.date, "time": target.time, "service": _turno_service_label(target.reason)}
+        target.status = 'cancelled'
+        db.commit()
+
+        try:
+            from src.database.tagging_manager import assign_tag_by_name, remove_tag_by_name
+            assign_tag_by_name(client_id, thread_id, "❌ Turno Cancelado")
+            remove_tag_by_name(client_id, thread_id, "🗓️ Turno Agendado")
+        except Exception as te:
+            logging.error(f"Error updating tagging in cancelar_turno: {te}")
+
+        return {"status": "cancelled", "turno": info}
     except Exception as e:
         logging.error(f"Error cancelando turno SaaS: {e}")
         db.rollback()
-        return False
+        return {"status": "error"}
     finally:
         db.close()
 
@@ -755,45 +799,81 @@ def consultar_estado_tramite(numero_seguimiento: str, config: RunnableConfig):
 
 
 @tool
-def cancelar_mi_turno(config: RunnableConfig):
-    """Cancela el turno activo más próximo del usuario."""
+def cancelar_mi_turno(config: RunnableConfig, fecha: str = None, hora: str = None):
+    """Cancela un turno confirmado del usuario. Si el usuario tiene MÁS DE UN turno activo,
+    llamá esta herramienta primero SIN 'fecha'/'hora': te va a devolver la lista de sus turnos
+    para que se la muestres y le preguntes cuál quiere cancelar. Recién cuando el usuario elija
+    uno, volvé a llamarla pasando 'fecha' (YYYY-MM-DD) y 'hora' (HH:MM) EXACTAS de esa lista."""
     client_id = config.get("configurable", {}).get("client_id")
     thread_id = config.get("configurable", {}).get("thread_id")
     if not client_id or not thread_id:
         return "No se especificó la sesión del usuario."
-        
-    exito = cancelar_turno_saas(client_id, thread_id)
-    if exito:
-        return "Tu turno ha sido cancelado con éxito."
-    return "No tenés ningún turno activo para cancelar."
+
+    resultado = cancelar_turno_saas(client_id, thread_id, fecha, hora)
+    status = resultado["status"]
+
+    if status == "none":
+        return "No tenés ningún turno activo para cancelar."
+    if status in ("multiple", "not_found"):
+        listado = "\n".join(f"- {t['date']} a las {t['time']} hs: {t['service']}" for t in resultado["turnos"])
+        aviso = "No encontré un turno confirmado exactamente en esa fecha y hora." if status == "not_found" else "El usuario tiene más de un turno activo."
+        return (
+            f"{aviso} Turnos activos:\n{listado}\n"
+            f"Mostrale esta lista al usuario y preguntale cuál quiere cancelar. Cuando te lo "
+            f"indique, volvé a llamar a 'cancelar_mi_turno' con 'fecha' y 'hora' EXACTAS de la lista."
+        )
+    if status == "cancelled":
+        t = resultado["turno"]
+        return f"Turno cancelado con éxito: {t['date']} a las {t['time']} hs ({t['service']})."
+    return "Hubo un error al intentar cancelar el turno, decile al usuario que intente nuevamente."
 
 
 @tool
-def reprogramar_mi_turno(nueva_fecha: str, nueva_hora: str, config: RunnableConfig = None):
-    """Reprograma el turno activo más próximo del usuario a una nueva fecha (YYYY-MM-DD) y hora (HH:MM)."""
+def reprogramar_mi_turno(nueva_fecha: str, nueva_hora: str, config: RunnableConfig = None, fecha_actual: str = None, hora_actual: str = None):
+    """Reprograma un turno confirmado del usuario a una nueva fecha (YYYY-MM-DD) y hora (HH:MM).
+    Si el usuario tiene MÁS DE UN turno activo, llamala primero SIN 'fecha_actual'/'hora_actual'
+    (podés repetir la misma nueva_fecha/nueva_hora que pidió el usuario, se ignoran en ese caso):
+    te va a devolver la lista de sus turnos para que se la muestres y le preguntes cuál quiere
+    reprogramar. Cuando el usuario elija uno, volvé a llamarla con 'fecha_actual'/'hora_actual'
+    EXACTAS de esa lista, junto con la nueva fecha/hora deseada."""
     client_id = config.get("configurable", {}).get("client_id") if config else None
     thread_id = config.get("configurable", {}).get("thread_id") if config else None
     if not client_id or not thread_id:
         return "No se especificó la sesión de usuario."
-        
+
     db = SessionLocal()
     try:
-        app_obj = db.query(Appointment).filter(
+        turnos = db.query(Appointment).filter(
             Appointment.client_id == client_id,
             Appointment.thread_id == thread_id,
             Appointment.status == 'confirmed'
-        ).order_by(Appointment.date.asc(), Appointment.time.asc()).first()
-        
-        if not app_obj:
+        ).order_by(Appointment.date.asc(), Appointment.time.asc()).all()
+
+        if not turnos:
             return "No tenés ningún turno activo para reprogramar."
-            
-        tramite_original = None
-        if app_obj.reason:
-            if " - " in app_obj.reason:
-                tramite_original = app_obj.reason.split(" - ")[0]
-            else:
-                tramite_original = app_obj.reason
-                
+
+        app_obj = None
+        if fecha_actual and hora_actual:
+            app_obj = next((t for t in turnos if t.date == fecha_actual and t.time == hora_actual), None)
+            if not app_obj:
+                listado = "\n".join(f"- {t.date} a las {t.time} hs: {_turno_service_label(t.reason)}" for t in turnos)
+                return (
+                    f"No encontré un turno confirmado exactamente en esa fecha y hora. Turnos activos:\n{listado}\n"
+                    f"Mostrale esta lista al usuario y preguntale cuál quiere reprogramar. Volvé a llamar con "
+                    f"'fecha_actual'/'hora_actual' EXACTAS de la lista."
+                )
+        elif len(turnos) > 1:
+            listado = "\n".join(f"- {t.date} a las {t.time} hs: {_turno_service_label(t.reason)}" for t in turnos)
+            return (
+                f"El usuario tiene más de un turno activo:\n{listado}\n"
+                f"Mostrale esta lista al usuario y preguntale cuál quiere reprogramar. Cuando te lo indique, "
+                f"volvé a llamar a 'reprogramar_mi_turno' con 'fecha_actual'/'hora_actual' EXACTAS de la lista."
+            )
+        else:
+            app_obj = turnos[0]
+
+        tramite_original = _turno_service_label(app_obj.reason) if app_obj.reason else None
+
         formatted_time = nueva_hora.strip()
         if ":" in formatted_time:
             parts = formatted_time.split(":")

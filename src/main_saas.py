@@ -21,6 +21,7 @@ from src.database.session import get_db, SessionLocal
 from src.database.models import Client, ClientSettings, Conversation, User
 from src.database.analytics_engine_saas import log_message, log_token_usage, mark_human_intervention, get_dashboard_metrics
 from src.agents.graph_saas import app as chatbot_app
+from src.scheduling_hours import parse_schedule, default_schedule, is_open_now, format_schedule_text
 import hashlib
 import shutil
 
@@ -1518,6 +1519,7 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "test_numbers": settings.test_numbers if settings else "",
         "system_prompt": settings.bot_system_prompt if settings else "",
         "working_hours": settings.working_hours if settings else "",
+        "working_hours_json": (parse_schedule(settings.working_hours_json) if settings and settings.working_hours_json else default_schedule()),
         "enable_working_hours_for_scheduling": "1" if settings and settings.enable_working_hours_for_scheduling else "0",
         "enable_employee_assignment": "1" if settings and settings.enable_employee_assignment else "0",
         "feat_rag_enabled": "1" if settings and settings.feat_rag_enabled else "0",
@@ -1619,7 +1621,14 @@ async def save_all_config(
             client_obj.business_name = form_data.get("company_name")
         if "company_address" in form_data: settings.company_address = form_data.get("company_address")
         if "company_phone" in form_data: settings.company_phone = form_data.get("company_phone")
-        if "working_hours" in form_data: settings.working_hours = form_data.get("working_hours")
+        working_hours_json_raw = form_data.get("working_hours_json")
+        if working_hours_json_raw:
+            schedule = parse_schedule(working_hours_json_raw)
+            if schedule:
+                settings.working_hours_json = json.dumps(schedule)
+                # El texto libre legacy queda como respaldo (se sigue mostrando en el prompt del
+                # bot si algún día se borra el JSON) generado automáticamente desde el editor.
+                settings.working_hours = format_schedule_text(schedule)
         settings.enable_working_hours_for_scheduling = form_data.get("enable_working_hours_for_scheduling") == "1"
         settings.enable_employee_assignment = form_data.get("enable_employee_assignment") == "1"
 
@@ -4014,7 +4023,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
 
             # --- Lógica de Fuera de Horario (OOO) ---
             if settings and settings.out_of_office_enabled:
-                if not is_within_working_hours(settings.working_hours):
+                schedule = parse_schedule(settings.working_hours_json)
+                is_open = is_open_now(schedule) if schedule else is_within_working_hours(settings.working_hours)
+                if not is_open:
                     four_hours_ago = datetime.datetime.utcnow() - datetime.timedelta(hours=4)
                     last_ooo = db_local.query(Message).filter(
                         Message.client_id == client_id,

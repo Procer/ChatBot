@@ -179,9 +179,19 @@
                         <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Teléfono Público</label>
                         <input type="text" name="company_phone" value="{{ config.company_phone }}" class="w-full bg-surface border border-slate-800 rounded-xl p-4 text-white font-medium focus:border-brand-500 outline-none transition-all shadow-sm">
                     </div>
-                    <div class="space-y-3">
-                        <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Horarios de Atención</label>
-                        <input type="text" name="working_hours" value="{{ config.working_hours or '' }}" placeholder="Lunes a Viernes 09:00 - 18:00" class="w-full bg-surface border border-slate-800 rounded-xl p-4 text-white font-medium focus:border-brand-500 outline-none transition-all shadow-sm">
+                    <div class="space-y-3 md:col-span-2">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Horarios de Atención</label>
+                            <span class="text-[10px] text-slate-500 ml-1">Activá los días que atendés y agregá uno o más turnos por día (ej. mañana y tarde). Un día sin turnos queda cerrado.</span>
+                        </div>
+                        <input type="hidden" id="working_hours_json_input" name="working_hours_json" value="">
+                        <div id="schedule-editor" class="bg-surface border border-slate-800 rounded-2xl divide-y divide-slate-800 overflow-hidden shadow-sm">
+                            <!-- JS Content: una fila por día -->
+                        </div>
+                        <p class="text-[11px] text-slate-500 flex items-start gap-2">
+                            <i data-lucide="info" class="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-400"></i>
+                            <span>Así lo va a decir el bot: <span id="schedule-preview" class="text-slate-400 font-medium">—</span></span>
+                        </p>
                     </div>
                     <div class="space-y-3 flex items-center justify-between p-4 bg-slate-900/30 border border-slate-800 rounded-xl md:col-span-2">
                         <div>
@@ -1415,6 +1425,83 @@
             alert('Error de red al intentar actualizar el profesional.');
         }
     }
+
+    // ── HORARIOS DE ATENCIÓN (horario semanal estructurado) ─────────────────
+    const SCHEDULE_DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const SCHEDULE_DAY_LABELS = { mon: 'Lunes', tue: 'Martes', wed: 'Miércoles', thu: 'Jueves', fri: 'Viernes', sat: 'Sábado', sun: 'Domingo' };
+    let scheduleState = {{ config.working_hours_json | tojson | safe }};
+
+    function renderScheduleEditor() {
+        const root = document.getElementById('schedule-editor');
+        if (!root) return;
+        root.innerHTML = SCHEDULE_DAY_ORDER.map(day => {
+            const d = scheduleState[day] || { enabled: false, ranges: [] };
+            const shiftsHtml = d.ranges.map((r, idx) => `
+                <div class="flex items-center gap-1.5">
+                    <input type="time" value="${r[0]}" onchange="updateScheduleShift('${day}', ${idx}, 0, this.value)" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:border-brand-500 outline-none">
+                    <span class="text-slate-600 text-xs">a</span>
+                    <input type="time" value="${r[1]}" onchange="updateScheduleShift('${day}', ${idx}, 1, this.value)" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-white focus:border-brand-500 outline-none">
+                    <button type="button" onclick="removeScheduleShift('${day}', ${idx})" class="p-1 text-slate-600 hover:text-red-500 transition-all" title="Quitar este turno">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            `).join('');
+            return `
+            <div class="p-4 flex flex-wrap items-center gap-4 ${d.enabled ? '' : 'opacity-50'}">
+                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input type="checkbox" ${d.enabled ? 'checked' : ''} onchange="toggleScheduleDay('${day}', this.checked)" class="sr-only peer">
+                    <div class="w-10 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                </label>
+                <span class="text-xs font-bold text-white w-20 shrink-0">${SCHEDULE_DAY_LABELS[day]}</span>
+                <div class="flex flex-wrap items-center gap-3 flex-1">
+                    ${shiftsHtml || '<span class="text-[10px] text-slate-600 uppercase font-bold tracking-wide">Cerrado</span>'}
+                    ${d.enabled ? `<button type="button" onclick="addScheduleShift('${day}')" class="text-[10px] font-bold text-brand-500 hover:text-brand-400 uppercase tracking-wide flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i> Agregar turno</button>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+        if (window.lucide) lucide.createIcons();
+        updateSchedulePreview();
+    }
+
+    function toggleScheduleDay(day, enabled) {
+        if (!scheduleState[day]) scheduleState[day] = { enabled: false, ranges: [] };
+        scheduleState[day].enabled = enabled;
+        if (enabled && scheduleState[day].ranges.length === 0) scheduleState[day].ranges = [['09:00', '18:00']];
+        renderScheduleEditor();
+    }
+
+    function addScheduleShift(day) {
+        scheduleState[day].ranges.push(['09:00', '18:00']);
+        renderScheduleEditor();
+    }
+
+    function removeScheduleShift(day, idx) {
+        scheduleState[day].ranges.splice(idx, 1);
+        if (scheduleState[day].ranges.length === 0) scheduleState[day].enabled = false;
+        renderScheduleEditor();
+    }
+
+    function updateScheduleShift(day, idx, pos, value) {
+        scheduleState[day].ranges[idx][pos] = value;
+        updateSchedulePreview();
+    }
+
+    function updateSchedulePreview() {
+        const el = document.getElementById('schedule-preview');
+        if (!el) return;
+        const parts = SCHEDULE_DAY_ORDER.map(day => {
+            const d = scheduleState[day] || { enabled: false, ranges: [] };
+            const label = SCHEDULE_DAY_LABELS[day].slice(0, 3);
+            if (!d.enabled || !d.ranges.length) return `${label}: cerrado`;
+            return `${label}: ` + d.ranges.map(r => `${r[0]}-${r[1]}`).join(' y ');
+        });
+        el.innerText = parts.join(' · ');
+    }
+
+    renderScheduleEditor();
+    document.getElementById('mainConfigForm').addEventListener('submit', function () {
+        document.getElementById('working_hours_json_input').value = JSON.stringify(scheduleState);
+    });
 </script>
 
 <style>
