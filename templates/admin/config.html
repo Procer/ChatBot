@@ -763,7 +763,7 @@
                 </button>
             </div>
 
-            <details class="group bg-surface border border-slate-800 rounded-2xl overflow-hidden" open>
+            <details class="group bg-surface border border-slate-800 rounded-2xl overflow-hidden">
                 <summary class="flex items-center gap-3 px-6 py-4 cursor-pointer select-none text-sm font-bold text-white list-none">
                     <i data-lucide="help-circle" class="w-4 h-4 text-brand-500"></i>
                     ¿Cómo funciona el seguimiento? (leer antes de crear una pieza)
@@ -781,6 +781,7 @@
                             <li><b class="text-slate-200">Se dispara cuando el cliente escribe, nunca solo.</b> El bot no inicia conversaciones: si el cliente no vuelve a escribir, no recibe nada.</li>
                             <li><b class="text-slate-200">La inactividad se cuenta desde el último mensaje del cliente</b> (no desde la última respuesta del bot). Si pasaron al menos los minutos configurados, se envía.</li>
                             <li><b class="text-slate-200">Se reenvía en cada nuevo período de inactividad.</b> Una vez enviada, no se repite mientras el cliente siga conversando. Si después vuelve a quedar inactivo el tiempo definido y escribe otra vez, la recibe de nuevo.</li>
+                            <li><b class="text-slate-200">Una sola vez por cliente (opcional).</b> Con este interruptor activado, cada cliente recibe la pieza una única vez y no se repite, aunque vuelva a quedar inactivo. Con 0 minutos se envía en el próximo mensaje que escriba.</li>
                             <li><b class="text-slate-200">Una sola pieza por vez.</b> Se usa la pieza activa cuyas fechas incluyan el día de hoy. No se pueden guardar dos piezas activas con fechas superpuestas.</li>
                             <li><b class="text-slate-200">Fechas de vigencia:</b> incluyen el día "desde" y el día "hasta". Se calculan en horario UTC, por lo que en Argentina el cambio de día ocurre a las 21:00 hs.</li>
                             <li><b class="text-slate-200">Solo WhatsApp.</b> No se envía por Telegram.</li>
@@ -811,6 +812,12 @@
                                 <p class="text-[12px] text-slate-500 mt-2">Solo la reciben quienes vuelven tras una semana sin escribir.</p>
                             </div>
                             <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                                <p class="text-slate-200 font-bold mb-1">Aviso urgente (próximo mensaje, una sola vez)</p>
+                                <p class="text-[12px] text-slate-500 mb-2">Inactividad: <b>0 min</b> · Vigente: solo hoy · <b>Una sola vez por cliente: activado</b></p>
+                                <p class="italic text-slate-300">"Aviso: hoy el laboratorio cierra a las 12 hs por un corte de luz. Disculpá las molestias."</p>
+                                <p class="text-[12px] text-slate-500 mt-2">Quien escriba hoy, aunque haya escrito hace 5 minutos, lo recibe en su próximo mensaje una única vez. Después se puede desactivar la pieza.</p>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
                                 <p class="text-slate-200 font-bold mb-1">Ejemplo paso a paso</p>
                                 <p class="text-[12px] text-slate-500 mb-2">Pieza con <b>120 min</b>, hoy dentro de la vigencia</p>
                                 <ul class="text-[12px] text-slate-400 space-y-1">
@@ -825,7 +832,7 @@
                     </div>
 
                     <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-[13px] text-amber-200/80">
-                        <b>Tené en cuenta:</b> si el cliente no vuelve a escribir, nunca recibe la pieza (no es un envío masivo ni programado). Con intervalos muy cortos casi cualquier cliente la recibiría en cada charla, elegí un valor acorde al mensaje.
+                        <b>Tené en cuenta:</b> si el cliente no vuelve a escribir, nunca recibe la pieza (no es un envío masivo ni programado). Tampoco la recibe quien escribe por primera vez, porque necesita tener un mensaje previo. Con intervalos muy cortos casi cualquier cliente la recibiría en cada charla, elegí un valor acorde al mensaje.
                     </div>
                 </div>
             </details>
@@ -1057,8 +1064,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="space-y-2">
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Minutos de Inactividad</label>
-                        <input type="number" name="interval_minutes" id="followup_interval_minutes" required min="1" value="120" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
-                        <p class="text-[11px] text-slate-600 ml-1">Se envía cuando el cliente vuelve a escribir y pasaron al menos estos minutos desde su mensaje anterior. Ej: 120 = 2 hs, 1440 = 1 día, 10080 = 7 días.</p>
+                        <input type="number" name="interval_minutes" id="followup_interval_minutes" required min="0" value="120" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
+                        <p class="text-[11px] text-slate-600 ml-1">Se envía cuando el cliente vuelve a escribir y pasaron al menos estos minutos desde su mensaje anterior. Ej: 120 = 2 hs, 1440 = 1 día, 10080 = 7 días. Con 0 se envía en el próximo mensaje que escriba, sin importar cuánto pasó.</p>
                     </div>
                     <div class="space-y-2">
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Vigente Desde</label>
@@ -1082,6 +1089,17 @@
                         <input type="file" name="media" id="followup_media" accept="image/*,video/*" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-400 file:bg-brand-500/10 file:text-brand-500 file:border-0 file:rounded-lg file:px-4 file:py-2 file:mr-4 file:font-bold hover:file:bg-brand-500 hover:file:text-white transition-all">
                         <div id="followupCurrentMedia" class="hidden flex-col gap-2"></div>
                     </div>
+                </div>
+
+                <div class="flex items-center justify-between p-6 bg-slate-900/50 border border-slate-800 rounded-2xl">
+                    <div>
+                        <label class="text-[13px] font-bold text-slate-400 uppercase tracking-widest block">Enviar una sola vez por cliente</label>
+                        <span class="text-[11px] text-slate-500">Cada cliente la recibe una única vez (en su próximo mensaje, según los minutos) y no se repite. Ideal para avisos urgentes. Apagado: se reenvía en cada nueva pausa de inactividad.</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                        <input type="checkbox" name="send_once" id="followup_send_once" value="1" class="sr-only peer">
+                        <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600"></div>
+                    </label>
                 </div>
 
                 <div class="flex items-center justify-between p-6 bg-slate-900/50 border border-slate-800 rounded-2xl">
@@ -1325,6 +1343,7 @@
         document.getElementById('followupForm').reset();
         document.getElementById('followup_item_id').value = '';
         document.getElementById('followup_is_active').checked = true;
+        document.getElementById('followup_send_once').checked = false;
         document.getElementById('followup_interval_minutes').value = '120';
         document.getElementById('followupCurrentMedia').classList.add('hidden');
         document.getElementById('followupModal').classList.remove('hidden');
@@ -1344,6 +1363,7 @@
             document.getElementById('followup_valid_from').value = data.valid_from;
             document.getElementById('followup_valid_until').value = data.valid_until;
             document.getElementById('followup_is_active').checked = !!data.is_active;
+            document.getElementById('followup_send_once').checked = !!data.send_once;
 
             const container = document.getElementById('followupCurrentMedia');
             if (data.media_path) {

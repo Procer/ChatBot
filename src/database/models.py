@@ -586,6 +586,7 @@ class FollowupContent(Base):
     valid_from = Column(String(20), nullable=False)  # YYYY-MM-DD
     valid_until = Column(String(20), nullable=False)  # YYYY-MM-DD
     is_active = Column(Boolean, default=True)
+    send_once = Column(Boolean, default=False)  # True: una sola vez por cliente (no reenvia por cada periodo de inactividad)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class FollowupLog(Base):

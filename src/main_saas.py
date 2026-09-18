@@ -1976,7 +1976,7 @@ async def add_followup(
     request: Request,
     name: str = Form(...), message_text: str = Form(...),
     interval_minutes: int = Form(120), valid_from: str = Form(...), valid_until: str = Form(...),
-    is_active: int = Form(0), media: UploadFile = File(None),
+    is_active: int = Form(0), send_once: int = Form(0), media: UploadFile = File(None),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     target_client_id, _, user_mock = get_admin_context(request, current_user, db)
@@ -2006,7 +2006,8 @@ async def add_followup(
     f = FollowupContent(
         client_id=target_client_id, name=name, message_text=message_text,
         media_path=media_path_str, interval_minutes=interval_minutes,
-        valid_from=valid_from, valid_until=valid_until, is_active=active_flag
+        valid_from=valid_from, valid_until=valid_until, is_active=active_flag,
+        send_once=bool(send_once)
     )
     db.add(f)
     db.commit()
@@ -2017,7 +2018,7 @@ async def update_followup(
     request: Request,
     item_id: int = Form(...), name: str = Form(...), message_text: str = Form(...),
     interval_minutes: int = Form(120), valid_from: str = Form(...), valid_until: str = Form(...),
-    is_active: int = Form(0), media: UploadFile = File(None),
+    is_active: int = Form(0), send_once: int = Form(0), media: UploadFile = File(None),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     target_client_id, _, user_mock = get_admin_context(request, current_user, db)
@@ -2051,6 +2052,8 @@ async def update_followup(
     f.valid_from = valid_from
     f.valid_until = valid_until
     f.is_active = active_flag
+    f.send_once = bool(send_once)
+    f.interval_minutes = max(0, interval_minutes)
 
     db.commit()
     return RedirectResponse(url="/admin/config?active_tab=seguimiento&success=1", status_code=303)
@@ -2079,7 +2082,7 @@ async def get_followup(request: Request, item_id: int, db: Session = Depends(get
     return JSONResponse(content={
         "id": f.id, "name": f.name, "message_text": f.message_text, "media_path": f.media_path,
         "interval_minutes": f.interval_minutes, "valid_from": f.valid_from, "valid_until": f.valid_until,
-        "is_active": f.is_active
+        "is_active": f.is_active, "send_once": bool(f.send_once)
     })
 
 @app.get("/admin/followup/remove-media/{item_id}")
@@ -4027,7 +4030,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             Message.role == 'user'
                         ).order_by(Message.timestamp.desc()).first()
 
-                        if last_user_msg and datetime.datetime.utcnow() >= last_user_msg.timestamp + datetime.timedelta(minutes=active_piece.interval_minutes):
+                        if last_user_msg and datetime.datetime.utcnow() >= last_user_msg.timestamp + datetime.timedelta(minutes=active_piece.interval_minutes or 0):
                             last_sent = db_local.query(FollowupLog).filter_by(
                                 client_id=client_id, thread_id=user_id, content_id=active_piece.id
                             ).order_by(FollowupLog.sent_at.desc()).first()
@@ -4036,6 +4039,10 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             # período de inactividad). Si el usuario volvió a escribir desde el
                             # último envío, es un período de inactividad nuevo y puede reenviarse.
                             already_sent_this_gap = last_sent and last_sent.sent_at and last_sent.sent_at >= last_user_msg.timestamp
+                            # Modo "una sola vez por cliente": cualquier envio previo de esta pieza a este
+                            # cliente alcanza para no repetirla (avisos urgentes, no promos recurrentes).
+                            if active_piece.send_once and last_sent:
+                                already_sent_this_gap = True
 
                             if not already_sent_this_gap:
                                 followup_text = active_piece.message_text
