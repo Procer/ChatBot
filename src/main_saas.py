@@ -4066,7 +4066,11 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             }
             
             # 3. Invocar Inteligencia Artificial
-            final_state = chatbot_app.invoke(inputs, config=config)
+            # ainvoke (no invoke): invoke() es sincrono y bloquea el unico hilo del
+            # event loop de uvicorn. Con muchos reintentos por rate-limit de OpenAI,
+            # eso trababa el proceso entero para TODOS los clientes (ver incidente
+            # 2026-09-17). ainvoke corre los nodos sync del grafo en un thread aparte.
+            final_state = await chatbot_app.ainvoke(inputs, config=config)
             turn_prompt_tokens = 0
             turn_completion_tokens = 0
 
