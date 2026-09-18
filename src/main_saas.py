@@ -4516,6 +4516,13 @@ async def super_admin_consumo_panel(request: Request, current_user: User = Depen
     user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
     return templates.TemplateResponse(request=request, name="admin/super_admin_consumo.html", context={"user": user_mock})
 
+@app.get("/super-admin/consumo-clientes", response_class=HTMLResponse)
+async def super_admin_consumo_clientes_panel(request: Request, current_user: User = Depends(get_current_user)):
+    if not require_superadmin(current_user):
+        return RedirectResponse(url="/admin/login")
+    user_mock = {"full_name": "Súper Admin", "role": "superadmin", "permissions": [], "is_real_superadmin": True}
+    return templates.TemplateResponse(request=request, name="admin/super_admin_consumo_clientes.html", context={"user": user_mock})
+
 
 def _client_daily_cost_series(db: Session, client_id: int, days: int = 30) -> list:
     """Serie diaria de gasto ESTIMADO (TokenUsage.cost_usd, siempre interno aunque el cliente

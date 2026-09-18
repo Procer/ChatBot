@@ -6,19 +6,20 @@
 {% block section_title %}Modo Dios - Súper Admin{% endblock %}
 
 {% block content %}
-<div class="h-full flex flex-col p-4 lg:p-0 overflow-y-auto custom-scrollbar">
+<div class="h-full flex flex-col p-4 lg:p-0">
     <div class="flex items-center gap-1 mb-6 border-b border-slate-800/50">
         <a href="/super-admin" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Clientes</a>
         <a href="/super-admin/users" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Usuarios</a>
         <a href="/super-admin/calculadora" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Calculadora</a>
         <a href="/super-admin/landing" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Landing</a>
         <a href="/super-admin/consumo" class="px-4 py-2.5 text-sm font-semibold text-white border-b-2 border-brand-500">Consumo IA</a>
+        <a href="/super-admin/consumo-clientes" class="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent">Consumo por Cliente</a>
     </div>
 
     <div class="flex items-center justify-between mb-6">
         <div>
-            <h2 class="text-xl font-bold text-white tracking-tight">Consumo de OpenAI por cliente</h2>
-            <p class="text-sm text-slate-400 mt-1">Gasto de este mes (real vía Costs API si el cliente tiene Project ID + Admin Key, estimado si no), tokens, conversaciones, tendencia y saldo de cada tenant.</p>
+            <h2 class="text-xl font-bold text-white tracking-tight">Consumo de OpenAI, total</h2>
+            <p class="text-sm text-slate-400 mt-1">Resumen combinado de todos los tenants. Para ver el detalle uno por uno, andá a la pestaña "Consumo por Cliente".</p>
         </div>
         <button id="refreshBtn" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-all flex items-center gap-2">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
@@ -68,33 +69,13 @@
         <div class="h-48"><canvas id="globalChart"></canvas></div>
     </div>
 
-    <div class="glass rounded-xl border border-slate-700/50 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm whitespace-nowrap">
-                <thead>
-                    <tr class="border-b border-slate-800 text-left text-[10px] font-bold text-slate-500 uppercase">
-                        <th class="px-4 py-3">Cliente</th>
-                        <th class="px-4 py-3">Project ID</th>
-                        <th class="px-4 py-3">Modelo principal</th>
-                        <th class="px-4 py-3">Conversac. (mes)</th>
-                        <th class="px-4 py-3">Tokens (mes)</th>
-                        <th class="px-4 py-3">Gasto este mes</th>
-                        <th class="px-4 py-3">Tendencia 7d</th>
-                        <th class="px-4 py-3">Prom/conv</th>
-                        <th class="px-4 py-3">Últimos 14 días</th>
-                        <th class="px-4 py-3">Saldo estimado</th>
-                        <th class="px-4 py-3">% usado</th>
-                        <th class="px-4 py-3">Estado</th>
-                        <th class="px-4 py-3">Última carga</th>
-                        <th class="px-4 py-3"></th>
-                    </tr>
-                </thead>
-                <tbody id="usageTbody">
-                    <tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
+    <a href="/super-admin/consumo-clientes" class="glass rounded-xl border border-slate-700/50 p-4 flex items-center justify-between hover:border-brand-500/30 transition-all">
+        <span class="text-sm text-slate-300 font-semibold flex items-center gap-2">
+            <i data-lucide="table" class="w-4 h-4 text-slate-500"></i>
+            Ver el detalle de gasto, uno por uno para cada cliente
+        </span>
+        <span class="text-xs text-brand-400">Ir a Consumo por Cliente →</span>
+    </a>
 </div>
 {% endblock %}
 
@@ -102,7 +83,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 (function () {
-    const tbody = document.getElementById('usageTbody');
     let chartInstance = null;
 
     function fmtUsd(v) {
@@ -113,59 +93,6 @@
     function fmtInt(v) {
         if (v === null || v === undefined) return '-';
         return Number(v).toLocaleString('es-AR');
-    }
-
-    function statusBadge(status) {
-        const map = {
-            ok: ['bg-emerald-500/10 text-emerald-400 border-emerald-500/20', 'OK'],
-            low: ['bg-amber-500/10 text-amber-400 border-amber-500/20', 'Saldo bajo'],
-            unloaded: ['bg-slate-800 text-slate-500 border-slate-700', 'Sin cargar'],
-            unknown: ['bg-slate-800 text-slate-500 border-slate-700', 'Sin datos'],
-        };
-        const [cls, label] = map[status] || map.unknown;
-        return `<span class="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${cls}">${label}</span>`;
-    }
-
-    function sourceBadge(source) {
-        if (source === 'real') return '<span class="text-[10px] text-sky-400 font-semibold ml-1">real</span>';
-        return '<span class="text-[10px] text-slate-500 ml-1">estimado</span>';
-    }
-
-    function trendBadge(pct) {
-        if (pct === null || pct === undefined) return '<span class="text-slate-600 text-xs">-</span>';
-        if (pct === 'new') return '<span class="text-[10px] text-sky-400 font-semibold">nuevo</span>';
-        const up = pct > 0;
-        const flat = pct === 0;
-        const color = flat ? 'text-slate-500' : up ? 'text-rose-400' : 'text-emerald-400';
-        const arrow = flat ? '→' : up ? '↑' : '↓';
-        return `<span class="text-xs font-semibold ${color}">${arrow} ${Math.abs(pct)}%</span>`;
-    }
-
-    function pctBar(pct) {
-        if (pct === null || pct === undefined) return '<span class="text-slate-600 text-xs">-</span>';
-        const color = pct >= 90 ? 'bg-rose-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
-        return `<div class="w-24">
-            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full ${color}" style="width:${Math.min(100, pct)}%"></div></div>
-            <span class="text-[10px] text-slate-500">${pct}%</span>
-        </div>`;
-    }
-
-    function sparkline(series) {
-        if (!series || !series.length) return '<span class="text-slate-600 text-xs">-</span>';
-        const w = 90, h = 26, pad = 2;
-        const vals = series.map(p => p.cost_usd);
-        const max = Math.max(...vals, 0.0001);
-        const step = (w - pad * 2) / Math.max(1, series.length - 1);
-        const points = vals.map((v, i) => {
-            const x = pad + i * step;
-            const y = h - pad - (v / max) * (h - pad * 2);
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        const last = vals[vals.length - 1];
-        const color = last > 0 ? '#34d399' : '#475569';
-        return `<svg width="${w}" height="${h}" class="inline-block align-middle">
-            <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
-        </svg>`;
     }
 
     function renderGlobalChart(series) {
@@ -197,11 +124,9 @@
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Cargando...</td></tr>';
         try {
             const res = await fetch('/api/superadmin/openai-usage-overview');
             const data = await res.json();
-            const rows = data.clients || [];
             const s = data.summary || {};
 
             document.getElementById('sumSpentMonth').textContent = fmtUsd(s.total_spent_this_month_usd);
@@ -214,33 +139,9 @@
             document.getElementById('sumInAlert').textContent = s.clients_in_alert ?? '-';
 
             renderGlobalChart(data.global_daily_series_30d || []);
-
-            if (!rows.length) {
-                tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-slate-500 text-sm">Sin clientes todavía.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = rows.map(r => `
-                <tr class="border-b border-slate-800/50 hover:bg-slate-900/40">
-                    <td class="px-4 py-3 font-semibold text-white">${r.business_name}</td>
-                    <td class="px-4 py-3 font-mono text-xs text-slate-400">${r.project_id || '<span class="text-slate-600">sin project</span>'}</td>
-                    <td class="px-4 py-3 text-xs text-slate-400">${r.top_model || '-'}</td>
-                    <td class="px-4 py-3">${fmtInt(r.conversations_this_month)}</td>
-                    <td class="px-4 py-3">${fmtInt(r.tokens_this_month)}</td>
-                    <td class="px-4 py-3">${fmtUsd(r.spent_this_month_usd)}${sourceBadge(r.spent_source)}</td>
-                    <td class="px-4 py-3">${trendBadge(r.trend_pct_7d)}</td>
-                    <td class="px-4 py-3">${fmtUsd(r.avg_cost_per_conversation_usd)}</td>
-                    <td class="px-4 py-3">${sparkline(r.daily_series_14d)}</td>
-                    <td class="px-4 py-3">${fmtUsd(r.estimated_remaining_usd)}</td>
-                    <td class="px-4 py-3">${pctBar(r.pct_used)}</td>
-                    <td class="px-4 py-3">${statusBadge(r.status)}</td>
-                    <td class="px-4 py-3 text-xs text-slate-500">${r.last_reload_at ? new Date(r.last_reload_at).toLocaleDateString('es-AR') : '-'}</td>
-                    <td class="px-4 py-3 text-right"><a href="/super-admin#edit-${r.client_id}" class="text-xs text-sky-400 hover:underline">Ver cliente</a></td>
-                </tr>
-            `).join('');
             if (window.lucide) lucide.createIcons();
         } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="14" class="px-4 py-6 text-center text-rose-400 text-sm">No se pudo cargar el consumo.</td></tr>';
+            console.error('No se pudo cargar el consumo', e);
         }
     }
 
