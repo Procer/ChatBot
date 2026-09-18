@@ -763,7 +763,75 @@
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 gap-4">
+            <details class="group bg-surface border border-slate-800 rounded-2xl overflow-hidden" open>
+                <summary class="flex items-center gap-3 px-6 py-4 cursor-pointer select-none text-sm font-bold text-white list-none">
+                    <i data-lucide="help-circle" class="w-4 h-4 text-brand-500"></i>
+                    ¿Cómo funciona el seguimiento? (leer antes de crear una pieza)
+                    <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 ml-auto transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="px-6 pb-6 pt-2 space-y-6 text-sm text-slate-400 leading-relaxed">
+                    <div>
+                        <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">En una frase</h4>
+                        <p>Cuando un cliente que estuvo un tiempo sin escribir <b class="text-slate-200">vuelve a escribir</b>, el bot le manda primero tu pieza (texto y, si querés, una imagen o video) y <b class="text-slate-200">enseguida responde</b> a lo que el cliente escribió.</p>
+                    </div>
+
+                    <div>
+                        <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">Reglas de comportamiento</h4>
+                        <ul class="list-disc pl-5 space-y-1.5">
+                            <li><b class="text-slate-200">Se dispara cuando el cliente escribe, nunca solo.</b> El bot no inicia conversaciones: si el cliente no vuelve a escribir, no recibe nada.</li>
+                            <li><b class="text-slate-200">La inactividad se cuenta desde el último mensaje del cliente</b> (no desde la última respuesta del bot). Si pasaron al menos los minutos configurados, se envía.</li>
+                            <li><b class="text-slate-200">Se reenvía en cada nuevo período de inactividad.</b> Una vez enviada, no se repite mientras el cliente siga conversando. Si después vuelve a quedar inactivo el tiempo definido y escribe otra vez, la recibe de nuevo.</li>
+                            <li><b class="text-slate-200">Una sola pieza por vez.</b> Se usa la pieza activa cuyas fechas incluyan el día de hoy. No se pueden guardar dos piezas activas con fechas superpuestas.</li>
+                            <li><b class="text-slate-200">Fechas de vigencia:</b> incluyen el día "desde" y el día "hasta". Se calculan en horario UTC, por lo que en Argentina el cambio de día ocurre a las 21:00 hs.</li>
+                            <li><b class="text-slate-200">Solo WhatsApp.</b> No se envía por Telegram.</li>
+                            <li><b class="text-slate-200">Con imagen o video</b> el texto viaja como pie del archivo, en un solo mensaje. Sin adjunto se envía solo el texto.</li>
+                            <li>Para pausarla sin borrarla, apagá el interruptor <b class="text-slate-200">Pieza Activa</b>.</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-3">Ejemplos de uso</h4>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                                <p class="text-slate-200 font-bold mb-1">Promoción de temporada</p>
+                                <p class="text-[12px] text-slate-500 mb-2">Inactividad: <b>120 min</b> · Vigente: 01/10 al 31/10</p>
+                                <p class="italic text-slate-300">"¡Octubre con 15% de descuento en estudios de rutina! Consultá por turnos esta semana."</p>
+                                <p class="text-[12px] text-slate-500 mt-2">El cliente que escribe a la tarde después de haber consultado a la mañana recibe la promo y luego la respuesta a su consulta.</p>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                                <p class="text-slate-200 font-bold mb-1">Aviso de cambio de horarios (con imagen)</p>
+                                <p class="text-[12px] text-slate-500 mb-2">Inactividad: <b>60 min</b> · Vigente: 24/12 al 02/01 · Adjunto: flyer</p>
+                                <p class="italic text-slate-300">"Por las fiestas atendemos de 8 a 12 hs. Retiro de resultados a partir del 3/1."</p>
+                                <p class="text-[12px] text-slate-500 mt-2">Sirve para que quien vuelve a escribir vea el aviso, sin repetirlo en cada mensaje de la misma charla.</p>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                                <p class="text-slate-200 font-bold mb-1">Reactivar a quien vuelve después de días</p>
+                                <p class="text-[12px] text-slate-500 mb-2">Inactividad: <b>10080 min (7 días)</b> · Vigente: todo el año</p>
+                                <p class="italic text-slate-300">"¡Qué bueno verte de nuevo! Recordá que podés pedir tu turno y descargar resultados por acá."</p>
+                                <p class="text-[12px] text-slate-500 mt-2">Solo la reciben quienes vuelven tras una semana sin escribir.</p>
+                            </div>
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                                <p class="text-slate-200 font-bold mb-1">Ejemplo paso a paso</p>
+                                <p class="text-[12px] text-slate-500 mb-2">Pieza con <b>120 min</b>, hoy dentro de la vigencia</p>
+                                <ul class="text-[12px] text-slate-400 space-y-1">
+                                    <li>10:00 — el cliente escribe por primera vez → no la recibe (no hay mensaje previo).</li>
+                                    <li>10:30 — escribe otra vez → no la recibe (pasaron solo 30 min).</li>
+                                    <li>13:00 — escribe → <b class="text-slate-200">recibe la pieza</b> y luego la respuesta del bot.</li>
+                                    <li>13:10 — escribe → no se repite (recién la recibió).</li>
+                                    <li>16:00 — escribe → la recibe de nuevo (otra pausa de más de 120 min).</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-[13px] text-amber-200/80">
+                        <b>Tené en cuenta:</b> si el cliente no vuelve a escribir, nunca recibe la pieza (no es un envío masivo ni programado). Con intervalos muy cortos casi cualquier cliente la recibiría en cada charla, elegí un valor acorde al mensaje.
+                    </div>
+                </div>
+            </details>
+
+
+<div class="grid grid-cols-1 gap-4">
                 {% for item in followup_items %}
                 <div class="group bg-surface border border-slate-800 p-6 rounded-2xl flex items-center justify-between hover:border-slate-700 transition-all shadow-sm">
                     <div class="flex items-center gap-5">
@@ -990,7 +1058,7 @@
                     <div class="space-y-2">
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Minutos de Inactividad</label>
                         <input type="number" name="interval_minutes" id="followup_interval_minutes" required min="1" value="120" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-base text-white focus:border-brand-500 outline-none transition-all">
-                        <p class="text-[11px] text-slate-600 ml-1">Se envía si pasaron estos minutos desde el último mensaje del usuario.</p>
+                        <p class="text-[11px] text-slate-600 ml-1">Se envía cuando el cliente vuelve a escribir y pasaron al menos estos minutos desde su mensaje anterior. Ej: 120 = 2 hs, 1440 = 1 día, 10080 = 7 días.</p>
                     </div>
                     <div class="space-y-2">
                         <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Vigente Desde</label>
@@ -1005,6 +1073,7 @@
                 <div class="space-y-2">
                     <label class="text-[13px] font-bold text-slate-500 uppercase tracking-widest ml-1">Mensaje</label>
                     <textarea name="message_text" id="followup_message_text" rows="4" required placeholder="Texto que recibirá el usuario..." class="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-base text-slate-300 focus:border-brand-500 outline-none transition-all resize-none custom-scrollbar"></textarea>
+                    <p class="text-[11px] text-slate-600 ml-1">Se envía tal cual, antes de la respuesta del bot. Escribilo como un aviso breve y autónomo.</p>
                 </div>
 
                 <div class="space-y-2">
