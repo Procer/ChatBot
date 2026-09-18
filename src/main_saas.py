@@ -46,6 +46,32 @@ def clean_appt_motivo(reason):
         return reason
     return reason.split(" | ")[0]
 
+
+def parse_appointment_reason(reason):
+    """Descompone el 'reason' crudo del turno ('Trámite - detalle | Campo: valor, Campo2: valor2')
+    en piezas mostrables para el panel de Turnos: nombre del servicio, detalle (si difiere del
+    servicio) y los datos extra del trámite (ej. edad) como pares label/valor."""
+    if not reason:
+        return {"service": None, "detail": None, "extra": []}
+    main_part, _, extra_part = reason.partition(" | ")
+    if " - " in main_part:
+        service, _, detail = main_part.partition(" - ")
+        service, detail = service.strip(), detail.strip()
+    else:
+        service, detail = main_part.strip(), None
+    extra = []
+    if extra_part:
+        for chunk in extra_part.split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            if ":" in chunk:
+                label, _, value = chunk.partition(":")
+                extra.append({"label": label.strip(), "value": value.strip()})
+            else:
+                extra.append({"label": None, "value": chunk})
+    return {"service": service or None, "detail": detail or None, "extra": extra}
+
 # Inicialización de FastAPI
 app = FastAPI(title="anka Multi-Tenant SaaS", version="2.5.0")
 
@@ -1247,15 +1273,25 @@ async def appointments_panel(request: Request, db: Session = Depends(get_db), cu
     latest_payment_by_app = {}
     for p in payments_raw:
         latest_payment_by_app[p.appointment_id] = p  # el último de la lista (ids ascendentes) queda como el más reciente
-    appointments = [{
-        "id": a.id, "thread_id": a.thread_id, "client_name": a.client_name, "date": a.date, "time": a.time,
-        "reason": a.reason, "status": a.status,
-        "employee_name": employees_by_id[a.employee_id].name if a.employee_id and a.employee_id in employees_by_id else None,
-        "employee_color": employees_by_id[a.employee_id].color if a.employee_id and a.employee_id in employees_by_id else None,
-        "payment_status": latest_payment_by_app[a.id].status if a.id in latest_payment_by_app else None,
-        "payment_amount": latest_payment_by_app[a.id].amount if a.id in latest_payment_by_app else None,
-        "payment_currency": latest_payment_by_app[a.id].currency if a.id in latest_payment_by_app else None
-    } for a in apps]
+    def _appt_phone(thread_id):
+        digits = (thread_id or "").split("@")[0]
+        return digits if digits.isdigit() else None
+
+    appointments = []
+    for a in apps:
+        parsed = parse_appointment_reason(a.reason)
+        appointments.append({
+            "id": a.id, "thread_id": a.thread_id, "phone": _appt_phone(a.thread_id),
+            "client_name": a.client_name, "date": a.date, "time": a.time,
+            "date_fmt": format_appt_date_es(a.date),
+            "reason": a.reason, "service": parsed["service"], "detail": parsed["detail"], "extra": parsed["extra"],
+            "status": a.status, "created_at": a.created_at.isoformat() if a.created_at else None,
+            "employee_name": employees_by_id[a.employee_id].name if a.employee_id and a.employee_id in employees_by_id else None,
+            "employee_color": employees_by_id[a.employee_id].color if a.employee_id and a.employee_id in employees_by_id else None,
+            "payment_status": latest_payment_by_app[a.id].status if a.id in latest_payment_by_app else None,
+            "payment_amount": latest_payment_by_app[a.id].amount if a.id in latest_payment_by_app else None,
+            "payment_currency": latest_payment_by_app[a.id].currency if a.id in latest_payment_by_app else None
+        })
 
     services = db.query(Knowledge).filter_by(client_id=target_client_id, allow_scheduling=True).all()
     services_list = [{"id": s.id, "topic": s.topic} for s in services]
