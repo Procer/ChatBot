@@ -4066,11 +4066,13 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             }
             
             # 3. Invocar Inteligencia Artificial
-            # ainvoke (no invoke): invoke() es sincrono y bloquea el unico hilo del
-            # event loop de uvicorn. Con muchos reintentos por rate-limit de OpenAI,
-            # eso trababa el proceso entero para TODOS los clientes (ver incidente
-            # 2026-09-17). ainvoke corre los nodos sync del grafo en un thread aparte.
-            final_state = await chatbot_app.ainvoke(inputs, config=config)
+            # invoke() (no ainvoke) corriendo en un thread aparte via to_thread: el
+            # checkpointer del grafo es SqliteSaver, que es sincrono y no soporta
+            # metodos async (ainvoke falla con "SqliteSaver does not support async
+            # methods"). to_thread evita bloquear el event loop de uvicorn sin tocar
+            # el checkpointer (ver incidente 2026-09-17: invoke() directo trababa el
+            # proceso entero para TODOS los clientes bajo rate-limit de OpenAI).
+            final_state = await asyncio.to_thread(chatbot_app.invoke, inputs, config=config)
             turn_prompt_tokens = 0
             turn_completion_tokens = 0
 
