@@ -607,13 +607,17 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
             import os as _os
             public_base_url = (settings.webhook_base_url or _os.getenv("PUBLIC_BASE_URL", "")).rstrip("/")
             notification_url = f"{public_base_url}/webhook/{client_obj.slug}/mercadopago"
+            # 'reason' puede traer datos adicionales del trámite (ej. "Corte - motivo | edad: 42")
+            # agregados con " | " en agendar_turno -> nunca deben mostrarse en el título de MP.
+            reason_publico = (reason or "").split(" | ")[0]
             mp_preference = create_preference(
                 access_token=mp_token,
-                title=f"Seña - {reason or tramite_nombre or 'Turno'}",
+                title=f"Seña - {reason_publico or tramite_nombre or 'Turno'}",
                 amount=deposit_amount,
                 currency_id=settings.deposit_currency or "ARS",
                 external_reference=f"appt:{client_id}:{new_app.id}",
                 notification_url=notification_url,
+                payer_name=client_name if client_name != "Cliente" else None,
             )
             if not mp_preference or not mp_preference.get("init_point"):
                 logging.error(f"[MercadoPago] No se pudo crear la preferencia de pago para cliente {client_id}, turno {new_app.id}")
@@ -632,8 +636,12 @@ def registrar_turno_saas(client_id: int, thread_id: str, date_str: str, time_str
             )
             db.add(payment)
             db.commit()
+            db.refresh(payment)
+            # Link corto propio (redirige a init_point) en vez del link crudo de MP: el de MP es
+            # larguísimo (~120 caracteres) y en WhatsApp se ve feo/sospechoso; pedido real del
+            # usuario en prueba en vivo (2026-09-16). Ver redirect en main_saas.py: GET /pago/{id}.
             payment_info = {
-                "link": mp_preference.get("init_point"),
+                "link": f"{public_base_url}/pago/{payment.id}",
                 "amount": deposit_amount,
                 "currency": settings.deposit_currency or "ARS",
                 "timeout_minutes": settings.deposit_payment_timeout_minutes or 30,
@@ -835,6 +843,13 @@ def deducir_tramite_nombre(client_id: int, config: RunnableConfig) -> str:
         # 1. Intentar obtenerlo del estado de la conversación (form_topic)
         form_topic = state_snapshot.values.get("form_topic")
         if form_topic:
+            # form_topic para el flujo de datos de turno viene con el prefijo
+            # "Datos del Turno: " (ver iniciar_datos_turno/APPOINTMENT_DATA_TOPIC_PREFIX) -
+            # sin sacarlo, el nombre del trámite terminaba duplicado y con el prefijo
+            # filtrado en el 'reason' del turno (bug real detectado en producción 2026-09-17:
+            # "Datos del Turno: Reserva corte y barba - Reserva corte y barba").
+            if form_topic.startswith(APPOINTMENT_DATA_TOPIC_PREFIX):
+                return form_topic[len(APPOINTMENT_DATA_TOPIC_PREFIX):]
             return form_topic
             
         # 2. Intentar buscar en ToolMessage recientes
@@ -922,13 +937,61 @@ def consultar_disponibilidad(fecha: str, tramite_nombre: str = None, config: Run
         db_session.close()
 
     if slots:
-        return json.dumps({
+        # Antes se le pasaba al modelo la lista completa de slots (puede tener 40+ horarios)
+        # confiando en que el prompt le indicara ofrecer solo 2-3 al usuario. En la práctica el
+        # modelo terminaba recitando toda la lista igual (bug real detectado en prueba en vivo
+        # 2026-09-16: un trámite sin horario acotado devolvía 46 slots de 00:00 a 23:00 y el bot
+        # los mandó todos en un mismo mensaje). Ahora se arma acá, ya recortada, una muestra de
+        # hasta 3 horarios representativos (temprano/medio/tarde) para que el modelo solo tenga
+        # que repetir eso — la lista completa se mantiene en 'horarios_disponibles' únicamente
+        # para validar si un horario puntual que pida el usuario está libre, nunca para listarla.
+        sugeridos = slots
+        if len(slots) > 3:
+            idxs = sorted({0, len(slots) // 2, len(slots) - 1})
+            sugeridos = [slots[i] for i in idxs]
+
+        # Aviso de seña ANTES de confirmar: el usuario recién se enteraba de que el turno
+        # requería una seña DESPUÉS de decir "sí, confirmo" (bug real reportado en vivo
+        # 2026-09-16: "nunca se avisó que debe abonar una seña"). Ahora se informa acá, al
+        # ofrecer los horarios, para que el usuario sepa el costo antes de comprometerse.
+        seña_info = None
+        db_dep = SessionLocal()
+        try:
+            dep_settings = db_dep.query(ClientSettings).filter_by(client_id=client_id).first()
+            if dep_settings and dep_settings.feat_deposit_payment and tramite_nombre:
+                search_topic = tramite_nombre.lower().strip()
+                for k in db_dep.query(Knowledge).filter_by(client_id=client_id, allow_scheduling=True).all():
+                    kb_topic = k.topic.lower()
+                    if search_topic in kb_topic or kb_topic in search_topic:
+                        if k.deposit_amount and k.deposit_amount > 0:
+                            moneda = dep_settings.deposit_currency or "ARS"
+                            seña_info = {
+                                "requiere_seña": True,
+                                "monto_texto": f"${k.deposit_amount:,.0f}".replace(",", ".") + f" {moneda}"
+                            }
+                        break
+        except Exception as dep_err:
+            logging.error(f"Error consultando seña en consultar_disponibilidad: {dep_err}")
+        finally:
+            db_dep.close()
+
+        resultado = {
             "status": "success",
             "fecha": fecha,
             "tramite": tramite_nombre,
             "horarios_disponibles": slots,
+            "horarios_sugeridos_para_ofrecer": sugeridos,
             "horarios_ya_reservados_por_otros": horarios_ocupados
-        })
+        }
+        if seña_info:
+            resultado["seña"] = seña_info
+            resultado["instruccion_seña"] = (
+                f"Este trámite requiere una seña de {seña_info['monto_texto']} para confirmar el turno. "
+                f"DEBÉS avisarle este monto al usuario en esta misma respuesta, al ofrecerle los horarios "
+                f"(ANTES de que confirme, no como sorpresa después) — copiá el 'monto_texto' literal, no lo "
+                f"calcules ni lo inventes vos."
+            )
+        return json.dumps(resultado)
     if tramite_nombre:
         return f"No hay turnos disponibles para el trámite '{tramite_nombre}' en la fecha {fecha}. Sugerir otra fecha."
     return f"No hay turnos disponibles para la fecha {fecha}. Por favor, sugerile al cliente que intente con otra fecha."
@@ -1053,14 +1116,31 @@ def agendar_turno(fecha: str, hora: str, motivo: str, tramite_nombre: str = None
 
     if resultado.get("status") == "pending_payment" and resultado.get("payment"):
         pago = resultado["payment"]
+        # 'monto_texto' viene ya formateado acá (no en el prompt) porque el modelo, al tener que
+        # convertir el número 'monto' a texto él mismo, en una prueba en vivo (2026-09-16) inventó
+        # una cifra completamente distinta ("$27.000" en vez de "$1", con la misma seña configurada
+        # en 1 y el link de pago correcto) — un caso de alucinación numérica en un dato de plata,
+        # donde no alcanza con pedirle "decile el monto": tiene que poder copiar un string literal
+        # ya armado, sin tener que generarlo/calcularlo él mismo.
+        monto_num = pago["amount"]
+        monto_fmt = f"{monto_num:,.0f}".replace(",", ".") if float(monto_num).is_integer() else f"{monto_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        monto_texto = f"${monto_fmt} {pago['currency']}"
         return json.dumps({
             "status": "pending_payment",
             "message": f"Turno reservado para el {fecha} a las {hora} hs para {real_reason}, PENDIENTE de pago de seña.",
-            "monto": pago["amount"],
+            "monto": monto_num,
             "moneda": pago["currency"],
+            "monto_texto": monto_texto,
             "link_pago": pago["link"],
             "plazo_minutos": pago["timeout_minutes"],
-            "instruccion": "Decile al usuario el monto y la moneda de la seña, que tiene ese plazo en minutos para pagar o se libera el horario, y pasale el link_pago EXACTAMENTE como viene, sin acortarlo ni modificarlo."
+            "instruccion": (
+                f"Decile al usuario que la seña es EXACTAMENTE '{monto_texto}' — copiá ese string "
+                f"'monto_texto' literal, tal cual viene, en tu respuesta: TENÉS PROHIBIDO calcular, "
+                f"redondear, reformular o inventar vos el número (aunque te parezca un monto raro o "
+                f"muy bajo, es el que configuró el negocio). También decile que tiene 'plazo_minutos' "
+                f"minutos para pagar o se libera el horario, y pasale el 'link_pago' EXACTAMENTE como "
+                f"viene, sin acortarlo ni modificarlo."
+            )
         })
 
     return json.dumps({
@@ -1686,7 +1766,20 @@ def call_model(state: AgentState):
         db_name = get_user_profile(client_id, t_id)
         if db_name and "Nombre del Cliente" not in collected_data:
             collected_data["Nombre del Cliente"] = db_name
-            
+
+        # Sinónimos de "nombre" que un negocio puede haber tipeado como campo extra propio
+        # de un trámite (ej. "Nombre", "Nombre completo"), sin saber que ya existe el campo
+        # genérico "Nombre del Cliente". Sin esto, quedaban duplicados y el bot volvía a
+        # pedir el nombre aunque ya lo supiera (bug real detectado en prueba en vivo
+        # 2026-09-16: trámite con appointment_extra_fields="Nombre, edad." volvía a
+        # preguntar el nombre después de que el usuario ya se había identificado).
+        if db_name:
+            _name_field_synonyms = {"nombre", "nombre completo", "nombre y apellido", "nombre del cliente", "nombre del usuario"}
+            for f in fields_to_collect:
+                f_norm = f.strip(" .*").lower()
+                if f_norm in _name_field_synonyms and f not in collected_data:
+                    collected_data[f] = db_name
+
         user_name = collected_data.get("Nombre del Cliente")
         
         bot_name = "Bot"
@@ -1733,9 +1826,10 @@ def call_model(state: AgentState):
         if appointments_enabled:
             prohibition_rule = """
 ### 🚫 PROHIBICIÓN ABSOLUTA DE MOSTRAR LISTAS DE HORARIOS:
-- Está TERMINANTEMENTE PROHIBIDO enviarle al usuario listas verticales o largas de horarios (usando guiones, viñetas, listas numeradas o texto separado por saltos de línea).
+- Está TERMINANTEMENTE PROHIBIDO enviarle al usuario listas verticales o largas de horarios (usando guiones, viñetas, listas numeradas o texto separado por saltos de línea), y TAMBIÉN está prohibido enumerar muchos horarios seguidos dentro de una misma frase (ej. "tengo a las 09:00, 09:30, 10:00, 10:30, 11:00..." con más de 3 valores).
+- 'consultar_disponibilidad' te devuelve un campo 'horarios_sugeridos_para_ofrecer' con como máximo 3 horarios ya elegidos para vos. Para ofrecer disponibilidad al usuario, usá EXCLUSIVAMENTE esos (nunca los de 'horarios_disponibles', que es la lista completa y es solo para validar un horario puntual, jamás para mostrarla).
 - Si el usuario te pide un horario ocupado (ej. las 15:30), NUNCA listes toda la disponibilidad. Debes guiarlo conversacionalmente ofreciéndole únicamente las opciones inmediatamente anteriores o posteriores disponibles (ej: "El horario de las 15:30 ya está ocupado para ese día, pero te puedo ofrecer un turno antes a las 15:00 o después a las 16:00. ¿Te sirve alguno de estos?").
-- Si el usuario pregunta disponibilidad general, sólo menciónale 2 o 3 opciones representativas en una sola frase amigable en un renglón continuo, sin hacer listas.
+- Si el usuario pregunta disponibilidad general, mencioná los horarios de 'horarios_sugeridos_para_ofrecer' (2 o 3 como mucho) en una sola frase amigable en un renglón continuo, sin hacer listas.
 - CONFIANZA ABSOLUTA EN LAS HERRAMIENTAS: Si la herramienta 'consultar_disponibilidad' o 'agendar_turno' indica que un horario solicitado está disponible (está en la lista de horarios_disponibles), significa que está LIBRE. NUNCA digas que está ocupado si la herramienta te dice que está disponible.
 """
 
@@ -1792,6 +1886,13 @@ def call_model(state: AgentState):
                 system_prompt += f"\n### 📝 GESTIÓN DE TRÁMITE: {state.get('form_topic')}\n"
                 system_prompt += f"**FALTAN ESTOS DATOS:** {', '.join(missing)}\n"
                 system_prompt += f"**SIGUIENTE DATO A PEDIR:** '{current_field}'.\n"
+                if user_name:
+                    system_prompt += (
+                        f"**PROHIBIDO PEDIR OTRA COSA:** el nombre del usuario YA es conocido "
+                        f"({user_name}), NO lo vuelvas a pedir bajo ningún concepto. El único dato "
+                        f"que tenés que pedir en esta respuesta es EXACTAMENTE '{current_field}', "
+                        f"ningún otro (ni siquiera el nombre).\n"
+                    )
                 system_prompt += f"""
 ### 🧠 REGLAS CRÍTICAS DE EXTRACCIÓN (MAPEADO INTELIGENTE):
 1. **EXTRACCIÓN INMEDIATA (OBLIGATORIO):** En cuanto detectes un dato en el mensaje, usá 'registrar_dato_tramite'.
@@ -1904,7 +2005,7 @@ def call_model(state: AgentState):
 1. **FLUJO DE SELECCIÓN:** Para reservar un turno, debés guiar al usuario paso a paso en la elección de la fecha y hora:
    - **Paso 1: Fecha:** Si el usuario solicita un turno pero no indica fecha, pregúñtale qué día le gustaría asistir. Calcula la fecha exacta (formato YYYY-MM-DD) usando el 'CONTEXTO TEMPORAL'. Por ejemplo, si hoy es viernes 29 de mayo de 2026, el próximo lunes es 1 de junio de 2026. ¡Calculá bien los días y los meses de 30/31 días!
    - **Paso 2: Hora (OBLIGATORIEDAD DE CONSULTA):** En cuanto identifiques la fecha solicitada por el usuario (o si el usuario cambia el día solicitado, por ejemplo, de "mañana" a "hoy"), DEBES llamar obligatoria y de inmediato a la herramienta `consultar_disponibilidad` para esa fecha. Está TERMINANTEMENTE PROHIBIDO responderle al usuario si el horario está ocupado o libre sin antes haber llamado a `consultar_disponibilidad` para esa fecha específica. Tampoco podés asumir horarios basándote en la consulta de otra fecha o en tu memoria.
-     * **Si hay turnos:** NUNCA muestres un listado de todos los horarios disponibles. En su lugar, guíalo en la elección mencionando solo 2 o 3 opciones representativas (ej: "Tengo libre a las 09:00, 11:30 o 12:30. ¿Te sirve alguno?").
+     * **Si hay turnos:** NUNCA muestres un listado de todos los horarios disponibles. Usá EXCLUSIVAMENTE los horarios que vengan en 'horarios_sugeridos_para_ofrecer' (ya vienen acotados a 2-3) para guiarlo en la elección (ej: "Tengo libre a las 09:00, 11:30 o 12:30. ¿Te sirve alguno?").
      * **Si el horario exacto solicitado por el usuario no está en la lista de disponibles:**
        - Si figura en `horarios_ya_reservados_por_otros`, dile que ya está reservado/ocupado por otra persona.
        - Si no figura en `horarios_ya_reservados_por_otros`, dile amigablemente que ese horario no es un slot de reserva válido, no está habilitado o está fuera de los turnos de atención para ese día (ya que los turnos son cada 30 minutos).
@@ -1932,7 +2033,7 @@ def call_model(state: AgentState):
             system_prompt += "\n1. EL CLIENTE ES DESCONOCIDO: Pregúntale amigable y discretamente su nombre y apellido (mínimamente nombre) dentro de tu respuesta (ej: '¿Con quién tengo el gusto de hablar para agendar tu consulta?'), sin bloquear el flujo si prefiere responder otra cosa, pero recuerda que NO PUEDES confirmar ni registrar el turno en la herramienta 'agendar_turno' sin que el usuario te haya indicado su nombre."
         
         if appointments_enabled:
-            system_prompt += "\n2. PROHIBIDO ENVIAR LISTAS DE HORARIOS: Está terminantemente prohibido usar listas verticales para mostrar horas de turnos. Si el horario pedido por el usuario no está en la lista de disponibles, no listes los demás. Si figura en 'horarios_ya_reservados_por_otros', dile que ya está ocupado/reservado por otro cliente. Si no figura allí, dile amigablemente que no es un slot de reserva válido o no está habilitado para ese día. En cualquier caso, ofrécele 2 opciones libres cercanas en un único renglón corrido de texto (ej: 'El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?')."
+            system_prompt += "\n2. PROHIBIDO ENVIAR LISTAS DE HORARIOS: Está terminantemente prohibido usar listas verticales, o enumerar más de 3 horarios seguidos en una frase, para mostrar horas de turnos. Para ofrecer disponibilidad general usá SOLO los horarios de 'horarios_sugeridos_para_ofrecer' (máximo 3), nunca recites 'horarios_disponibles' completo. Si el horario pedido por el usuario no está en la lista de disponibles, no listes los demás. Si figura en 'horarios_ya_reservados_por_otros', dile que ya está ocupado/reservado por otro cliente. Si no figura allí, dile amigablemente que no es un slot de reserva válido o no está habilitado para ese día. En cualquier caso, ofrécele 2 opciones libres cercanas en un único renglón corrido de texto (ej: 'El horario de las 23:45 no está habilitado para hoy, pero te puedo ofrecer a las 23:30 o 23:00. ¿Te sirve alguno?')."
 
         system_prompt += "\n3. ENVÍO DE ARCHIVOS ADJUNTOS: Si el tema del que habla el usuario tiene la etiqueta `[CON_ARCHIVO]` (ej. FORMULARIO 08) o has consultado información sobre un tema con archivo, DEBES agregar OBLIGATORIAMENTE la etiqueta `[SEND_FILE: nombre_del_tema]` al final de tu respuesta de texto. ¡No omitas esta etiqueta por ningún motivo!"
 

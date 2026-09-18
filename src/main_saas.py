@@ -29,6 +29,23 @@ load_dotenv()
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+def format_appt_date_es(date_str):
+    """Convierte la fecha interna (YYYY-MM-DD) a dd/mm/yyyy para mostrarla al usuario."""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return date_str
+
+
+def clean_appt_motivo(reason):
+    """'Trámite - motivo | Campo extra: valor' -> 'Trámite - motivo'. Los datos adicionales
+    del trámite (ej. edad) se agregan al reason con ' | ' para uso interno (Google Calendar,
+    panel admin) pero no deben mostrarse al usuario ni figurar en Mercado Pago."""
+    if not reason:
+        return reason
+    return reason.split(" | ")[0]
+
 # Inicialización de FastAPI
 app = FastAPI(title="anka Multi-Tenant SaaS", version="2.5.0")
 
@@ -765,10 +782,17 @@ async def delete_chat_session(request: Request, thread_id: str, db: Session = De
     if target_client_id is None: return RedirectResponse(url="/admin/login")
     if not has_menu_access(user_mock, "history"): return fallback_admin_redirect(user_mock)
 
-    from src.database.models import Message, Pause, Attachment, Appointment, Proceeding, ChatNote, Submission, SessionAnalytics, TokenUsage
+    from src.database.models import Message, Pause, Attachment, Appointment, Proceeding, ChatNote, Submission, SessionAnalytics, TokenUsage, AppointmentPayment
     db.query(Message).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
     db.query(Pause).filter_by(client_id=target_client_id, user_id=thread_id).delete()
     db.query(Attachment).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
+    # Hay que borrar los pagos de seña ANTES que los turnos: data_appointment_payments tiene un
+    # FK a data_appointments.id, y borrar el turno primero rompía con IntegrityError apenas
+    # empezó a haber pagos de seña reales (bug real encontrado en prueba en vivo 2026-09-16,
+    # preexistente pero nunca disparado porque hasta ahora ningún turno borrado tenía pago asociado).
+    appt_ids = [a.id for a in db.query(Appointment.id).filter_by(client_id=target_client_id, thread_id=thread_id).all()]
+    if appt_ids:
+        db.query(AppointmentPayment).filter(AppointmentPayment.appointment_id.in_(appt_ids)).delete(synchronize_session=False)
     db.query(Appointment).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
     db.query(Proceeding).filter(Proceeding.client_id == target_client_id, Proceeding.topic.like(f"%{thread_id}%")).delete(synchronize_session=False)
     db.query(ChatNote).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
@@ -1581,6 +1605,7 @@ async def save_all_config(
         settings.test_mode_enabled = form_data.get("test_mode_enabled") == "1"
         if "test_numbers" in form_data: settings.test_numbers = form_data.get("test_numbers")
 
+    mp_error = None
     if cfg_perm["pagos"]:
         settings.feat_deposit_payment = form_data.get("feat_deposit_payment") == "1"
         if "mp_public_key" in form_data: settings.mp_public_key = form_data.get("mp_public_key")
@@ -1593,15 +1618,54 @@ async def save_all_config(
 
         mp_token_raw = (form_data.get("mp_access_token") or "").strip()
         if mp_token_raw:
-            from src.database.mp_credentials import save_client_mp_token
-            db.commit()  # asegura que el ClientSettings recién creado ya tenga PK antes del save fuera de sesión
-            save_client_mp_token(target_client_id, mp_token_raw)
-            db.refresh(settings)
+            if not mp_token_raw.startswith("APP_USR-"):
+                mp_error = "format"
+            else:
+                from src.mercadopago_client import validate_access_token
+                ok, info = validate_access_token(mp_token_raw)
+                if not ok:
+                    mp_error = "invalid"
+
+            if mp_error is None:
+                from src.database.mp_credentials import save_client_mp_token
+                db.commit()  # asegura que el ClientSettings recién creado ya tenga PK antes del save fuera de sesión
+                save_client_mp_token(target_client_id, mp_token_raw)
+                db.refresh(settings)
 
     db.commit()
 
     tab = form_data.get("active_tab", "identidad")
+    if mp_error:
+        return RedirectResponse(url=f"/admin/config?active_tab={tab}&mp_error={mp_error}", status_code=303)
     return RedirectResponse(url=f"/admin/config?active_tab={tab}&success=1", status_code=303)
+
+@app.post("/admin/config/test-mp-token")
+async def test_mp_token_route(request: Request, mp_access_token: str = Form(""), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Prueba un Access Token de Mercado Pago contra la API real, sin guardarlo. Usado por el
+    botón "Probar conexión" en la pestaña Pagos para que el negocio sepa si la credencial sirve
+    antes de guardar la configuración."""
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None:
+        return JSONResponse(status_code=401, content={"ok": False, "message": "Tu sesión expiró, volvé a iniciar sesión."})
+    if not get_config_permissions(user_mock)["pagos"]:
+        return JSONResponse(status_code=403, content={"ok": False, "message": "No tenés permiso para esta sección."})
+
+    token = (mp_access_token or "").strip()
+    if not token:
+        return JSONResponse(content={"ok": False, "message": "Pegá el Access Token primero."})
+    if not token.startswith("APP_USR-"):
+        return JSONResponse(content={"ok": False, "message": (
+            "Este valor no parece un Access Token de PRODUCCIÓN (debería empezar con \"APP_USR-\"). "
+            "Si empieza con \"TEST-\" es una credencial de prueba: entrá de nuevo a mercadopago.com.ar/developers/panel "
+            "→ tu aplicación → pestaña \"Credenciales de producción\" y copiá ese Access Token."
+        )})
+
+    from src.mercadopago_client import validate_access_token
+    ok, info = validate_access_token(token)
+    if not ok:
+        return JSONResponse(content={"ok": False, "message": info})
+    account = info.get("email") or info.get("nickname") or "cuenta de Mercado Pago verificada"
+    return JSONResponse(content={"ok": True, "account": account})
 
 @app.get("/admin/config/remove-welcome-media")
 async def remove_welcome_media_route(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -3414,6 +3478,17 @@ def is_within_working_hours(working_hours_str: str) -> bool:
         logging.error(f"Error parseando horario: {e}")
         return True
 
+@app.get("/pago/{payment_id}")
+async def redirect_pago_seña(payment_id: int, db: Session = Depends(get_db)):
+    """Link corto propio que redirige al init_point real de Mercado Pago. El bot le manda este
+    link al usuario por WhatsApp en vez del link crudo de MP (~120 caracteres, se ve feo/raro
+    en el chat) — pedido real de un usuario probando en vivo (2026-09-16)."""
+    from src.database.models import AppointmentPayment
+    payment = db.query(AppointmentPayment).filter_by(id=payment_id).first()
+    if not payment or not payment.init_point:
+        return HTMLResponse("<h1>Link de pago no encontrado o vencido.</h1>", status_code=404)
+    return RedirectResponse(url=payment.init_point, status_code=302)
+
 @app.post("/webhook/{client_slug}/mercadopago")
 async def mercadopago_webhook(client_slug: str, request: Request, db: Session = Depends(get_db)):
     """Notificación de pago de Mercado Pago para la seña de un turno. Multi-tenant: nunca
@@ -3481,7 +3556,7 @@ async def mercadopago_webhook(client_slug: str, request: Request, db: Session = 
             template = settings.deposit_confirmed_template or "¡Gracias {nombre}! Recibimos tu seña de {monto} {moneda} y tu turno del {fecha} a las {hora} hs para {motivo} quedó CONFIRMADO."
             message = template.format(
                 nombre=appt.client_name or "Cliente", monto=payment_row.amount, moneda=payment_row.currency,
-                fecha=appt.date, hora=appt.time, motivo=appt.reason or "tu turno"
+                fecha=format_appt_date_es(appt.date), hora=appt.time, motivo=clean_appt_motivo(appt.reason) or "tu turno"
             )
             wa_id = appt.thread_id
             if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
@@ -5530,8 +5605,8 @@ async def scheduler_reminders_loop():
                         message = template.format(
                             nombre=app.client_name or "Cliente",
                             hora=app.time,
-                            fecha=app.date,
-                            motivo=app.reason or "Trámite"
+                            fecha=format_appt_date_es(app.date),
+                            motivo=clean_appt_motivo(app.reason) or "Trámite"
                         )
                         
                         success = False
@@ -5572,8 +5647,8 @@ async def scheduler_reminders_loop():
                         message = template.format(
                             nombre=app.client_name or "Cliente",
                             hora=app.time,
-                            fecha=app.date,
-                            motivo=app.reason or "Trámite"
+                            fecha=format_appt_date_es(app.date),
+                            motivo=clean_appt_motivo(app.reason) or "Trámite"
                         )
                         
                         success = False
@@ -5682,8 +5757,8 @@ async def expire_pending_payments_loop():
 
                     template = settings.deposit_expired_template or "Hola {nombre}, no llegamos a recibir el pago de la seña de tu turno del {fecha} a las {hora} hs para {motivo}, así que liberamos ese horario. Si todavía te interesa, escribinos de nuevo para agendar."
                     message = template.format(
-                        nombre=appt.client_name or "Cliente", fecha=appt.date, hora=appt.time,
-                        motivo=appt.reason or "tu turno"
+                        nombre=appt.client_name or "Cliente", fecha=format_appt_date_es(appt.date), hora=appt.time,
+                        motivo=clean_appt_motivo(appt.reason) or "tu turno"
                     )
                     wa_id = appt.thread_id
                     if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():

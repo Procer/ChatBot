@@ -548,9 +548,33 @@
                         <li>Entrá a la aplicación creada → pestaña <b>"Credenciales de producción"</b>.</li>
                         <li>Copiá el valor de <b>"Access Token"</b> y pegalo abajo en "Access Token de Mercado Pago". Este dato es secreto, no lo compartas con nadie.</li>
                         <li>Copiá el valor de <b>"Public Key"</b> y pegalo en el campo de al lado.</li>
+                        <li>Hacé click en <b>"Probar conexión"</b> para confirmar que Mercado Pago acepta la credencial antes de guardar.</li>
                         <li>Activá el interruptor "Pedir seña para agendar turnos" de abajo, guardá, y después cargá el monto de la seña en cada servicio (pestaña <b>Conocimiento</b>).</li>
                     </ol>
-                    <p class="text-[11px] text-slate-500">Importante: usá siempre las credenciales de <b>producción</b>, no las de prueba/test — si no, el link de pago que reciben tus clientes no va a funcionar.</p>
+                    <p class="text-[11px] text-slate-500">Importante: usá siempre las credenciales de <b>producción</b>, no las de prueba/test — si no, el link de pago que reciben tus clientes no va a funcionar. Se reconocen porque empiezan con <code class="text-sky-400">APP_USR-</code>; las de prueba empiezan con <code class="text-slate-400">TEST-</code>.</p>
+                    <div class="flex flex-wrap gap-x-5 gap-y-1 pt-1">
+                        <a href="https://www.mercadopago.com.ar/developers/es/docs/checkout-pro/landing" target="_blank" rel="noopener" class="text-[11px] text-sky-400 hover:text-sky-300 underline">Documentación oficial de Checkout Pro</a>
+                        <a href="https://www.mercadopago.com.ar/developers/es/support/center" target="_blank" rel="noopener" class="text-[11px] text-sky-400 hover:text-sky-300 underline">Centro de ayuda de Mercado Pago</a>
+                        <a href="https://www.mercadopago.com.ar/settings/account" target="_blank" rel="noopener" class="text-[11px] text-sky-400 hover:text-sky-300 underline">Verificar/activar la cuenta del negocio</a>
+                    </div>
+                </div>
+
+                <!-- AYUDA: ERRORES COMUNES -->
+                <div class="p-8 bg-amber-500/5 border border-amber-500/20 rounded-[2.5rem] space-y-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-base font-black text-white">Errores comunes</h3>
+                    </div>
+                    <ul class="text-sm text-slate-400 space-y-2 list-disc list-inside marker:text-amber-400">
+                        <li><b>"Access Token no válido"</b>: lo copiaste incompleto, con espacios, o es de una cuenta distinta a la que activó el interruptor. Volvé a copiarlo entero desde "Credenciales de producción".</li>
+                        <li><b>El cliente final ve un error al pagar / "sitio no disponible"</b>: casi siempre es porque se cargó el Access Token de <b>prueba</b> (empieza con <code class="text-slate-300">TEST-</code>) en vez del de producción.</li>
+                        <li><b>El interruptor está activado pero ningún servicio pide seña</b>: falta cargar el "Monto de Seña" en ese servicio, pestaña Conocimiento.</li>
+                        <li><b>El link de pago no llega por WhatsApp</b>: revisá que el canal de WhatsApp esté conectado y funcionando (pestaña Canales).</li>
+                        <li><b>El turno se cancela solo antes de que el cliente llegue a pagar</b>: subí el "Plazo para pagar" si 30 minutos queda corto para tu negocio.</li>
+                        <li><b>La cuenta de Mercado Pago es nueva y rechaza cobros</b>: Mercado Pago pide verificar identidad/CBU la primera vez; revisá <a href="https://www.mercadopago.com.ar/settings/account" target="_blank" rel="noopener" class="text-amber-400 hover:text-amber-300 underline">la configuración de la cuenta</a>.</li>
+                    </ul>
                 </div>
 
                 <div class="p-8 bg-brand-500/5 border border-brand-500/10 rounded-[2.5rem] space-y-6">
@@ -576,7 +600,11 @@
                                 <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Access Token de Mercado Pago</label>
                                 <span class="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider {{ 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' if config.mp_access_token_configured else 'bg-rose-500/10 text-rose-400 border border-rose-500/20' }}">{{ 'Configurado' if config.mp_access_token_configured else 'Sin configurar' }}</span>
                             </div>
-                            <input type="password" name="mp_access_token" placeholder="{{ 'Ya configurado — dejar en blanco para no cambiarlo' if config.mp_access_token_configured else 'APP_USR-...' }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">
+                            <div class="flex items-center gap-2">
+                                <input type="password" id="mp_access_token_input" name="mp_access_token" placeholder="{{ 'Ya configurado — dejar en blanco para no cambiarlo' if config.mp_access_token_configured else 'APP_USR-...' }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-white focus:border-brand-500 outline-none transition-all">
+                                <button type="button" onclick="testMpToken()" class="shrink-0 px-4 py-4 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all whitespace-nowrap">Probar conexión</button>
+                            </div>
+                            <p id="mp-test-result" class="text-[11px] min-h-[1.2em]"></p>
                             <p class="text-[9px] text-slate-500">Se saca de la cuenta de Mercado Pago del negocio: Tu negocio → Configuración → Credenciales de producción.
                                 {% if config.mp_access_token_configured %}<a href="/admin/config/clear-mp-token" onclick="return confirm('¿Quitar la credencial de Mercado Pago configurada?')" class="text-red-400 hover:text-red-300 ml-1">Quitar credencial guardada</a>{% endif %}
                             </p>
@@ -1033,7 +1061,39 @@
             showToast('Error al subir el archivo multimedia.', 'error');
         else if (p.get('error_overlap') === '1')
             showToast('Ya existe una pieza activa con fechas superpuestas.', 'error');
+        else if (p.get('mp_error') === 'format')
+            showToast('El Access Token no se guardó: no empieza con APP_USR- (¿copiaste el de prueba?).', 'error');
+        else if (p.get('mp_error') === 'invalid')
+            showToast('El Access Token no se guardó: Mercado Pago lo rechazó. Probá "Probar conexión" para ver el detalle.', 'error');
     })();
+
+    // ── MERCADO PAGO: PROBAR CONEXIÓN ───────────────────────────────────────
+    async function testMpToken() {
+        const input = document.getElementById('mp_access_token_input');
+        const resultEl = document.getElementById('mp-test-result');
+        const token = (input.value || '').trim();
+        if (!token) {
+            resultEl.innerHTML = '<span class="text-amber-400">Pegá el Access Token antes de probar.</span>';
+            return;
+        }
+        resultEl.innerHTML = '<span class="text-slate-400">Probando conexión con Mercado Pago…</span>';
+        try {
+            const resp = await fetch('/admin/config/test-mp-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'mp_access_token=' + encodeURIComponent(token)
+            });
+            const data = await resp.json();
+            const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            if (data.ok) {
+                resultEl.innerHTML = `<span class="text-emerald-400">✓ Conectado a la cuenta de Mercado Pago: <b>${esc(data.account)}</b>. Ahora guardá los cambios para activarla.</span>`;
+            } else {
+                resultEl.innerHTML = `<span class="text-rose-400">✕ ${esc(data.message)}</span>`;
+            }
+        } catch (e) {
+            resultEl.innerHTML = '<span class="text-rose-400">✕ No se pudo conectar con el servidor. Probá de nuevo.</span>';
+        }
+    }
 
     // ── TABS ─────────────────────────────────────────────────────────────────
     function switchTab(tabId) {
