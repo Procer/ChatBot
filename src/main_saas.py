@@ -3855,6 +3855,22 @@ async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, f
 async def process_bot_response(client_id: int, user_id: str, user_text: str, platform: str, attachment_data: dict = None, whatsapp_message_id: str = None):
     """Orquestador principal que conecta el Webhook con LangGraph."""
     async with get_user_lock(user_id):
+        # --- Bot Pausado (panel de Contactos/Historial): si un humano tomo la
+        # conversacion, el bot no debe responder nada hasta que se reanude. Este
+        # chequeo faltaba (bug real: pausar no tenia ningun efecto en el webhook,
+        # solo se reflejaba como badge en el panel).
+        try:
+            from src.database.models import Pause
+            import datetime as _dt
+            db_pause = SessionLocal()
+            pause = db_pause.query(Pause).filter_by(client_id=client_id, user_id=user_id).first()
+            db_pause.close()
+            if pause and pause.paused_until > _dt.datetime.utcnow():
+                logging.info(f"[SaaS Process] Bot pausado para {user_id} (cliente {client_id}) hasta {pause.paused_until}: se ignora el mensaje.")
+                return
+        except Exception as pe:
+            logging.error(f"[SaaS Pause] Error chequeando pausa: {pe}")
+
         # --- Modo Prueba: si está activo, ignorar a cualquiera que no esté en test_numbers ---
         try:
             from src.database.models import ClientSettings
