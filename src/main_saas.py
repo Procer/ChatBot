@@ -144,6 +144,9 @@ class ClientCreate(BaseModel):
     business_name: str
     slug: str
 
+class ClientStatusUpdate(BaseModel):
+    status: str  # "active" | "suspended"
+
 class ClientSettingsUpdate(BaseModel):
     whatsapp_instance_id: str = None
     whatsapp_token: str = None
@@ -208,6 +211,10 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     user_id = request.cookies.get("session_user_id")
     if not user_id: return None
     user = db.query(User).filter_by(id=int(user_id)).first()
+    if user and user.client_id and user.client and user.client.status != "active":
+        # Tenant desactivado (ver /api/superadmin/clients/{id}/status): se trata la
+        # sesión como inexistente, incluso si la cookie ya estaba puesta de antes.
+        return None
     return user
 
 def get_admin_context(request: Request, current_user: User, db: Session):
@@ -359,10 +366,13 @@ def login_page(request: Request):
 def login_post(request: Request, username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     pwd_hash = hashlib.md5(password.encode()).hexdigest()
     user = db.query(User).filter_by(email=username, password_hash=pwd_hash).first()
-    
+
     if not user:
         return templates.TemplateResponse(request=request, name="admin/login.html", context={"error": "Credenciales inválidas."})
-    
+
+    if user.client_id and user.client and user.client.status != "active":
+        return templates.TemplateResponse(request=request, name="admin/login.html", context={"error": "Esta cuenta está desactivada temporalmente."})
+
     # Login Exitoso (Para Súper Admin o Cliente)
     if not user.client_id:
         response = RedirectResponse(url="/super-admin", status_code=303)
@@ -5220,6 +5230,23 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "abono_usd": pricing.abono_usd if pricing else None
         }
     }
+
+@app.put("/api/superadmin/clients/{client_id}/status")
+async def update_client_status(client_id: int, payload: ClientStatusUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Activa/desactiva un inquilino. En 'suspended': los 3 webhooks (WhatsApp,
+    Telegram, Mercado Pago) dejan de procesar mensajes para este cliente (ya
+    filtran por Client.status == 'active'), y sus usuarios del panel quedan
+    deslogueados en el siguiente request (ver get_current_user)."""
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if payload.status not in ("active", "suspended"):
+        return JSONResponse(status_code=400, content={"error": "Estado inválido"})
+    client = db.query(Client).filter_by(id=client_id).first()
+    if not client:
+        return JSONResponse(status_code=404, content={"error": "Not found"})
+    client.status = payload.status
+    db.commit()
+    return {"status": "ok", "new_status": client.status}
 
 @app.put("/api/superadmin/clients/{client_id}/settings")
 async def update_client_settings(client_id: int, settings_data: ClientSettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

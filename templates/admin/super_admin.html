@@ -138,6 +138,15 @@
                 <button onclick="openClientPayments({{ client.id }})" class="bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 px-3 rounded-lg transition-colors" title="Cobros">
                     <i data-lucide="banknote" class="w-4 h-4"></i>
                 </button>
+                {% if client.status == 'active' %}
+                <button onclick="toggleClientStatus({{ client.id }}, 'suspended')" class="bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 px-3 rounded-lg transition-colors" title="Desactivar cliente (corta el bot y bloquea a sus usuarios)">
+                    <i data-lucide="power" class="w-4 h-4"></i>
+                </button>
+                {% else %}
+                <button onclick="toggleClientStatus({{ client.id }}, 'active')" class="bg-rose-500/10 hover:bg-emerald-500/20 text-rose-400 hover:text-emerald-400 px-3 rounded-lg transition-colors" title="Reactivar cliente">
+                    <i data-lucide="power" class="w-4 h-4"></i>
+                </button>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
@@ -503,6 +512,20 @@
         });
         if(res.ok) window.location.reload();
         else alert('Error al crear cliente');
+    }
+
+    async function toggleClientStatus(id, newStatus) {
+        const msg = newStatus === 'suspended'
+            ? '¿Desactivar este cliente? El bot va a dejar de responder en WhatsApp/Telegram/Mercado Pago y sus usuarios del panel no van a poder ingresar hasta que lo reactives.'
+            : '¿Reactivar este cliente?';
+        if (!confirm(msg)) return;
+        const res = await fetch(`/api/superadmin/clients/${id}/status`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: newStatus})
+        });
+        if (res.ok) window.location.reload();
+        else alert('Error al cambiar el estado del cliente');
     }
 
     async function editClient(id) {
