@@ -48,6 +48,16 @@ def clean_appt_motivo(reason):
     return reason.split(" | ")[0]
 
 
+def _clean_pasted_token(raw):
+    """Limpia un credential pegado a mano (Access Token de MP, etc.): además de espacios en los
+    extremos, saca caracteres invisibles típicos de copiar/pegar desde una web o PDF (BOM,
+    espacio de ancho cero, NBSP) que rompen un chequeo de prefijo como '.startswith(\"APP_USR-\")'
+    aunque el valor se vea idéntico a simple vista."""
+    if not raw:
+        return ""
+    return raw.strip(" \t\r\n﻿​‌‍\xa0")
+
+
 def parse_appointment_reason(reason):
     """Descompone el 'reason' crudo del turno ('Trámite - detalle | Campo: valor, Campo2: valor2')
     en piezas mostrables para el panel de Turnos: nombre del servicio, detalle (si difiere del
@@ -1661,7 +1671,7 @@ async def save_all_config(
         if "deposit_confirmed_template" in form_data: settings.deposit_confirmed_template = form_data.get("deposit_confirmed_template")
         if "deposit_expired_template" in form_data: settings.deposit_expired_template = form_data.get("deposit_expired_template")
 
-        mp_token_raw = (form_data.get("mp_access_token") or "").strip()
+        mp_token_raw = _clean_pasted_token(form_data.get("mp_access_token"))
         if mp_token_raw:
             if not mp_token_raw.startswith("APP_USR-"):
                 mp_error = "format"
@@ -1695,7 +1705,7 @@ async def test_mp_token_route(request: Request, mp_access_token: str = Form(""),
     if not get_config_permissions(user_mock)["pagos"]:
         return JSONResponse(status_code=403, content={"ok": False, "message": "No tenés permiso para esta sección."})
 
-    token = (mp_access_token or "").strip()
+    token = _clean_pasted_token(mp_access_token)
     if not token:
         return JSONResponse(content={"ok": False, "message": "Pegá el Access Token primero."})
     if not token.startswith("APP_USR-"):
