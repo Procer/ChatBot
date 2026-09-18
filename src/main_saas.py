@@ -5726,7 +5726,7 @@ async def scheduler_reminders_loop():
                             nombre=app.client_name or "Cliente",
                             hora=app.time,
                             fecha=format_appt_date_es(app.date),
-                            motivo=clean_appt_motivo(app.reason) or "Trámite"
+                            motivo=clean_appt_motivo(app.reason) or "Turno"
                         )
                         
                         success = False
@@ -5768,7 +5768,7 @@ async def scheduler_reminders_loop():
                             nombre=app.client_name or "Cliente",
                             hora=app.time,
                             fecha=format_appt_date_es(app.date),
-                            motivo=clean_appt_motivo(app.reason) or "Trámite"
+                            motivo=clean_appt_motivo(app.reason) or "Turno"
                         )
                         
                         success = False
