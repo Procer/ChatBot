@@ -175,6 +175,10 @@
                 badge.className = "px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[12px] font-bold uppercase border border-emerald-500/20";
                 badge.innerText = "Conectado";
                 qrBox.classList.add('hidden');
+            } else if (data.status === 'not_configured' || data.status === 'unknown' || data.status === 'error') {
+                badge.className = "px-3 py-1 bg-slate-800 text-slate-500 rounded-lg text-[12px] font-bold uppercase";
+                badge.innerText = data.status === 'not_configured' ? "Sin credenciales" : "Sin respuesta";
+                qrBox.classList.add('hidden');
             } else {
                 badge.className = "px-3 py-1 bg-rose-500/10 text-rose-500 rounded-lg text-[12px] font-bold uppercase border border-rose-500/20";
                 badge.innerText = "Desconectado";

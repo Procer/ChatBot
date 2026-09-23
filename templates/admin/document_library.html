@@ -131,6 +131,64 @@
         </div>
     </div>
 
+    <!-- Portal "Mis Resultados" -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-2">
+            <i data-lucide="file-heart" class="w-4 h-4 text-brand-500"></i> Portal "Mis Resultados"
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">
+            Página web pública donde el paciente escribe su DNI y descarga sus análisis, sin pasar por WhatsApp. Busca en vivo en una carpeta de Drive con archivos llamados <code class="text-slate-300">PROTOCOLO DNI.pdf</code> (ej. <code class="text-slate-300">A300044 004593922.pdf</code>).
+        </p>
+        <div id="rpNoDrive" class="hidden text-sm text-slate-400 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+            Primero hay que configurar la cuenta de servicio de Google Drive (ver arriba).
+        </div>
+        <div id="rpBox" class="hidden space-y-3">
+            <label class="flex items-center gap-2 text-sm text-white">
+                <input type="checkbox" id="rpEnabled" class="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                Activar el portal
+            </label>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Carpeta de Drive con los PDFs</label>
+                <input type="text" id="rpFolder" placeholder="Pegá el link de la carpeta (vacío = buscar la carpeta PROTOCOLOS)" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <p class="text-xs text-slate-500 mt-1">Carpeta actual: <span id="rpFolderName" class="text-slate-300">Ninguna</span></p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs text-slate-500 block mb-1">Mostrar análisis de los últimos (días)</label>
+                    <input type="number" id="rpDays" min="1" max="365" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-500 block mb-1">Teléfono para "¿No lo encontrás? Llamanos"</label>
+                    <input type="text" id="rpPhone" placeholder="Vacío = teléfono de la empresa" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Mensaje de bienvenida (opcional)</label>
+                <input type="text" id="rpWelcome" placeholder="Ej: Los resultados se cargan 48 hs después de la extracción." class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+                <button onclick="saveResultsPortal()" id="rpSaveBtn" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold transition-colors">Guardar</button>
+                <span id="rpMsg" class="text-xs"></span>
+            </div>
+            <div id="rpLinkBox" class="hidden text-sm text-slate-300 bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+                Link para la web, el QR del papel o el bot de WhatsApp:
+                <div class="flex items-center gap-2 mt-2">
+                    <code id="rpUrl" class="flex-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded text-brand-300 break-all select-all"></code>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('rpUrl').textContent)" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs border border-slate-700 whitespace-nowrap">Copiar</button>
+                    <a id="rpOpen" target="_blank" rel="noopener" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs border border-slate-700 whitespace-nowrap">Abrir</a>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">Para meterlo dentro de otra web (iframe) agregá <code class="text-slate-300">?embed=1</code> al link.</p>
+            </div>
+            <details class="text-xs text-slate-400">
+                <summary class="cursor-pointer text-slate-300">Últimas búsquedas</summary>
+                <table class="w-full mt-2">
+                    <thead><tr class="text-left text-slate-500 uppercase border-b border-slate-800"><th class="py-1 pr-3">Fecha</th><th class="py-1 pr-3">DNI</th><th class="py-1 pr-3">Encontrados</th></tr></thead>
+                    <tbody id="rpLogs"></tbody>
+                </table>
+            </details>
+        </div>
+    </div>
+
     <!-- Documentos -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <div class="flex items-center justify-between mb-3">
@@ -1142,7 +1200,53 @@
         await loadAll();
     }
 
+    // ---------- PORTAL "MIS RESULTADOS" ----------
+    async function loadResultsPortal() {
+        const res = await fetch('/api/admin/results_portal');
+        if (!res.ok) return;
+        const rp = await res.json();
+        document.getElementById('rpNoDrive').classList.toggle('hidden', rp.drive_configured);
+        document.getElementById('rpBox').classList.toggle('hidden', !rp.drive_configured);
+        document.getElementById('rpEnabled').checked = rp.enabled;
+        document.getElementById('rpFolder').value = '';
+        document.getElementById('rpFolderName').textContent = rp.folder_name || 'Ninguna';
+        document.getElementById('rpDays').value = rp.days;
+        document.getElementById('rpPhone').value = rp.own_phone || '';
+        document.getElementById('rpWelcome').value = rp.welcome || '';
+        document.getElementById('rpLinkBox').classList.toggle('hidden', !rp.enabled);
+        document.getElementById('rpUrl').textContent = rp.public_url;
+        document.getElementById('rpOpen').href = rp.public_url;
+        document.getElementById('rpLogs').innerHTML = (rp.logs || []).map(l => `
+            <tr class="border-b border-slate-800/50">
+                <td class="py-1 pr-3">${l.at ? new Date(l.at + 'Z').toLocaleString('es-AR') : ''}</td>
+                <td class="py-1 pr-3">${l.dni}</td>
+                <td class="py-1 pr-3">${l.error ? '<span class="text-red-400">error de Drive</span>' : (l.found ? `<span class="text-emerald-400">${l.found}</span>` : '<span class="text-amber-400">0</span>')}</td>
+            </tr>`).join('') || '<tr><td colspan="3" class="py-2 text-slate-500">Todavía no hubo búsquedas.</td></tr>';
+    }
+
+    async function saveResultsPortal() {
+        const btn = document.getElementById('rpSaveBtn');
+        const msg = document.getElementById('rpMsg');
+        btn.disabled = true; msg.textContent = 'Guardando…'; msg.className = 'text-xs text-slate-400';
+        const res = await fetch('/api/admin/results_portal', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: document.getElementById('rpEnabled').checked,
+                folder: document.getElementById('rpFolder').value.trim(),
+                days: parseInt(document.getElementById('rpDays').value) || 30,
+                phone: document.getElementById('rpPhone').value,
+                welcome: document.getElementById('rpWelcome').value,
+            })
+        });
+        const data = await res.json().catch(() => ({}));
+        btn.disabled = false;
+        if (!res.ok) { msg.textContent = data.error || 'No se pudo guardar.'; msg.className = 'text-xs text-red-400'; return; }
+        msg.textContent = 'Guardado.'; msg.className = 'text-xs text-emerald-400';
+        await loadResultsPortal();
+    }
+
     loadAll();
     loadGDriveStatus();
+    loadResultsPortal();
 </script>
 {% endblock %}

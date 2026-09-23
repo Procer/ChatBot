@@ -157,6 +157,24 @@ class ClientSettings(Base):
     deposit_confirmed_template = Column(Text, nullable=True)
     deposit_expired_template = Column(Text, nullable=True)
 
+    # --- PROTECCION ANTI-BLOQUEO DE WHATSAPP (ver src/wa_throttle.py) ---
+    wa_humanize_enabled = Column(Boolean, default=True, server_default="1")  # pausa aleatoria antes de cada envio
+    wa_typing_indicator = Column(Boolean, default=True, server_default="1")  # mostrar "escribiendo..." durante la pausa
+    wa_delay_min_seconds = Column(Integer, default=2, server_default="2")
+    wa_delay_max_seconds = Column(Integer, default=5, server_default="5")
+    wa_rate_per_minute = Column(Integer, default=20, server_default="20")  # 0 = sin tope
+    wa_proactive_per_hour = Column(Integer, default=40, server_default="40")  # recordatorios/avisos que inicia el bot; 0 = sin tope
+    wa_optout_enabled = Column(Boolean, default=False, server_default="0")  # agrega leyenda "respondé BAJA" a los seguimientos
+    wa_optout_footer = Column(Text, nullable=True)
+
+    # --- PORTAL "MIS RESULTADOS" (ver src/results_portal.py) ---
+    results_portal_enabled = Column(Boolean, default=False, server_default="0")
+    results_portal_folder_id = Column(String(255), nullable=True)  # carpeta de Drive con los PDFs "<PROTOCOLO> <DNI>.pdf"
+    results_portal_folder_name = Column(String(255), nullable=True)
+    results_portal_days = Column(Integer, default=30, server_default="30")  # solo se muestran archivos subidos en los últimos N días
+    results_portal_phone = Column(String(50), nullable=True)  # "¿No lo encontrás? Llamanos"; vacío = company_phone
+    results_portal_welcome = Column(Text, nullable=True)
+
     client = relationship("Client", back_populates="settings")
 
 class User(Base):
@@ -596,6 +614,25 @@ class FollowupLog(Base):
     thread_id = Column(String(100), nullable=False)
     content_id = Column(Integer, ForeignKey("data_followup_content.id", ondelete="CASCADE"), nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+class FollowupOptOut(Base):
+    """Contactos que pidieron no recibir mas seguimientos (respondieron BAJA)."""
+    __tablename__ = "bot_followup_optout"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    thread_id = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ResultsSearchLog(Base):
+    """Cada búsqueda por DNI en el portal público "Mis Resultados"."""
+    __tablename__ = "data_results_search_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    dni = Column(String(20), nullable=False)
+    ip = Column(String(64), nullable=True)
+    results_count = Column(Integer, default=0)
+    error = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 # ==========================================
 # CAPA 6: PRICING / CALCULADORA SAAS (SUPER ADMIN)

@@ -521,6 +521,83 @@
                         </div>
                     </div>
 
+                    <!-- PROTECCIÓN ANTI-BLOQUEO DE WHATSAPP -->
+                    <div class="p-8 bg-emerald-500/5 border border-emerald-500/10 rounded-[2.5rem] space-y-6">
+                        <input type="hidden" name="wa_antiban_present" value="1">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-500">
+                                <i data-lucide="shield-check" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-white">Protección anti-bloqueo de WhatsApp</h3>
+                                <p class="text-sm text-slate-500">Hace que el bot envíe con un ritmo parecido al de una persona, para reducir el riesgo de que WhatsApp bloquee el número.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <p class="text-sm font-bold text-white">Pausa antes de cada mensaje</p>
+                                <p class="text-xs text-slate-500">El bot espera unos segundos al azar antes de responder, en vez de contestar al instante.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                <input type="checkbox" name="wa_humanize_enabled" value="1" class="sr-only peer" {{ 'checked' if config.wa_humanize_enabled == '1' }}>
+                                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            </label>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2">
+                                <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Pausa mínima (segundos)</label>
+                                <input type="number" min="0" max="30" name="wa_delay_min_seconds" value="{{ config.wa_delay_min_seconds }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Pausa máxima (segundos)</label>
+                                <input type="number" min="0" max="60" name="wa_delay_max_seconds" value="{{ config.wa_delay_max_seconds }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-4">
+                            <div>
+                                <p class="text-sm font-bold text-white">Mostrar "escribiendo…"</p>
+                                <p class="text-xs text-slate-500">Durante la pausa, el cliente ve que el bot está escribiendo.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                <input type="checkbox" name="wa_typing_indicator" value="1" class="sr-only peer" {{ 'checked' if config.wa_typing_indicator == '1' }}>
+                                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            </label>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2">
+                                <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Máx. mensajes por minuto</label>
+                                <input type="number" min="0" max="600" name="wa_rate_per_minute" value="{{ config.wa_rate_per_minute }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                                <p class="text-xs text-slate-500">Si se supera, los mensajes esperan su turno (no se pierden). 0 = sin tope.</p>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Máx. avisos automáticos por hora</label>
+                                <input type="number" min="0" max="5000" name="wa_proactive_per_hour" value="{{ config.wa_proactive_per_hour }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                                <p class="text-xs text-slate-500">Recordatorios de turno y avisos que el bot manda solo. Lo que pase del tope se posterga. 0 = sin tope.</p>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-800/60 space-y-4">
+                            <div class="flex items-center justify-between gap-4">
+                                <div>
+                                    <p class="text-sm font-bold text-white">Opción de baja en los seguimientos</p>
+                                    <p class="text-xs text-slate-500">Agrega una leyenda al final de cada seguimiento. Si el contacto responde BAJA, no recibe más seguimientos (con ALTA vuelve a recibirlos).</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input type="checkbox" name="wa_optout_enabled" value="1" class="sr-only peer" {{ 'checked' if config.wa_optout_enabled == '1' }}>
+                                    <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                </label>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[11px] font-black text-slate-500 uppercase tracking-widest">Texto de la leyenda</label>
+                                <input type="text" name="wa_optout_footer" value="{{ config.wa_optout_footer }}" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-white focus:border-brand-500 outline-none transition-all">
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="p-8 bg-rose-500/5 border border-rose-500/20 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-8">
                         <div class="space-y-2 text-center md:text-left">
                             <h4 class="text-base font-bold text-rose-500 flex items-center gap-2 justify-center md:justify-start">

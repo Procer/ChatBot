@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import json
 import logging
 import asyncio
@@ -1557,7 +1558,15 @@ async def config_panel(request: Request, active_tab: str = "identidad", active_s
         "deposit_currency": settings.deposit_currency if settings and settings.deposit_currency else "ARS",
         "deposit_payment_timeout_minutes": settings.deposit_payment_timeout_minutes if settings and settings.deposit_payment_timeout_minutes else 30,
         "deposit_confirmed_template": settings.deposit_confirmed_template if settings else "",
-        "deposit_expired_template": settings.deposit_expired_template if settings else ""
+        "deposit_expired_template": settings.deposit_expired_template if settings else "",
+        "wa_humanize_enabled": "1" if not settings or settings.wa_humanize_enabled is None or settings.wa_humanize_enabled else "0",
+        "wa_typing_indicator": "1" if not settings or settings.wa_typing_indicator is None or settings.wa_typing_indicator else "0",
+        "wa_delay_min_seconds": settings.wa_delay_min_seconds if settings and settings.wa_delay_min_seconds is not None else 2,
+        "wa_delay_max_seconds": settings.wa_delay_max_seconds if settings and settings.wa_delay_max_seconds is not None else 5,
+        "wa_rate_per_minute": settings.wa_rate_per_minute if settings and settings.wa_rate_per_minute is not None else 20,
+        "wa_proactive_per_hour": settings.wa_proactive_per_hour if settings and settings.wa_proactive_per_hour is not None else 40,
+        "wa_optout_enabled": "1" if settings and settings.wa_optout_enabled else "0",
+        "wa_optout_footer": (settings.wa_optout_footer if settings and settings.wa_optout_footer else "Si no querés recibir más avisos, respondé BAJA.")
     }
 
     knowledge_raw = db.query(Knowledge).filter_by(client_id=target_client_id).order_by(Knowledge.category.asc()).all()
@@ -1669,6 +1678,23 @@ async def save_all_config(
     if cfg_perm["avanzado"]:
         settings.test_mode_enabled = form_data.get("test_mode_enabled") == "1"
         if "test_numbers" in form_data: settings.test_numbers = form_data.get("test_numbers")
+
+        # Protección anti-bloqueo de WhatsApp (ver src/wa_throttle.py). Solo si el form trae la
+        # sección (marcador wa_antiban_present) para no apagar los toggles en un POST parcial.
+        if "wa_antiban_present" in form_data:
+            settings.wa_humanize_enabled = form_data.get("wa_humanize_enabled") == "1"
+            settings.wa_typing_indicator = form_data.get("wa_typing_indicator") == "1"
+            settings.wa_optout_enabled = form_data.get("wa_optout_enabled") == "1"
+            def _int_field(name, default, lo, hi):
+                try: return max(lo, min(hi, int(form_data.get(name) or default)))
+                except ValueError: return default
+            d_min = _int_field("wa_delay_min_seconds", 2, 0, 30)
+            d_max = _int_field("wa_delay_max_seconds", 5, 0, 60)
+            settings.wa_delay_min_seconds = d_min
+            settings.wa_delay_max_seconds = max(d_min, d_max)
+            settings.wa_rate_per_minute = _int_field("wa_rate_per_minute", 20, 0, 600)
+            settings.wa_proactive_per_hour = _int_field("wa_proactive_per_hour", 40, 0, 5000)
+            if "wa_optout_footer" in form_data: settings.wa_optout_footer = (form_data.get("wa_optout_footer") or "").strip() or None
 
     mp_error = None
     if cfg_perm["pagos"]:
@@ -3177,6 +3203,136 @@ async def api_gdrive_stream_file(token: str):
     return StreamingResponse(io.BytesIO(content), media_type=mimetype,
                               headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
+# ── PORTAL PÚBLICO "MIS RESULTADOS" (ver src/results_portal.py) ────────────────
+def _public_client_ip(request: Request) -> str:
+    # Nginx pone X-Real-IP / agrega la IP real al final de X-Forwarded-For (el principio lo puede inventar el cliente).
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[-1].strip()
+    return request.client.host if request.client else ""
+
+def _results_portal_client(db: Session, slug: str):
+    client = db.query(Client).filter_by(slug=slug).first()
+    if not client or client.status != "active":
+        return None, None
+    settings = db.query(ClientSettings).filter_by(client_id=client.id).first()
+    if not settings or not settings.results_portal_enabled or not settings.results_portal_folder_id:
+        return None, None
+    return client, settings
+
+@app.get("/resultados/{slug}", response_class=HTMLResponse)
+async def results_portal_page(slug: str, request: Request, embed: int = 0, db: Session = Depends(get_db)):
+    from src.results_portal import get_portal_settings
+    client, settings = _results_portal_client(db, slug)
+    if not client:
+        return HTMLResponse("<h1>Página no encontrada</h1>", status_code=404)
+    cfg = get_portal_settings(settings)
+    return templates.TemplateResponse(request=request, name="public/resultados.html", context={
+        "slug": slug, "business_name": client.business_name, "phone": cfg["phone"],
+        "welcome": cfg["welcome"], "days": cfg["days"], "embed": bool(embed),
+    })
+
+class ResultsSearchPayload(BaseModel):
+    dni: str
+
+@app.post("/api/public/resultados/{slug}/buscar")
+async def results_portal_search(slug: str, payload: ResultsSearchPayload, request: Request, db: Session = Depends(get_db)):
+    from src.results_portal import normalize_dni, check_rate_limit, search_results, log_search, get_portal_settings
+    client, settings = _results_portal_client(db, slug)
+    if not client:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    dni = normalize_dni(payload.dni)
+    if not dni:
+        return JSONResponse(status_code=400, content={"error": "dni_invalido"})
+    ip = _public_client_ip(request)
+    if not check_rate_limit(client.id, ip):
+        return JSONResponse(status_code=429, content={"error": "demasiadas_busquedas"})
+
+    cfg = get_portal_settings(settings)
+    try:
+        results = await asyncio.to_thread(search_results, client.id, settings.results_portal_folder_id, dni, cfg["days"])
+    except Exception as e:
+        logging.error(f"[Resultados] Error buscando en Drive (client_id={client.id}): {e}")
+        await asyncio.to_thread(log_search, client.id, dni, ip, 0, True)
+        return JSONResponse(status_code=502, content={"error": "drive"})
+    await asyncio.to_thread(log_search, client.id, dni, ip, len(results))
+    return {"results": results, "days": cfg["days"]}
+
+@app.get("/resultados/{slug}/ver/{token}")
+async def results_portal_file(slug: str, token: str, dl: int = 0, db: Session = Depends(get_db)):
+    from src.results_portal import read_token, fetch_result_file
+    client, settings = _results_portal_client(db, slug)
+    parsed = read_token(token)
+    if not client or not parsed or parsed[0] != client.id:
+        return HTMLResponse("<h1>El link venció. Volvé a buscar tu resultado con tu DNI.</h1>", status_code=404)
+    try:
+        found = await asyncio.to_thread(fetch_result_file, client.id, settings.results_portal_folder_id, parsed[1])
+    except Exception as e:
+        logging.error(f"[Resultados] Error descargando archivo (client_id={client.id}): {e}")
+        found = None
+    if not found:
+        return HTMLResponse("<h1>No se encontró el archivo. Volvé a buscar tu resultado con tu DNI.</h1>", status_code=404)
+    content, filename, mimetype = found
+    safe_name = re.sub(r'[^A-Za-z0-9 ._-]', '', filename) or "resultado.pdf"
+    disposition = "attachment" if dl else "inline"
+    return Response(content=content, media_type=mimetype, headers={
+        "Content-Disposition": f'{disposition}; filename="{safe_name}"', "Cache-Control": "private, no-store",
+    })
+
+@app.get("/api/admin/results_portal")
+async def api_results_portal_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.results_portal import get_portal_settings
+    from src.database.models import ResultsSearchLog
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    client = db.query(Client).filter_by(id=target_client_id).first()
+    logs = db.query(ResultsSearchLog).filter_by(client_id=target_client_id).order_by(ResultsSearchLog.id.desc()).limit(50).all()
+    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    return {
+        **get_portal_settings(settings),
+        "own_phone": (settings.results_portal_phone or "") if settings else "",
+        "drive_configured": bool(settings and settings.gdrive_service_account_json_encrypted),
+        "public_url": f"{base}/resultados/{client.slug}" if client else "",
+        "logs": [{"dni": l.dni, "found": l.results_count, "error": bool(l.error),
+                  "at": l.created_at.isoformat() if l.created_at else None} for l in logs],
+    }
+
+class ResultsPortalPayload(BaseModel):
+    enabled: bool = False
+    folder: str = ""
+    days: int = 30
+    phone: str = ""
+    welcome: str = ""
+
+@app.post("/api/admin/results_portal")
+async def api_results_portal_save(payload: ResultsPortalPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.results_portal import resolve_folder
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Cliente sin configuración"})
+
+    folder_raw = payload.folder.strip()
+    if folder_raw or not settings.results_portal_folder_id:
+        folder_id, name_or_error = await asyncio.to_thread(resolve_folder, target_client_id, folder_raw)
+        if not folder_id:
+            if payload.enabled:
+                return JSONResponse(status_code=400, content={"error": name_or_error})
+        else:
+            settings.results_portal_folder_id = folder_id
+            settings.results_portal_folder_name = name_or_error
+
+    settings.results_portal_enabled = payload.enabled and bool(settings.results_portal_folder_id)
+    settings.results_portal_days = max(1, min(365, payload.days or 30))
+    settings.results_portal_phone = payload.phone.strip()[:50] or None
+    settings.results_portal_welcome = payload.welcome.strip() or None
+    db.commit()
+    return {"ok": True, "folder_name": settings.results_portal_folder_name}
+
 # ── API: Gestión de Usuarios ───────────────────────────────────────────────────
 class UserCreatePayload(BaseModel):
     full_name: str
@@ -3503,6 +3659,60 @@ async def sync_webhooks(request: Request, db: Session = Depends(get_db), current
     if errors: return JSONResponse(status_code=400, content={"status": "error", "message": " | ".join(errors)})
     return JSONResponse(content={"status": "ok"})
 
+# Estado / QR / Desconectar de la instancia Green-API del tenant (antes solo existían en _legacy/main.py).
+def _greenapi_admin_creds(request: Request, current_user: User, db: Session):
+    target_client_id, _, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None or not has_menu_access(user_mock, "channels"):
+        return None
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not settings.whatsapp_instance_id or not settings.whatsapp_token:
+        return ()
+    return settings.whatsapp_instance_id, settings.whatsapp_token
+
+@app.get("/admin/whatsapp/status")
+async def whatsapp_status(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    creds = _greenapi_admin_creds(request, current_user, db)
+    if creds is None: return JSONResponse(status_code=403, content={"status": "error"})
+    if not creds: return {"status": "not_configured"}
+    try:
+        async with httpx.AsyncClient() as hc:
+            r = await hc.get(f"https://api.green-api.com/waInstance{creds[0]}/getStateInstance/{creds[1]}", timeout=10.0)
+        state = r.json().get("stateInstance") if r.status_code == 200 else None
+    except Exception as e:
+        logging.warning(f"[GreenAPI] getStateInstance falló: {e}")
+        return {"status": "unknown"}
+    return {"status": "open" if state == "authorized" else "disconnected", "state": state}
+
+@app.get("/admin/whatsapp/qr")
+async def whatsapp_qr(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    creds = _greenapi_admin_creds(request, current_user, db)
+    if creds is None: return JSONResponse(status_code=403, content={"status": "error"})
+    if not creds: return {"status": "error", "message": "Faltan credenciales Green-API"}
+    try:
+        async with httpx.AsyncClient() as hc:
+            r = await hc.get(f"https://api.green-api.com/waInstance{creds[0]}/qr/{creds[1]}", timeout=15.0)
+        if r.status_code != 200:
+            return {"status": "error", "message": f"Error Green-API: {r.status_code}"}
+        data = r.json()
+        if data.get("type") == "qrCode":
+            return {"status": "qr", "base64": data.get("message")}
+        return {"status": "already_connected" if data.get("type") == "alreadyLogged" else "error", "message": data.get("message")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/admin/whatsapp/logout")
+async def whatsapp_logout(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    creds = _greenapi_admin_creds(request, current_user, db)
+    if creds is None: return JSONResponse(status_code=403, content={"status": "error"})
+    if not creds: return {"status": "error", "message": "Faltan credenciales Green-API"}
+    try:
+        async with httpx.AsyncClient() as hc:
+            r = await hc.get(f"https://api.green-api.com/waInstance{creds[0]}/logout/{creds[1]}", timeout=15.0)
+        return {"status": "ok" if r.status_code == 200 and r.json().get("isLogout", True) else "error"}
+    except Exception as e:
+        logging.error(f"[GreenAPI] logout falló: {e}")
+        return {"status": "error"}
+
 def is_within_working_hours(working_hours_str: str) -> bool:
     if not working_hours_str or "24/7" in working_hours_str.lower():
         return True
@@ -3792,7 +4002,7 @@ async def send_telegram_file_saas(client_id: int, user_id: str, local_path: str,
         logging.error(f"[SaaS Telegram File] Error: {e}")
     return None
 
-async def send_whatsapp_message_saas(client_id: int, user_id: str, message: str):
+async def send_whatsapp_message_saas(client_id: int, user_id: str, message: str, proactive: bool = False):
     """Envía un mensaje de texto vía Green-API leyendo credenciales de SQL Server.
     Bug real encontrado en vivo: esta función abría un SessionLocal() y nunca lo cerraba —
     en una sesión larga con muchos mensajes, eso filtra conexiones del pool hasta agotarlo,
@@ -3808,6 +4018,13 @@ async def send_whatsapp_message_saas(client_id: int, user_id: str, message: str)
         db.close()
     if not settings or not settings.whatsapp_instance_id:
         return None
+
+    # Anti-bloqueo (configurable por cliente): tope por minuto + pausa humana + "escribiendo...".
+    # proactive=True marca los mensajes que inicia el bot solo (recordatorios, avisos): cuentan
+    # contra el tope por hora.
+    from src.wa_throttle import before_send
+    await before_send(client_id, user_id, settings, proactive,
+                      api_base=f"https://api.green-api.com/waInstance{settings.whatsapp_instance_id}")
 
     formatted_message = format_message_for_whatsapp(message)
     import httpx
@@ -3830,11 +4047,19 @@ async def send_whatsapp_message_saas(client_id: int, user_id: str, message: str)
 
 async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, filename: str, caption: str = ""):
     """Envía un archivo vía Green-API leyendo credenciales de SQL Server."""
+    # La sesión se cierra antes de la pausa anti-bloqueo: no retener una conexión del pool mientras se espera.
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         settings = db.query(ClientSettings).filter_by(client_id=client_id).first()
-        if not settings or not settings.whatsapp_instance_id: return None
-        
+    finally:
+        db.close()
+    if not settings or not settings.whatsapp_instance_id: return None
+
+    try:
+        from src.wa_throttle import before_send
+        await before_send(client_id, user_id, settings, False,
+                          api_base=f"https://api.green-api.com/waInstance{settings.whatsapp_instance_id}")
+
         formatted_caption = format_message_for_whatsapp(caption)
         import httpx
         url = f"https://api.green-api.com/waInstance{settings.whatsapp_instance_id}/sendFileByUrl/{settings.whatsapp_token}"
@@ -3852,8 +4077,6 @@ async def send_whatsapp_file_saas(client_id: int, user_id: str, file_url: str, f
     except Exception as e:
         logging.error(f"[SaaS Envio Archivo] Error: {e}")
         return None
-    finally:
-        db.close()
 
 async def process_bot_response(client_id: int, user_id: str, user_text: str, platform: str, attachment_data: dict = None, whatsapp_message_id: str = None):
     """Orquestador principal que conecta el Webhook con LangGraph."""
@@ -3890,8 +4113,37 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
         except Exception as e:
             logging.error(f"[TestMode] Error chequeando modo prueba: {e}")
 
+        # --- Baja/alta de seguimientos: el contacto responde BAJA (o ALTA para volver). Solo si el
+        # cliente activó la leyenda de baja. Coincidencia exacta para no capturar frases como
+        # "quiero dar de baja mi turno". Solo frena los seguimientos por inactividad.
+        if platform == "whatsapp" and (user_text or "").strip().lower() in ("baja", "alta"):
+            try:
+                from src.database.models import ClientSettings, FollowupOptOut
+                db_oo = SessionLocal()
+                try:
+                    oo_settings = db_oo.query(ClientSettings).filter_by(client_id=client_id).first()
+                    if oo_settings and oo_settings.wa_optout_enabled:
+                        existing = db_oo.query(FollowupOptOut).filter_by(client_id=client_id, thread_id=str(user_id)).first()
+                        if user_text.strip().lower() == "baja":
+                            if not existing:
+                                db_oo.add(FollowupOptOut(client_id=client_id, thread_id=str(user_id)))
+                                db_oo.commit()
+                            reply = "Listo, no vas a recibir más avisos de seguimiento. Si querés volver a recibirlos, escribí ALTA. Podés seguir consultándonos cuando quieras."
+                        else:
+                            if existing:
+                                db_oo.delete(existing)
+                                db_oo.commit()
+                            reply = "Listo, volvés a recibir nuestros avisos. Si querés dejar de recibirlos, escribí BAJA."
+                        await send_whatsapp_message_saas(client_id, user_id, reply)
+                        log_message(client_id, user_id, "bot", reply)
+                        return
+                finally:
+                    db_oo.close()
+            except Exception as oe:
+                logging.error(f"[OptOut] Error procesando baja/alta: {oe}")
+
         print(f"\n[SaaS Process] Iniciando respuesta para cliente {client_id}, usuario {user_id}...")
-        
+
         try:
             # --- Auto-Etiquetado Inicial ---
             try:
@@ -4044,8 +4296,17 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                             if active_piece.send_once and last_sent:
                                 already_sent_this_gap = True
 
+                            # Contacto que respondió BAJA: no se le manda ningún seguimiento.
+                            if not already_sent_this_gap and settings and settings.wa_optout_enabled:
+                                from src.database.models import FollowupOptOut
+                                if db_local.query(FollowupOptOut).filter_by(client_id=client_id, thread_id=str(user_id)).first():
+                                    already_sent_this_gap = True
+
                             if not already_sent_this_gap:
                                 followup_text = active_piece.message_text
+                                if settings and settings.wa_optout_enabled:
+                                    footer = (settings.wa_optout_footer or "").strip() or "Si no querés recibir más avisos, respondé BAJA."
+                                    followup_text = f"{followup_text}\n\n{footer}"
                                 followup_media = active_piece.media_path
                                 base_url = (settings.webhook_base_url or "").rstrip('/') if settings else ""
 
@@ -5720,7 +5981,12 @@ async def scheduler_reminders_loop():
                         details=str(app.id)
                     ).first()
                     
-                    if not already_sent:
+                    from src.wa_throttle import proactive_budget_ok
+                    # Tope de proactivos por hora (anti-bloqueo): si se agota, no se marca como enviado y
+                    # el proximo ciclo (5 min) lo reintenta mientras siga dentro de la ventana.
+                    if not already_sent and not proactive_budget_ok(app.client_id, settings):
+                        logging.info(f"[Scheduler] Tope de proactivos/hora alcanzado (cliente {app.client_id}): recordatorio 24h del turno {app.id} queda para el proximo ciclo")
+                    elif not already_sent:
                         template = settings.reminder_24h_template or "Hola {nombre}, te recordamos tu turno del {fecha} a las {hora} hs para {motivo}."
                         message = template.format(
                             nombre=app.client_name or "Cliente",
@@ -5738,10 +6004,10 @@ async def scheduler_reminders_loop():
                             wa_id = app.thread_id
                             if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                                 wa_id = f"{wa_id}@c.us"
-                            res = await send_whatsapp_message_saas(app.client_id, wa_id, message)
+                            res = await send_whatsapp_message_saas(app.client_id, wa_id, message, proactive=True)
                             if res:
                                 success = True
-                                
+
                         log_entry = AuditLog(
                             client_id=app.client_id,
                             user_id="system_scheduler",
@@ -5762,7 +6028,10 @@ async def scheduler_reminders_loop():
                         details=str(app.id)
                     ).first()
                     
-                    if not already_sent:
+                    from src.wa_throttle import proactive_budget_ok
+                    if not already_sent and not proactive_budget_ok(app.client_id, settings):
+                        logging.info(f"[Scheduler] Tope de proactivos/hora alcanzado (cliente {app.client_id}): recordatorio 2h del turno {app.id} queda para el proximo ciclo")
+                    elif not already_sent:
                         template = settings.reminder_2h_template or "Hola {nombre}, te recordamos tu turno de hoy a las {hora} hs para {motivo}."
                         message = template.format(
                             nombre=app.client_name or "Cliente",
@@ -5780,10 +6049,10 @@ async def scheduler_reminders_loop():
                             wa_id = app.thread_id
                             if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                                 wa_id = f"{wa_id}@c.us"
-                            res = await send_whatsapp_message_saas(app.client_id, wa_id, message)
+                            res = await send_whatsapp_message_saas(app.client_id, wa_id, message, proactive=True)
                             if res:
                                 success = True
-                                
+
                         log_entry = AuditLog(
                             client_id=app.client_id,
                             user_id="system_scheduler",
@@ -5883,7 +6152,7 @@ async def expire_pending_payments_loop():
                     wa_id = appt.thread_id
                     if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                         wa_id = f"{wa_id}@c.us"
-                    await send_whatsapp_message_saas(appt.client_id, wa_id, message)
+                    await send_whatsapp_message_saas(appt.client_id, wa_id, message, proactive=True)
                     logging.info(f"[DepositExpiration] Turno {appt.id} (cliente {appt.client_id}) expirado por falta de pago")
                 except Exception as e:
                     logging.error(f"[DepositExpiration] Error expirando turno {appt.id}: {e}")

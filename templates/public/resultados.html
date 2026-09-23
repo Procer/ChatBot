@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Mis Resultados | {{ business_name }}</title>
+<style>
+  :root {
+    --bg: #f3f6fa; --card: #ffffff; --ink: #14213a; --muted: #52607a; --line: #d6deea;
+    --accent: #1a5fa8; --accent-ink: #ffffff; --bot: #e8f0fa; --me: #1a5fa8; --me-ink: #ffffff;
+    --ok: #17804a; --warn: #9a5b00; --warn-bg: #fff4e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1322; --card: #121c30; --ink: #eef3fb; --muted: #a9b6cc; --line: #26344f;
+      --accent: #5aa0e8; --accent-ink: #081120; --bot: #172642; --me: #5aa0e8; --me-ink: #081120;
+      --ok: #4cc585; --warn: #f0b458; --warn-bg: #2a2010;
+    }
+  }
+  * { box-sizing: border-box; }
+  button, input { font-family: inherit; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 20px; line-height: 1.45; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 0 20px; }
+  header .dot { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-weight: 800; font-size: 22px; flex-shrink: 0; }
+  header h1 { font-size: 22px; margin: 0; }
+  header p { margin: 0; color: var(--muted); font-size: 16px; }
+  .embed header { display: none; }
+  .msg { max-width: 92%; padding: 14px 18px; border-radius: 20px; margin: 10px 0; animation: in .25s ease-out; }
+  .bot { background: var(--bot); border-bottom-left-radius: 6px; }
+  .me { background: var(--me); color: var(--me-ink); margin-left: auto; border-bottom-right-radius: 6px; font-weight: 700; letter-spacing: .04em; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .msg { animation: none; } }
+  form { margin-top: 18px; }
+  label { display: block; font-weight: 700; margin-bottom: 8px; }
+  input { width: 100%; font-size: 30px; padding: 14px 16px; border: 3px solid var(--line); border-radius: 16px;
+    background: var(--card); color: var(--ink); letter-spacing: .08em; font-weight: 700; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px;
+    font-size: 22px; font-weight: 800; border: 0; border-radius: 16px; cursor: pointer; text-decoration: none;
+    background: var(--accent); color: var(--accent-ink); margin-top: 14px; padding: 12px 16px; }
+  .btn.secondary { background: var(--card); color: var(--accent); border: 3px solid var(--accent); }
+  .btn:disabled { opacity: .6; cursor: wait; }
+  .btn svg { width: 26px; height: 26px; flex-shrink: 0; }
+  .card { background: var(--card); border: 2px solid var(--line); border-radius: 20px; padding: 18px; margin: 14px 0; }
+  .card h2 { font-size: 22px; margin: 0 0 4px; }
+  .card h2::first-letter { text-transform: uppercase; }
+  .card p { margin: 0; color: var(--muted); font-size: 17px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row .btn { margin-top: 12px; font-size: 20px; padding: 12px 8px; gap: 8px; }
+  .note { background: var(--warn-bg); color: var(--warn); border-radius: 14px; padding: 12px 14px; font-size: 17px; margin-top: 10px; }
+  .hint { color: var(--muted); font-size: 16px; margin-top: 8px; }
+  .hidden { display: none !important; }
+  .spinner { width: 22px; height: 22px; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 380px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body class="{{ 'embed' if embed }}">
+<div class="wrap">
+  <header>
+    <div class="dot" aria-hidden="true">{{ business_name[:1] }}</div>
+    <div>
+      <h1>{{ business_name }}</h1>
+      <p>Mis resultados</p>
+    </div>
+  </header>
+
+  <main id="chat" aria-live="polite">
+    <div class="msg bot">¡Hola! 👋 Acá podés <strong>ver y descargar tus análisis</strong>.</div>
+    {% if welcome %}<div class="msg bot">{{ welcome }}</div>{% endif %}
+    <div class="msg bot">Para empezar, escribí tu <strong>número de documento (DNI)</strong>.</div>
+  </main>
+
+  <form id="dniForm" autocomplete="off">
+    <label for="dni">Tu DNI</label>
+    <input id="dni" name="dni" inputmode="numeric" pattern="[0-9.\s]*" placeholder="Ej: 12345678" maxlength="14" required>
+    <p class="hint">Solo los números. Si ponés puntos, no pasa nada.</p>
+    <button class="btn" id="searchBtn" type="submit">Buscar mis análisis</button>
+  </form>
+
+  <div id="actions" class="hidden">
+    <button class="btn secondary" type="button" id="againBtn">Buscar con otro DNI</button>
+    {% if phone %}
+    <a class="btn secondary" href="tel:{{ phone|replace(' ', '')|replace('-', '') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+      ¿No lo encontrás? Llamanos
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<template id="resultTpl">
+  <div class="card">
+    <h2></h2>
+    <p class="proto"></p>
+    <div class="row">
+      <a class="btn view" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        Ver
+      </a>
+      <a class="btn secondary download">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Descargar
+      </a>
+    </div>
+    <button class="btn secondary share hidden" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+      Enviar a mi médico
+    </button>
+  </div>
+</template>
+
+<script>
+(function () {
+  const SLUG = {{ slug|tojson }};
+  const DAYS = {{ days|tojson }};
+  const chat = document.getElementById('chat');
+  const form = document.getElementById('dniForm');
+  const input = document.getElementById('dni');
+  const btn = document.getElementById('searchBtn');
+  const actions = document.getElementById('actions');
+  const tpl = document.getElementById('resultTpl');
+  const canShareFiles = !!(navigator.canShare && navigator.share);
+
+  function say(html, who) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + (who || 'bot');
+    d.innerHTML = html;
+    chat.appendChild(d);
+    return d;
+  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function prettyDni(d) { return d.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function scrollDown() { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
+
+  function fileUrl(token, dl) { return '/resultados/' + encodeURIComponent(SLUG) + '/ver/' + encodeURIComponent(token) + (dl ? '?dl=1' : ''); }
+
+  function renderResult(r) {
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    node.querySelector('h2').textContent = 'Análisis del ' + r.fecha;
+    node.querySelector('.proto').textContent = 'Protocolo ' + r.protocolo;
+    node.querySelector('.view').href = fileUrl(r.token, false);
+    node.querySelector('.download').href = fileUrl(r.token, true);
+    if (canShareFiles) {
+      const share = node.querySelector('.share');
+      share.classList.remove('hidden');
+      share.addEventListener('click', async () => {
+        try {
+          const blob = await (await fetch(fileUrl(r.token, true))).blob();
+          const file = new File([blob], 'Analisis ' + r.protocolo + '.pdf', { type: 'application/pdf' });
+          if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Mis análisis' });
+          else window.location.href = fileUrl(r.token, true);
+        } catch (e) { /* el usuario canceló */ }
+      });
+    }
+    chat.appendChild(node);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const dni = input.value.replace(/\D/g, '').replace(/^0+/, '');
+    if (dni.length < 6 || dni.length > 9) {
+      say('Ese número no parece un DNI. Revisalo y probá de nuevo, por favor.');
+      scrollDown();
+      input.focus();
+      return;
+    }
+    say(esc(prettyDni(dni)), 'me');
+    form.classList.add('hidden');
+    const wait = say('<span style="display:inline-flex;gap:10px;align-items:center"><span class="spinner"></span> Buscando tus análisis…</span>');
+    scrollDown();
+
+    let res, data = {};
+    try {
+      res = await fetch('/api/public/resultados/' + encodeURIComponent(SLUG) + '/buscar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dni })
+      });
+      data = await res.json().catch(() => ({}));
+    } catch (err) { res = null; }
+    wait.remove();
+
+    if (!res || !res.ok) {
+      if (res && res.status === 429) say('Hiciste muchas búsquedas seguidas. Esperá unos minutos y probá de nuevo.');
+      else if (res && res.status === 400) say('Ese número no parece un DNI. Revisalo y probá de nuevo, por favor.');
+      else say('Uy, no pudimos buscar en este momento. Probá de nuevo en un ratito.');
+    } else if (!data.results || !data.results.length) {
+      say('No encontramos análisis de los últimos ' + DAYS + ' días para el DNI <strong>' + esc(prettyDni(dni)) + '</strong>.');
+      say('Puede que todavía no estén listos, o que el número esté mal escrito.');
+    } else {
+      const n = data.results.length;
+      say(n === 1 ? '¡Listo! Encontramos <strong>1 análisis</strong>:' : '¡Listo! Encontramos <strong>' + n + ' análisis</strong>. El de arriba es el más nuevo:');
+      data.results.forEach(renderResult);
+      say('Tocá <strong>Ver</strong> para abrirlo o <strong>Descargar</strong> para guardarlo en el teléfono.');
+    }
+    actions.classList.remove('hidden');
+    scrollDown();
+  });
+
+  document.getElementById('againBtn').addEventListener('click', () => {
+    actions.classList.add('hidden');
+    form.classList.remove('hidden');
+    input.value = '';
+    say('Escribí el otro DNI.');
+    input.focus();
+    scrollDown();
+  });
+})();
+</script>
+</body>
+</html>
