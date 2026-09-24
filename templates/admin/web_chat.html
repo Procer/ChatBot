@@ -76,7 +76,15 @@
                     <input type="text" id="wcColor" maxlength="7" placeholder="#0F766E" class="w-32 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
                     <button onclick="clearColor()" class="text-xs text-slate-500 hover:text-white underline">Usar el color por defecto</button>
                 </div>
-                <p class="text-xs text-slate-500 mt-1">El logo del chat es el del negocio (se carga en Configuración → Empresa).</p>
+                <label class="text-xs text-slate-500 block mb-1 mt-4">Logo del chat (avatar y ícono de la app instalada)</label>
+                <div class="flex items-center gap-3">
+                    <div class="w-14 h-14 rounded-full bg-white border border-slate-700 overflow-hidden flex items-center justify-center shrink-0"><img id="wcLogoImg" alt="" class="w-full h-full object-contain hidden"><span id="wcLogoNone" class="text-xs text-slate-500">Sin logo</span></div>
+                    <div class="flex flex-col gap-1">
+                        <input type="file" id="wcLogoFile" accept="image/png,image/jpeg,image/webp" class="text-xs text-slate-400">
+                        <button onclick="removeLogo()" id="wcLogoDel" class="text-xs text-slate-500 hover:text-white underline text-left hidden">Quitar logo propio</button>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">Ideal: imagen cuadrada, con solo el símbolo (sin texto chico). Si no cargás uno, se usa el logo del negocio.</p>
             </div>
             <div>
                 <label class="text-xs text-slate-500 block mb-1">Botones iniciales (uno por línea, máximo 8)</label>
@@ -139,6 +147,7 @@ async function load(){
     $('wcWelcome').value = CFG.welcome; $('wcWelcome').placeholder = CFG.defaults.welcome;
     $('wcColor').value = CFG.color; $('wcColorPick').value = CFG.color || CFG.defaults.color;
     $('wcButtons').value = CFG.buttons.join('\n');
+    showLogo(CFG.logo || CFG.logo_default, !!CFG.logo);
     $('wcDaily').value = CFG.daily_cap; $('wcGlobal').value = CFG.global_cap;
     $('wcUrl').value = CFG.public_url; $('wcOpen').href = CFG.public_url;
     const s = CFG.stats;
@@ -148,6 +157,22 @@ async function load(){
 }
 $('wcColorPick').addEventListener('input', e => { $('wcColor').value = e.target.value.toUpperCase(); });
 $('wcColor').addEventListener('input', e => { if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) $('wcColorPick').value = e.target.value; });
+function showLogo(url, own){
+    const img = $('wcLogoImg'); img.classList.toggle('hidden', !url); $('wcLogoNone').classList.toggle('hidden', !!url);
+    if (url) img.src = url + '?t=' + Date.now();
+    $('wcLogoDel').classList.toggle('hidden', !own);
+}
+$('wcLogoFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch('/api/admin/web_chat/logo', {method: 'POST', body: fd});
+    const j = await r.json().catch(() => ({}));
+    const m = $('wcMsg');
+    if (r.ok){ m.className = 'text-sm text-emerald-400'; m.textContent = 'Logo actualizado'; await load(); }
+    else { m.className = 'text-sm text-red-400'; m.textContent = j.error || 'No se pudo subir el logo'; }
+    e.target.value = '';
+});
+async function removeLogo(){ await fetch('/api/admin/web_chat/logo', {method: 'DELETE'}); await load(); }
 function clearColor(){ $('wcColor').value = ''; $('wcColorPick').value = CFG.defaults.color; }
 function copyUrl(){ navigator.clipboard.writeText($('wcUrl').value).then(() => { $('wcMsg').className = 'text-sm text-emerald-400'; $('wcMsg').textContent = 'Link copiado'; }); }
 async function saveCfg(){

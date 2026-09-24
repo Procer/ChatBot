@@ -98,7 +98,7 @@ def parse_buttons(raw) -> list:
 
 
 def get_config(client, settings) -> dict:
-    logo = getattr(settings, "logo_path", None) or ""
+    logo = getattr(settings, "web_chat_logo", None) or getattr(settings, "logo_path", None) or ""
     return {
         "title": (settings.web_chat_title or "").strip() or client.business_name,
         "subtitle": (settings.web_chat_subtitle or "").strip() or "Asistente virtual",

@@ -182,6 +182,7 @@ class ClientSettings(Base):
     web_chat_subtitle = Column(String(100), nullable=True)
     web_chat_welcome = Column(Text, nullable=True)  # primer mensaje que ve quien abre el chat
     web_chat_color = Column(String(9), nullable=True)  # #RRGGBB de marca; vacio = verde azulado por defecto
+    web_chat_logo = Column(String(255), nullable=True)  # logo propio del chat (/uploads/...); vacio = logo del negocio
     web_chat_buttons = Column(Text, nullable=True)  # JSON: lista de textos de los botones iniciales
     web_chat_daily_cap = Column(Integer, default=30, server_default="30")  # mensajes al bot por celular por dia; 0 = sin tope
     web_chat_global_daily_cap = Column(Integer, default=1000, server_default="1000")  # tope diario de todo el chat (interruptor de emergencia de costo); 0 = sin tope

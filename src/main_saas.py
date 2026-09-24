@@ -3383,6 +3383,8 @@ async def api_web_chat_get(request: Request, db: Session = Depends(get_db), curr
         "subtitle": settings.web_chat_subtitle or "",
         "welcome": settings.web_chat_welcome or "",
         "color": settings.web_chat_color or "",
+        "logo": settings.web_chat_logo or "",
+        "logo_default": getattr(settings, "logo_path", None) or "",
         "buttons": web_chat.parse_buttons(settings.web_chat_buttons),
         "daily_cap": settings.web_chat_daily_cap if settings.web_chat_daily_cap is not None else web_chat.DEFAULT_DAILY_CAP,
         "global_cap": settings.web_chat_global_daily_cap if settings.web_chat_global_daily_cap is not None else web_chat.DEFAULT_GLOBAL_CAP,
@@ -3421,6 +3423,43 @@ async def api_web_chat_save(payload: WebChatPayload, request: Request, db: Sessi
     settings.web_chat_buttons = json.dumps(buttons, ensure_ascii=False) if buttons else None
     settings.web_chat_daily_cap = max(0, min(1000, payload.daily_cap))
     settings.web_chat_global_daily_cap = max(0, min(100000, payload.global_cap))
+    db.commit()
+    return {"ok": True}
+
+@app.post("/api/admin/web_chat/logo")
+async def api_web_chat_logo_upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Logo propio del chat (avatar y icono de la app instalada). Se re-guarda como PNG de hasta 512 px."""
+    from PIL import Image
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not getattr(settings, 'feat_web_chat', False):
+        return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "La imagen pesa más de 5 MB"})
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+        img = img.convert("RGBA")
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "No se pudo leer la imagen (usá PNG, JPG o WEBP)"})
+    img.thumbnail((512, 512))
+    folder = os.path.join("uploads", f"client_{target_client_id}")
+    os.makedirs(folder, exist_ok=True)
+    name = f"web_chat_logo_{int(datetime.utcnow().timestamp())}.png"
+    img.save(os.path.join(folder, name), "PNG")
+    settings.web_chat_logo = f"/uploads/client_{target_client_id}/{name}"
+    db.commit()
+    return {"ok": True, "logo": settings.web_chat_logo}
+
+@app.delete("/api/admin/web_chat/logo")
+async def api_web_chat_logo_delete(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings: return JSONResponse(status_code=404, content={"error": "Cliente sin configuración"})
+    settings.web_chat_logo = None
     db.commit()
     return {"ok": True}
 
