@@ -67,11 +67,11 @@
                 <ul class="list-disc pl-5 space-y-1.5">
                     <li><b class="text-slate-200">Un celular = una conversación.</b> Se reconoce por un código secreto guardado en su navegador (en el servidor solo queda una huella). Si el paciente borra los datos del navegador o cambia de celular, es una conversación nueva y tiene que volver a vincular.</li>
                     <li><b class="text-slate-200">Vincular pide DNI + número de protocolo</b> (el del papel, ej. A300044) y que acepte el consentimiento. Se pide una sola vez por celular. Un mismo celular puede tener varios pacientes (un familiar, un hijo).</li>
-                    <li><b class="text-slate-200">Verificación:</b> el vínculo queda <b>Verificado</b> solo cuando en la carpeta PROTOCOLOS existe un archivo con <b>exactamente</b> ese protocolo y ese DNI (formato <code>PROTOCOLO DNI.pdf</code>, ej. <code>A300044 004593922.pdf</code>). Mientras el archivo no esté queda <b>Pendiente</b> hasta 10 días; pasado ese plazo, la próxima vez que el paciente abra el chat se marca como <b>Venció</b> y el chat se lo avisa.</li>
+                    <li><b class="text-slate-200">Verificación:</b> el vínculo queda <b>Verificado</b> solo cuando en la carpeta PROTOCOLOS existe un archivo con <b>exactamente</b> ese protocolo y ese DNI (formato <code>PROTOCOLO-DNI.pdf</code>, ej. <code>A395582-044930933.pdf</code>). Mientras el archivo no esté queda <b>Pendiente</b> hasta 10 días; pasado ese plazo, la próxima vez que el paciente abra el chat se marca como <b>Venció</b> y el chat se lo avisa.</li>
                     <li><b>Por privacidad, el chat nunca le dice al paciente si un DNI tiene análisis ni si el protocolo “no coincide”:</b> la respuesta es siempre la misma. Así nadie puede averiguar si otra persona se hizo estudios. Hay un tope de 5 intentos por celular por hora.</li>
                     <li><b class="text-slate-200">Los PDFs no se copian.</b> Se traen de Drive en el momento, y solo los ve el celular vinculado (ver, bajar o compartir dentro del chat). Al verificar aparecen también los análisis de los últimos días de ese DNI (los mismos días que el portal “Mis Resultados”, por defecto 30).</li>
                     <li><b class="text-slate-200">Análisis nuevos:</b> un vigía revisa la carpeta cada 3 minutos. Cuando aparece un archivo de un DNI vinculado, lo entrega como tarjeta dentro del chat y avisa al celular. No hace falta que el paciente tenga el chat abierto.</li>
-                    <li><b class="text-slate-200">Avisos (notificaciones):</b> el texto es siempre genérico (“Tenés novedades”) porque se ve con la pantalla bloqueada: nunca lleva datos de salud. Hay dos permisos separados: <b>“Mis análisis y respuestas”</b> (análisis, respuesta de una persona, recordatorio de turno) y <b>“Novedades”</b> (solo los avisos masivos). No se avisa a quien ya tiene el chat abierto.</li>
+                    <li><b class="text-slate-200">Avisos (notificaciones):</b> el texto es siempre genérico (“Tenés novedades”) porque se ve con la pantalla bloqueada: nunca lleva datos de salud. Hay dos permisos separados: <b>“Mis análisis y respuestas”</b> (análisis, respuesta de una persona, recordatorio de turno) y <b>“Novedades”</b> (solo los avisos masivos). No se avisa a quien ya tiene el chat abierto. El paciente los activa o desactiva con la <b>campana</b> de arriba del chat. <b>Ícono:</b> a la derecha de la notificación va el logo del chat; el ícono chico de la izquierda, en Android, es siempre una silueta de un solo color (lo define el sistema). Si el paciente <b>instala el chat</b> en su celular, la notificación sale con el nombre y el logo del laboratorio en lugar de “Chrome”.</li>
                     <li><b class="text-slate-200">En iPhone</b> las notificaciones solo funcionan si el paciente agrega el chat a la pantalla de inicio (iOS 16.4 o superior); el chat le muestra la guía de 3 pasos. En <b>Android</b> alcanza con aceptar el permiso. <b>Si el paciente no acepta los avisos, sus análisis igual están siempre en el chat</b> cuando entra.</li>
                     <li><b class="text-slate-200">Atención personal:</b> si alguien del laboratorio responde desde Historial de Chats (las conversaciones web aparecen como “web”, con el DNI y protocolo vinculados), el paciente lo ve en el chat y le llega un aviso. Al responder, el bot se pausa en esa conversación por 2 horas.</li>
                     <li><b class="text-slate-200">Costo de IA:</b> como el link es público, hay topes contra el abuso: mensajes por celular por día, mensajes de todo el chat por día (freno de emergencia) y por IP. Cuando un paciente llega al tope, el chat le avisa que vuelva más tarde.</li>
@@ -89,7 +89,7 @@
                             <li>10:01 — pregunta “¿necesito ayuno?” → el bot responde con los Conocimientos cargados.</li>
                             <li>10:03 — toca <b class="text-slate-200">Ver mis análisis</b>, escribe DNI 12.345.678 y protocolo A300044, acepta y vincula.</li>
                             <li>10:04 — el chat le dice que el análisis aparecerá solo; toca <b class="text-slate-200">Sí, avisame</b> y acepta el permiso.</li>
-                            <li>12:40 — el laboratorio sube <code>A300044 012345678.pdf</code> a PROTOCOLOS.</li>
+                            <li>12:40 — el laboratorio sube <code>A300044-012345678.pdf</code> a PROTOCOLOS.</li>
                             <li>12:43 — le llega “Tenés novedades”; al tocarla, el chat abre justo la tarjeta del análisis → <b class="text-slate-200">Ver</b>.</li>
                         </ul>
                     </div>
@@ -115,7 +115,7 @@
             <div>
                 <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">Si algo no anda</h4>
                 <ul class="list-disc pl-5 space-y-1.5">
-                    <li><b class="text-slate-200">“No me aparece mi análisis”:</b> buscalo en <b>Pacientes vinculados</b>. Si está <b>Pendiente</b>, todavía no hay un archivo en PROTOCOLOS con ese protocolo y DNI (o hay un error de tipeo): revisá el nombre del archivo en Drive, tiene que ser <code>PROTOCOLO DNI.pdf</code>.</li>
+                    <li><b class="text-slate-200">“No me aparece mi análisis”:</b> buscalo en <b>Pacientes vinculados</b>. Si está <b>Pendiente</b>, todavía no hay un archivo en PROTOCOLOS con ese protocolo y DNI (o hay un error de tipeo): revisá el nombre del archivo en Drive, tiene que ser <code>PROTOCOLO-DNI.pdf</code>.</li>
                     <li><b class="text-slate-200">“No me llegan los avisos”:</b> mirá la columna <b>Avisos</b>: “No” significa que no los aceptó, los bloqueó en el navegador, o (en iPhone) no instaló el chat en la pantalla de inicio.</li>
                     <li><b class="text-slate-200">El bot responde genérico:</b> falta cargar Conocimientos (Configuración → Base de Conocimiento).</li>
                     <li><b class="text-slate-200">Quiero pausar todo:</b> destildá “Chat encendido”. Para dejar de entregar solo análisis, destildá “Entregar resultados en el chat”.</li>
@@ -279,7 +279,7 @@
     <!-- Resultados de analisis dentro del chat -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4 text-brand-500"></i> Resultados de análisis dentro del chat</h2>
-        <p class="text-xs text-slate-500 mb-3">El paciente vincula su celular con <b>DNI + número de protocolo</b> (el del papel) y sus PDFs aparecen dentro del chat: los ve, baja o comparte ahí mismo. Usa la carpeta de PROTOCOLOS del portal “Mis Resultados” (archivos <code>PROTOCOLO DNI.pdf</code>).</p>
+        <p class="text-xs text-slate-500 mb-3">El paciente vincula su celular con <b>DNI + número de protocolo</b> (el del papel) y sus PDFs aparecen dentro del chat: los ve, baja o comparte ahí mismo. Usa la carpeta de PROTOCOLOS del portal “Mis Resultados” (archivos <code>PROTOCOLO-DNI.pdf</code>).</p>
         <label class="flex items-center gap-3 cursor-pointer mb-2">
             <input type="checkbox" id="wcResults" class="w-5 h-5 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
             <span class="text-sm font-bold text-white">Entregar resultados en el chat</span>
@@ -401,9 +401,9 @@
     <ul>
         <li><b>“No me aparece el análisis”:</b> los resultados aparecen apenas el laboratorio sube el archivo. Pedile que revise que el DNI y el protocolo estén bien escritos. Queda esperando hasta 10 días y aparece solo.</li>
         <li><b>“Me equivoqué de DNI o protocolo”:</b> Menú (los tres puntos) → “No soy yo / desvincular” y volver a cargar los datos.</li>
-        <li><b>“No me llegan los avisos”:</b> revisar que aceptó las notificaciones (Menú → Avisos en este celular). Si tocó “No permitir”, hay que habilitarlas desde los Ajustes del navegador. En iPhone, tiene que tener el chat instalado.</li>
+        <li><b>“No me llegan los avisos”:</b> revisar que aceptó las notificaciones (campana 🔔 de arriba del chat, o Menú → Avisos en este celular). Si tocó “No permitir”, hay que habilitarlas desde los Ajustes del navegador. En iPhone, tiene que tener el chat instalado.</li>
         <li><b>“Es el celular de otra persona / de la familia”:</b> puede vincular a varios pacientes: Menú → “Agregar otro paciente”. Si presta el celular, que use “No soy yo / desvincular”.</li>
-        <li><b>“Quiero dejar de recibir avisos”:</b> Menú → Avisos en este celular → Desactivar.</li>
+        <li><b>“Quiero dejar de recibir avisos”:</b> tocar la campana 🔔 de arriba del chat (activa o desactiva los avisos), o Menú → Avisos en este celular. Los avisos masivos traen además un botón “Dejar de recibir novedades”.</li>
         <li><b>“No tengo cámara / no entiendo”:</b> mandale el link por WhatsApp o ayudalo a cargar sus datos.</li>
     </ul>
     <h2>4. Importante</h2>

@@ -169,7 +169,7 @@ class ClientSettings(Base):
 
     # --- PORTAL "MIS RESULTADOS" (ver src/results_portal.py) ---
     results_portal_enabled = Column(Boolean, default=False, server_default="0")
-    results_portal_folder_id = Column(String(255), nullable=True)  # carpeta de Drive con los PDFs "<PROTOCOLO> <DNI>.pdf"
+    results_portal_folder_id = Column(String(255), nullable=True)  # carpeta de Drive con los PDFs "<PROTOCOLO>-<DNI>.pdf"
     results_portal_folder_name = Column(String(255), nullable=True)
     results_portal_days = Column(Integer, default=30, server_default="30")  # solo se muestran archivos subidos en los últimos N días
     results_portal_phone = Column(String(50), nullable=True)  # "¿No lo encontrás? Llamanos"; vacío = company_phone

@@ -2,7 +2,7 @@
 
 El paciente vincula su celular con DNI + número de protocolo (el del papel). La verificación es
 contra la carpeta de Drive del cliente (la misma del portal "Mis Resultados", archivos
-"<PROTOCOLO> <DNI>.pdf"): el vínculo queda `verificado` solo cuando existe un archivo cuyo nombre
+"<PROTOCOLO>-<DNI>.pdf"): el vínculo queda `verificado` solo cuando existe un archivo cuyo nombre
 tiene EXACTAMENTE ese protocolo y ese DNI. Mientras no exista queda `pendiente` (10 días) y se
 reintenta solo mientras el chat está abierto. Una vez verificado, los análisis nuevos de ese DNI
 llegan solos, como una tarjeta dentro del chat.

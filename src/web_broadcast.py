@@ -11,6 +11,7 @@ Protecciones:
   últimos N días.
 - El envío es a lo sumo una vez: pasa de "programado" a "enviando" de forma atómica.
 """
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -21,7 +22,6 @@ from src.database.session import SessionLocal
 DEFAULT_CAP = 3
 DEFAULT_FROM, DEFAULT_TO = 9, 20
 MAX_TITLE, MAX_BODY, MAX_CHAT = 65, 140, 1000
-UNSUB_HINT = "\n\n_Para dejar de recibir estas novedades: Menú → Avisos en este celular._"
 _AR = timedelta(hours=3)          # Argentina = UTC-3 todo el año
 
 
@@ -104,13 +104,14 @@ def send_broadcast(broadcast_id: int) -> str:
         devices = audience_devices(db, b.client_id, b.audience, b.audience_days)
         b.recipients = len(devices)
         db.commit()
-        text = ((b.chat_message or "").strip() + UNSUB_HINT) if (b.chat_message or "").strip() else ""
+        text = (b.chat_message or "").strip()
+        attach = json.dumps({"type": "news", "b": b.id})      # el chat le agrega el boton "Dejar de recibir novedades"
         sent = failed = 0
         for dev_id in devices:
             ev_id = 0
             try:
                 if text:
-                    ev = WebEvent(client_id=b.client_id, device_id=dev_id, kind="bot", text=text)
+                    ev = WebEvent(client_id=b.client_id, device_id=dev_id, kind="bot", text=text, attach_json=attach)
                     db.add(ev)
                     db.commit()
                     ev_id = ev.id

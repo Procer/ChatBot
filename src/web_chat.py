@@ -322,6 +322,50 @@ def _icon_png(letter: str, color: str, size: int, logo_path: str = None) -> byte
     return _icon_cache[key]
 
 
+def _badge_png(letter: str, logo_path: str = None, size: int = 96) -> bytes:
+    """Icono chico de la notificación (Android): SOLO una silueta blanca con transparencia (el sistema
+    la tiñe). Si es una imagen a color, Android la ignora y muestra el logo de Chrome."""
+    mtime = os.path.getmtime(logo_path) if logo_path else 0
+    key = ("badge", letter, size, logo_path, mtime)
+    if key in _icon_cache:
+        return _icon_cache[key]
+    from PIL import Image, ImageDraw, ImageFont
+    mask = None
+    if logo_path:
+        try:
+            logo = Image.open(logo_path).convert("RGBA")
+            alpha = logo.split()[3]
+            if alpha.getextrema()[0] < 250:          # el logo ya trae transparencia: esa es la silueta
+                m = alpha
+            else:                                     # logo opaco sobre blanco: silueta = todo lo que no es blanco
+                m = logo.convert("L").point(lambda v: min(255, int((255 - v) * 2.2)))
+            m.thumbnail((int(size * 0.86), int(size * 0.86)), Image.LANCZOS)
+            mask = Image.new("L", (size, size), 0)
+            mask.paste(m, ((size - m.width) // 2, (size - m.height) // 2))
+        except Exception as e:
+            logging.warning(f"[WebChat] Logo no usable para el badge ({logo_path}): {e}")
+            mask = None
+    if mask is None:
+        mask = Image.new("L", (size, size), 0)
+        font = None
+        for path in ("C:/Windows/Fonts/segoeuib.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"):
+            try:
+                font = ImageFont.truetype(path, int(size * 0.7))
+                break
+            except Exception:
+                continue
+        if font is None:
+            font = ImageFont.load_default(int(size * 0.7))
+        ImageDraw.Draw(mask).text((size / 2, size / 2), letter, font=font, fill=255, anchor="mm")
+    out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    out.putalpha(mask)
+    buf = io.BytesIO()
+    out.save(buf, "PNG")
+    _icon_cache[key] = buf.getvalue()
+    return _icon_cache[key]
+
+
 SW_JS = """// Service worker del chat web: avisos push (siempre con texto generico, sin datos de salud).
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
@@ -329,7 +373,7 @@ self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) {}
   e.waitUntil(self.registration.showNotification(d.title || 'Novedades', {
-    body: d.body || 'Tenés novedades', icon: 'icon-192.png', badge: 'icon-192.png',
+    body: d.body || 'Tenés novedades', icon: 'icon-192.png', badge: 'badge.png',
     tag: d.b ? 'aviso-' + d.b : 'chat', renotify: true, data: { m: d.m || 0, b: d.b || 0 }
   }));
 });
@@ -424,6 +468,16 @@ def build_router(process_bot_response, public_ip, templates) -> APIRouter:
         cfg = get_config(client, settings)
         letter = (cfg["title"].strip()[:1] or "A").upper()
         png = await asyncio.to_thread(_icon_png, letter, cfg["color"], size, _local_logo(cfg["logo"]))
+        return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+    @router.get("/chat/{slug}/badge.png")
+    async def chat_badge(slug: str, db: Session = Depends(get_db)):
+        client, settings = get_available(db, slug)
+        if not client:
+            return Response(status_code=404)
+        cfg = get_config(client, settings)
+        letter = (cfg["title"].strip()[:1] or "A").upper()
+        png = await asyncio.to_thread(_badge_png, letter, _local_logo(cfg["logo"]))
         return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
     @router.post("/api/chat/{slug}/session")

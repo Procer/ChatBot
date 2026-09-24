@@ -1,8 +1,8 @@
 """Portal público "Mis Resultados": el paciente escribe su DNI y baja sus análisis sin pasar por WhatsApp.
 
 Búsqueda en vivo contra la carpeta de Drive del cliente (no usa la Biblioteca de Documentos ni
-Chroma). Los archivos se llaman "<PROTOCOLO> <DNI con ceros adelante>.pdf", ej:
-"A300044 004593922.pdf" -> protocolo A300044, DNI 4593922.
+Chroma). Los archivos se llaman "<PROTOCOLO>-<DNI con ceros adelante>.pdf", ej:
+"A395582-044930933.pdf" -> protocolo A395582, DNI 44930933 (también se acepta espacio o guion bajo).
 
 Protecciones: tope de búsquedas por IP, links de descarga firmados (HMAC, stateless, con
 vencimiento) que solo abren archivos de la carpeta configurada, y log de cada búsqueda.
@@ -49,19 +49,20 @@ def normalize_dni(raw: str):
 
 
 def parse_result_filename(name: str):
-    """Devuelve (protocolo, dni) o None. El DNI es el token de solo dígitos; el protocolo, el otro."""
+    """Devuelve (protocolo, dni) o None. Nombres reales del laboratorio: "A395582-044930933.pdf"
+    (protocolo, guion, DNI con ceros adelante). También se aceptan espacio o guion bajo como
+    separador. El DNI es el token de solo dígitos (si hay varios, el último); el protocolo, el resto."""
     stem = os.path.splitext(name or "")[0]
-    tokens = [t for t in re.split(r"[\s_]+", stem.strip()) if t]
-    dni = None
-    others = []
-    for t in tokens:
-        if dni is None and re.fullmatch(r"\d{6,12}", t):
-            dni = t.lstrip("0")
-        else:
-            others.append(t)
+    tokens = [t for t in re.split(r"[\s_\-]+", stem.strip()) if t]
+    digit_idx = [i for i, t in enumerate(tokens) if re.fullmatch(r"\d{6,12}", t)]
+    if not digit_idx:
+        return None
+    dni = tokens[digit_idx[-1]].lstrip("0")
     if not dni:
         return None
-    return (" ".join(others) or "-"), dni
+    others = [t for i, t in enumerate(tokens) if i != digit_idx[-1]]
+    proto = next((t for t in others if re.fullmatch(r"[A-Za-z]{1,3}\d{3,}", t)), None) or (" ".join(others) or "-")
+    return proto, dni
 
 
 def _dni_name_variants(dni: str):
@@ -147,8 +148,9 @@ def get_portal_settings(settings: ClientSettings) -> dict:
 
 
 def resolve_folder(client_id: int, raw_input: str):
-    """Valida la carpeta pegada (link o ID). Si viene vacío, busca una subcarpeta 'PROTOCOLOS'
-    dentro de la carpeta raíz de la Biblioteca. Devuelve (folder_id, folder_name) o (None, error)."""
+    """Valida la carpeta pegada (link o ID). Si viene vacío: usa la carpeta raíz de la Biblioteca cuando ella
+    misma se llama 'PROTOCOLOS'; si no, busca una subcarpeta 'PROTOCOLOS' adentro. Devuelve (folder_id,
+    folder_name) o (None, error)."""
     service = get_drive_service(client_id)
     if not service:
         return None, "El cliente no tiene cuenta de servicio de Google Drive configurada."
@@ -167,6 +169,12 @@ def resolve_folder(client_id: int, raw_input: str):
             root = s.gdrive_root_folder_id if s else None
         finally:
             db.close()
+        if root:
+            # Caso real de Micucci: la carpeta raíz ES "PROTOCOLOS" (y tiene adentro otra subcarpeta vieja
+            # con el mismo nombre, un archivo de 2025 sin archivos nuevos). Tiene que ganar la raíz.
+            rmeta = service.files().get(fileId=root, fields="id, name, mimeType", supportsAllDrives=True).execute()
+            if rmeta.get("mimeType") == _FOLDER_MIME and (rmeta.get("name") or "").strip().upper() == DEFAULT_FOLDER_NAME:
+                return rmeta["id"], rmeta["name"]
         q = f"name = '{DEFAULT_FOLDER_NAME}' and mimeType = '{_FOLDER_MIME}' and trashed = false"
         if root:
             q += f" and '{root}' in parents"
