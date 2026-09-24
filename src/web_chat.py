@@ -23,7 +23,7 @@ from collections import deque
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -80,6 +80,16 @@ def _hit(store: dict, key: str, limit: int, window: int) -> bool:
     return True
 
 
+def rp_normalize_dni(raw: str):
+    from src.results_portal import normalize_dni
+    return normalize_dni(raw)
+
+
+def rp_fetch_file(client_id: int, folder_id: str, file_id: str):
+    from src.results_portal import fetch_result_file
+    return fetch_result_file(client_id, folder_id, file_id)
+
+
 def _norm_color(value) -> str:
     v = (value or "").strip()
     return v if re.fullmatch(r"#[0-9A-Fa-f]{6}", v) else DEFAULT_COLOR
@@ -107,6 +117,11 @@ def get_config(client, settings) -> dict:
         "buttons": parse_buttons(settings.web_chat_buttons),
         "logo": logo if logo.startswith("/uploads/") else "",
         "phone": (settings.company_phone or "").strip(),
+        "results": bool(getattr(settings, "web_chat_results_enabled", False) and settings.results_portal_folder_id
+                        and settings.gdrive_service_account_json_encrypted),
+        "consent": (getattr(settings, "web_chat_consent", None) or "").strip()
+                   or f"Acepto que {client.business_name} use mi DNI y el número de protocolo solo para entregarme mis resultados "
+                      "en este celular. Puedo desvincularme cuando quiera desde el menú.",
     }
 
 
@@ -176,9 +191,28 @@ def add_event_for_thread(client_id: int, thread_id: str, kind: str, text: str, a
         db.close()
 
 
-async def send_web_message_saas(client_id: int, thread_id: str, message: str, kind: str = "bot"):
-    """Equivalente web de send_whatsapp_message_saas: guarda el mensaje como evento del chat."""
+async def notify_thread(client_id: int, thread_id: str, event_id: int):
+    """Aviso push (genérico) a un celular por un evento del chat. No falla nunca hacia quien lo llama."""
+    try:
+        from src import web_push
+        db = SessionLocal()
+        try:
+            dev = _device_by_thread(db, client_id, thread_id)
+            dev_id = dev.id if dev else None
+        finally:
+            db.close()
+        if dev_id:
+            await asyncio.to_thread(web_push.notify_device, client_id, dev_id, "alerts", event_id)
+    except Exception as e:
+        logging.error(f"[WebChat] No se pudo avisar por push a {thread_id}: {e}")
+
+
+async def send_web_message_saas(client_id: int, thread_id: str, message: str, kind: str = "bot", notify: bool = None):
+    """Equivalente web de send_whatsapp_message_saas: guarda el mensaje como evento del chat.
+    notify: mandar aviso push al celular. Por defecto solo si escribe una persona del panel."""
     ev_id = await asyncio.to_thread(add_event_for_thread, client_id, thread_id, kind, message)
+    if ev_id and (notify if notify is not None else kind == "admin"):
+        await notify_thread(client_id, thread_id, ev_id)
     return f"web-{ev_id}" if ev_id else None
 
 
@@ -187,7 +221,7 @@ def _safe_attach_url(url: str) -> str:
     return url if (url.startswith("https://") or url.startswith("http://") or (url.startswith("/") and not url.startswith("//"))) else ""
 
 
-async def send_web_file_saas(client_id: int, thread_id: str, file_url: str, filename: str, caption: str = "", kind: str = "bot"):
+async def send_web_file_saas(client_id: int, thread_id: str, file_url: str, filename: str, caption: str = "", kind: str = "bot", notify: bool = None):
     """Equivalente web de send_whatsapp_file_saas: tarjeta de archivo en el chat (con su texto opcional)."""
     url = _safe_attach_url(file_url)
     if not url:
@@ -195,6 +229,8 @@ async def send_web_file_saas(client_id: int, thread_id: str, file_url: str, file
     ev_id = await asyncio.to_thread(
         add_event_for_thread, client_id, thread_id, kind, caption or "", {"url": url, "name": (filename or "archivo")[:120]}
     )
+    if ev_id and (notify if notify is not None else kind == "admin"):
+        await notify_thread(client_id, thread_id, ev_id)
     return f"web-{ev_id}" if ev_id else None
 
 
@@ -286,21 +322,27 @@ def _icon_png(letter: str, color: str, size: int, logo_path: str = None) -> byte
     return _icon_cache[key]
 
 
-SW_JS = """// Service worker del chat web (avisos: se completa en la fase de notificaciones).
+SW_JS = """// Service worker del chat web: avisos push (siempre con texto generico, sin datos de salud).
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) {}
   e.waitUntil(self.registration.showNotification(d.title || 'Novedades', {
-    body: d.body || 'Tenés novedades', icon: 'icon-192.png', badge: 'icon-192.png', data: { m: d.m || '' }
+    body: d.body || 'Tenés novedades', icon: 'icon-192.png', badge: 'icon-192.png',
+    tag: d.b ? 'aviso-' + d.b : 'chat', renotify: true, data: { m: d.m || 0, b: d.b || 0 }
   }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  const m = (e.notification.data || {}).m || 0, b = (e.notification.data || {}).b || 0;
+  const q = [m ? 'm=' + m : '', b ? 'b=' + b : ''].filter(Boolean).join('&');
+  const url = self.registration.scope + (q ? '?' + q : '');
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-    for (const c of list) { if ('focus' in c) return c.focus(); }
-    return self.clients.openWindow('./');
+    for (const c of list) {
+      if ('focus' in c) { c.postMessage({ type: 'open', m, b }); return c.focus(); }
+    }
+    return self.clients.openWindow(url);
   }));
 });
 """
@@ -315,8 +357,16 @@ class ChatMessage(BaseModel):
 def build_router(process_bot_response, public_ip, templates) -> APIRouter:
     """process_bot_response: el orquestador del bot (main_saas). public_ip: funcion Request -> IP real.
     templates: Jinja2Templates de la app."""
+    from src import web_results as wr
+    from src import web_push as wp
+    from src.database.models import WebDelivery, WebLink
     router = APIRouter()
     NO_STORE = {"Cache-Control": "no-store"}
+
+    def _links(db: Session, device) -> list:
+        rows = (db.query(WebLink).filter(WebLink.device_id == device.id, WebLink.status.in_(("pendiente", "verificado")))
+                .order_by(WebLink.id.asc()).all())
+        return [wr.serialize_link(l) for l in rows]
 
     def _unavailable_page(request: Request):
         return HTMLResponse(
@@ -334,9 +384,12 @@ def build_router(process_bot_response, public_ip, templates) -> APIRouter:
             context={"slug": slug, "cfg": get_config(client, settings)},
             headers={**NO_STORE, "X-Robots-Tag": "noindex, nofollow"})
 
-    @router.get("/chat/{slug}", response_class=HTMLResponse)
-    async def chat_page(slug: str, request: Request, db: Session = Depends(get_db)):
-        return _page(slug, request, db)
+    @router.get("/chat/{slug}")
+    async def chat_page(slug: str, request: Request):
+        # La pagina TIENE que abrirse con la barra final: el service worker (avisos) solo controla
+        # /chat/<slug>/..., y sin la barra "serviceWorker.ready" nunca se resuelve y no hay notificaciones.
+        q = request.url.query
+        return RedirectResponse(url=f"/chat/{slug}/" + (f"?{q}" if q else ""), status_code=302, headers=NO_STORE)
 
     @router.get("/chat/{slug}/", response_class=HTMLResponse)
     async def chat_page_slash(slug: str, request: Request, db: Session = Depends(get_db)):
@@ -374,7 +427,7 @@ def build_router(process_bot_response, public_ip, templates) -> APIRouter:
         return Response(png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
 
     @router.post("/api/chat/{slug}/session")
-    async def chat_session(slug: str, request: Request, db: Session = Depends(get_db)):
+    async def chat_session(slug: str, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
         client, settings = get_available(db, slug)
         if not client:
             return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
@@ -397,10 +450,17 @@ def build_router(process_bot_response, public_ip, templates) -> APIRouter:
             db.commit()
         rows = (db.query(WebEvent).filter_by(device_id=device.id).order_by(WebEvent.id.desc()).limit(HISTORY_LIMIT).all())
         rows.reverse()
+        results_on = wr.results_enabled(settings)
+        wp.mark_active(device.id)
+        push = {"key": wp.ensure_vapid(db, settings), **wp.push_state(db, device.id)}
+        if results_on and not new_token:
+            background_tasks.add_task(wr.sync_in_background, client.id, device.id, True)
         resp = JSONResponse({
             "token": new_token,
             "config": get_config(client, settings),
             "events": [serialize_event(e) for e in rows],
+            "links": _links(db, device) if results_on else [],
+            "push": push,
             "busy": device.thread_id in _busy,
         }, headers=NO_STORE)
         if new_token:
@@ -448,15 +508,183 @@ def build_router(process_bot_response, public_ip, templates) -> APIRouter:
         return JSONResponse({"ok": True, "event": serialize_event(ev)}, headers=NO_STORE)
 
     @router.get("/api/chat/{slug}/events")
-    async def chat_events(slug: str, request: Request, after: int = 0, db: Session = Depends(get_db)):
+    async def chat_events(slug: str, request: Request, background_tasks: BackgroundTasks, after: int = 0,
+                          db: Session = Depends(get_db)):
         client, settings = get_available(db, slug)
         if not client:
             return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
         device = authenticate(db, client.id, slug, request)
         if not device:
             return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        wp.mark_active(device.id)
         rows = (db.query(WebEvent).filter(WebEvent.device_id == device.id, WebEvent.id > max(0, after))
                 .order_by(WebEvent.id.asc()).limit(200).all())
-        return JSONResponse({"events": [serialize_event(e) for e in rows], "busy": device.thread_id in _busy}, headers=NO_STORE)
+        out = {"events": [serialize_event(e) for e in rows], "busy": device.thread_id in _busy}
+        if wr.results_enabled(settings):
+            out["links"] = _links(db, device)
+            # Mientras el chat esta abierto: verifica pendientes y trae analisis nuevos (espaciado)
+            if out["links"] and time.monotonic() - wr._last_sync.get(device.id, 0) >= wr.SYNC_MIN_INTERVAL:
+                background_tasks.add_task(wr.sync_in_background, client.id, device.id, False)
+        return JSONResponse(out, headers=NO_STORE)
+
+    class LinkPayload(BaseModel):
+        dni: str
+        protocol: str
+        name: str = ""
+        consent: bool = False
+
+    @router.post("/api/chat/{slug}/link")
+    async def chat_link(slug: str, payload: LinkPayload, request: Request, db: Session = Depends(get_db)):
+        """Vincula el celular con un paciente (DNI + protocolo). La respuesta no revela si el DNI existe en Drive."""
+        client, settings = get_available(db, slug)
+        if not client or not wr.results_enabled(settings):
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        if device.blocked:
+            return JSONResponse(status_code=403, content={"error": "blocked"}, headers=NO_STORE)
+        if not payload.consent:
+            return JSONResponse(status_code=400, content={"error": "consent", "message": "Tenés que aceptar para continuar."}, headers=NO_STORE)
+        dni = rp_normalize_dni(payload.dni)
+        protocol = wr.normalize_protocol(payload.protocol)
+        if not dni:
+            return JSONResponse(status_code=400, content={"error": "dni", "message": "Revisá el DNI: tiene 7 u 8 números."}, headers=NO_STORE)
+        if not protocol:
+            return JSONResponse(status_code=400, content={"error": "protocol", "message": "El protocolo es una letra y números, por ejemplo A300044."}, headers=NO_STORE)
+        ip = public_ip(request)
+        if not wr.attempts_allowed(db, client.id, device.id, ip):
+            return JSONResponse(status_code=429, content={"error": "blocked", "message": "Hiciste demasiados intentos. Por seguridad, esperá 1 hora e intentá de nuevo."}, headers=NO_STORE)
+        wr.record_attempt(db, client.id, device.id, ip, dni)
+
+        name = re.sub(r"[^\wÁÉÍÓÚÜÑáéíóúüñ' .-]", "", (payload.name or "")).strip()[:40]
+        last_before = (db.query(WebEvent.id).filter_by(device_id=device.id).order_by(WebEvent.id.desc()).first() or [0])[0]
+        status, drive_ok = await asyncio.to_thread(wr.link_patient, client.id, device.id, dni, protocol, name)
+        if name:
+            try:
+                from src.agents.graph_saas import save_user_profile
+                await asyncio.to_thread(save_user_profile, client.id, device.thread_id, name)
+            except Exception as e:
+                logging.warning(f"[WebChat] No se pudo guardar el nombre del paciente: {e}")
+        if status != "verificado":
+            phone = (settings.results_portal_phone or settings.company_phone or "").strip()
+            extra = "" if drive_ok else " (Ahora no pudimos consultar el sistema; lo intentamos de nuevo en unos minutos.)"
+            add_event(db, client.id, device.id, "sys", f"Paciente vinculado · DNI {wr.mask_dni(dni)}")
+            add_event(db, client.id, device.id, "bot",
+                      f"¡Listo{', ' + name if name else ''}! Guardé el protocolo **{protocol}**. Apenas el laboratorio suba tu análisis, "
+                      f"**aparece acá solo** (hasta {wr.PENDING_DAYS} días). Si pasado un rato no aparece, revisá que el DNI y el protocolo "
+                      f"estén bien escritos{' o llamá al ' + phone if phone else ''}.{extra}")
+        db.expire_all()
+        new = (db.query(WebEvent).filter(WebEvent.device_id == device.id, WebEvent.id > last_before).order_by(WebEvent.id.asc()).all())
+        return JSONResponse({"ok": True, "status": status, "events": [serialize_event(e) for e in new], "links": _links(db, device)}, headers=NO_STORE)
+
+    class PushSubPayload(BaseModel):
+        subscription: dict
+        alerts: bool = True
+        news: bool = False
+
+    @router.post("/api/chat/{slug}/push/subscribe")
+    async def chat_push_subscribe(slug: str, payload: PushSubPayload, request: Request, db: Session = Depends(get_db)):
+        client, settings = get_available(db, slug)
+        if not client:
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        ok, err = wp.save_subscription(db, client.id, device.id, payload.subscription, payload.alerts, payload.news)
+        if not ok:
+            return JSONResponse(status_code=400, content={"error": err}, headers=NO_STORE)
+        return JSONResponse({"ok": True, **wp.push_state(db, device.id)}, headers=NO_STORE)
+
+    class PushTopicsPayload(BaseModel):
+        alerts: bool = True
+        news: bool = False
+
+    @router.post("/api/chat/{slug}/push/topics")
+    async def chat_push_topics(slug: str, payload: PushTopicsPayload, request: Request, db: Session = Depends(get_db)):
+        client, settings = get_available(db, slug)
+        if not client:
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        wp.set_topics(db, device.id, payload.alerts, payload.news)
+        return JSONResponse({"ok": True, **wp.push_state(db, device.id)}, headers=NO_STORE)
+
+    @router.post("/api/chat/{slug}/push/unsubscribe")
+    async def chat_push_unsubscribe(slug: str, request: Request, db: Session = Depends(get_db)):
+        client, settings = get_available(db, slug)
+        if not client:
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        wp.remove_subscriptions(db, device.id)
+        return JSONResponse({"ok": True, **wp.push_state(db, device.id)}, headers=NO_STORE)
+
+    class ClickPayload(BaseModel):
+        b: int = 0
+
+    @router.post("/api/chat/{slug}/push/click")
+    async def chat_push_click(slug: str, payload: ClickPayload, request: Request, db: Session = Depends(get_db)):
+        """El paciente toco un aviso masivo (una sola vez por celular)."""
+        from src.database.models import WebBroadcast, WebBroadcastRecipient
+        client, settings = get_available(db, slug)
+        if not client:
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        row = (db.query(WebBroadcastRecipient).join(WebBroadcast, WebBroadcast.id == WebBroadcastRecipient.broadcast_id)
+               .filter(WebBroadcastRecipient.broadcast_id == payload.b, WebBroadcastRecipient.device_id == device.id,
+                       WebBroadcast.client_id == client.id).first())
+        if row and row.clicked_at is None:
+            row.clicked_at = datetime.utcnow()
+            db.commit()
+        return JSONResponse({"ok": True}, headers=NO_STORE)
+
+    class UnlinkPayload(BaseModel):
+        link_id: int = 0   # 0 = todos los pacientes de este celular
+
+    @router.post("/api/chat/{slug}/unlink")
+    async def chat_unlink(slug: str, payload: UnlinkPayload, request: Request, db: Session = Depends(get_db)):
+        client, settings = get_available(db, slug)
+        if not client:
+            return JSONResponse(status_code=404, content={"error": "unavailable"}, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return JSONResponse(status_code=401, content={"error": "session"}, headers=NO_STORE)
+        q = db.query(WebLink).filter(WebLink.device_id == device.id, WebLink.status.in_(("pendiente", "verificado")))
+        if payload.link_id:
+            q = q.filter(WebLink.id == payload.link_id)
+        for l in q.all():
+            wr.revoke_link(db, l)
+        return JSONResponse({"ok": True, "links": _links(db, device)}, headers=NO_STORE)
+
+    @router.get("/api/chat/{slug}/file/{event_id}")
+    async def chat_file(slug: str, event_id: int, request: Request, dl: int = 0, db: Session = Depends(get_db)):
+        """PDF de un análisis: solo para el celular al que se le entregó y mientras el vínculo siga verificado."""
+        client, settings = get_available(db, slug)
+        if not client or not wr.results_enabled(settings):
+            return Response(status_code=404, headers=NO_STORE)
+        device = authenticate(db, client.id, slug, request)
+        if not device:
+            return Response(status_code=401, headers=NO_STORE)
+        dv = db.query(WebDelivery).filter_by(event_id=event_id, device_id=device.id, client_id=client.id).first()
+        link = db.get(WebLink, dv.link_id) if dv else None
+        if not dv or not link or link.status != "verificado" or link.device_id != device.id:
+            return Response(status_code=404, headers=NO_STORE)
+        try:
+            found = await asyncio.to_thread(rp_fetch_file, client.id, settings.results_portal_folder_id, dv.file_id)
+        except Exception as e:
+            logging.error(f"[WebResults] Error trayendo el PDF (cliente {client.id}, evento {event_id}): {e}")
+            return Response(status_code=502, headers=NO_STORE)
+        if not found:
+            return Response(status_code=404, headers=NO_STORE)
+        content, _filename, mimetype = found
+        safe = "Analisis-" + re.sub(r"[^A-Za-z0-9-]", "", dv.protocol or "") + ".pdf"
+        return Response(content=content, media_type=mimetype or "application/pdf", headers={
+            "Content-Disposition": f'{"attachment" if dl else "inline"}; filename="{safe}"',
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     return router

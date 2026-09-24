@@ -184,6 +184,16 @@ def resolve_folder(client_id: int, raw_input: str):
 
 def search_results(client_id: int, folder_id: str, dni: str, days: int):
     """Lista de {protocolo, fecha, token}, más nuevo primero. Lanza excepción si Drive falla."""
+    return [{
+        "protocolo": f["protocolo"],
+        "fecha": format_date_label(f["created"]),
+        "token": make_token(client_id, f["file_id"]),
+    } for f in search_result_files(client_id, folder_id, dni, days)]
+
+
+def search_result_files(client_id: int, folder_id: str, dni: str, days: int):
+    """Archivos de ese DNI (exacto) subidos en los últimos `days` días, más nuevo primero:
+    [{file_id, name, protocolo, created}]. `created` es el createdTime ISO de Drive. Lanza si Drive falla."""
     service = get_drive_service(client_id)
     if not service:
         raise RuntimeError("Drive no configurado para el cliente")
@@ -207,12 +217,32 @@ def search_results(client_id: int, folder_id: str, dni: str, days: int):
         parsed = parse_result_filename(f.get("name"))
         if not parsed or parsed[1] != dni:  # "contains" es laxo: se confirma el DNI exacto acá
             continue
-        results.append({
-            "protocolo": parsed[0],
-            "fecha": format_date_label(f["createdTime"]),
-            "token": make_token(client_id, f["id"]),
-        })
+        results.append({"file_id": f["id"], "name": f.get("name") or "", "protocolo": parsed[0], "created": f["createdTime"]})
     return results
+
+
+def list_recent_dnis(client_id: int, folder_id: str, since_dt, max_files: int = 500):
+    """DNI (sin ceros) de los archivos creados en la carpeta después de `since_dt` (UTC naive).
+    Lo usa el vigía del chat web. Lanza excepción si Drive falla."""
+    service = get_drive_service(client_id)
+    if not service:
+        raise RuntimeError("Drive no configurado para el cliente")
+    q = f"'{folder_id}' in parents and trashed = false and createdTime > '{since_dt.strftime('%Y-%m-%dT%H:%M:%S')}'"
+    dnis, page_token, seen = set(), None, 0
+    while True:
+        resp = service.files().list(
+            q=q, fields="nextPageToken, files(id, name)", pageSize=100, pageToken=page_token,
+            supportsAllDrives=True, includeItemsFromAllDrives=True,
+        ).execute()
+        for f in resp.get("files", []):
+            parsed = parse_result_filename(f.get("name"))
+            if parsed:
+                dnis.add(parsed[1])
+        seen += len(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token or seen >= max_files:
+            break
+    return dnis
 
 
 def fetch_result_file(client_id: int, folder_id: str, file_id: str):

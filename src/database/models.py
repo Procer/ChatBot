@@ -183,6 +183,15 @@ class ClientSettings(Base):
     web_chat_welcome = Column(Text, nullable=True)  # primer mensaje que ve quien abre el chat
     web_chat_color = Column(String(9), nullable=True)  # #RRGGBB de marca; vacio = verde azulado por defecto
     web_chat_logo = Column(String(255), nullable=True)  # logo propio del chat (/uploads/...); vacio = logo del negocio
+    web_chat_results_enabled = Column(Boolean, default=False, server_default="0")  # vinculacion DNI+protocolo y PDFs dentro del chat (usa la carpeta results_portal_folder_id)
+    web_chat_consent = Column(Text, nullable=True)  # texto de consentimiento al vincular; vacio = texto por defecto
+    web_push_public_key = Column(String(120), nullable=True)  # clave VAPID publica (base64url) de este cliente; se genera sola
+    web_push_private_key_encrypted = Column(Text, nullable=True)  # clave VAPID privada (PEM) cifrada como el resto de las credenciales
+    web_chat_watch_at = Column(DateTime, nullable=True)  # ultima revision de la carpeta de PROTOCOLOS por el vigia
+    web_chat_broadcast_cap = Column(Integer, default=3, server_default="3")  # avisos masivos por mes; 0 = sin tope
+    web_chat_broadcast_from = Column(Integer, default=9, server_default="9")  # hora (Argentina) desde la que se pueden enviar masivos
+    web_chat_broadcast_to = Column(Integer, default=20, server_default="20")  # hora hasta la que se pueden enviar (no incluida)
+    web_chat_retention_days = Column(Integer, default=180, server_default="180")  # dias sin actividad antes de borrar un chat web; 0 = nunca
     web_chat_buttons = Column(Text, nullable=True)  # JSON: lista de textos de los botones iniciales
     web_chat_daily_cap = Column(Integer, default=30, server_default="30")  # mensajes al bot por celular por dia; 0 = sin tope
     web_chat_global_daily_cap = Column(Integer, default=1000, server_default="1000")  # tope diario de todo el chat (interruptor de emergencia de costo); 0 = sin tope
@@ -676,6 +685,88 @@ class WebEvent(Base):
     text = Column(Text, nullable=True)
     attach_json = Column(Text, nullable=True)  # {"url","name"} de un archivo adjunto
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class WebLink(Base):
+    """Vinculo celular <-> paciente (DNI) dentro de un cliente. pendiente -> verificado (o vencido/revocado)."""
+    __tablename__ = "web_links"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("web_devices.id"), nullable=False, index=True)
+    dni = Column(String(12), nullable=False)  # normalizado, sin ceros a la izquierda
+    name = Column(String(60), nullable=True)  # nombre de pila opcional, solo para saludar
+    protocol = Column(String(20), nullable=False)  # el que declaro el paciente (del papel)
+    status = Column(String(12), nullable=False, default="pendiente")  # pendiente | verificado | vencido | revocado
+    consent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)  # solo mientras esta pendiente
+    last_check_at = Column(DateTime, nullable=True)
+
+class WebDelivery(Base):
+    """Un PDF de Drive ya entregado a un celular (evita duplicados y ata el evento del chat al archivo)."""
+    __tablename__ = "web_deliveries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    device_id = Column(Integer, ForeignKey("web_devices.id"), nullable=False, index=True)
+    link_id = Column(Integer, ForeignKey("web_links.id"), nullable=False)
+    file_id = Column(String(100), nullable=False)
+    protocol = Column(String(20), nullable=True)
+    event_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class WebLinkAttempt(Base):
+    """Cada intento de vincular (registro de auditoria y base del bloqueo por intentos)."""
+    __tablename__ = "web_link_attempts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    device_id = Column(Integer, nullable=True)
+    ip = Column(String(64), nullable=True)
+    dni = Column(String(12), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+class WebPushSub(Base):
+    """Suscripcion de notificaciones push de un celular (Web Push estandar)."""
+    __tablename__ = "web_push_subs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("web_devices.id"), nullable=False, index=True)
+    endpoint = Column(Text, nullable=False)
+    endpoint_hash = Column(String(64), nullable=False, unique=True)  # sha256 del endpoint (indice unico sin el limite de largo)
+    p256dh = Column(String(200), nullable=False)
+    auth = Column(String(100), nullable=False)
+    topic_alerts = Column(Boolean, default=True, server_default="1")  # avisos de mis analisis, respuestas de una persona, turnos
+    topic_news = Column(Boolean, default=False, server_default="0")  # novedades del laboratorio (avisos masivos)
+    fail_count = Column(Integer, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_ok_at = Column(DateTime, nullable=True)
+
+class WebBroadcast(Base):
+    """Aviso masivo (notificación push) a los celulares que aceptaron "Novedades"."""
+    __tablename__ = "web_broadcasts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False, index=True)
+    title = Column(String(80), nullable=False)
+    body = Column(String(200), nullable=False)  # texto de la notificacion (sin datos de salud)
+    chat_message = Column(Text, nullable=True)  # si tiene, se agrega como mensaje dentro del chat y la notificacion abre ahi
+    audience = Column(String(12), nullable=False, default="all")  # all | recent (con analisis en los ultimos N dias)
+    audience_days = Column(Integer, nullable=True)
+    status = Column(String(12), nullable=False, default="programado")  # programado | enviando | enviado | cancelado | error
+    scheduled_at = Column(DateTime, nullable=False)  # UTC
+    sent_at = Column(DateTime, nullable=True)
+    recipients = Column(Integer, default=0)
+    sent = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(150), nullable=True)
+
+class WebBroadcastRecipient(Base):
+    """Un celular al que se le mando un aviso masivo (y si lo toco)."""
+    __tablename__ = "web_broadcast_recipients"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    broadcast_id = Column(Integer, ForeignKey("web_broadcasts.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("web_devices.id"), nullable=False)
+    ok = Column(Boolean, default=False)
+    clicked_at = Column(DateTime, nullable=True)
 
 class ClientPricing(Base):
     __tablename__ = "adm_client_pricing"

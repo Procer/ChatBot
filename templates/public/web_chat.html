@@ -98,6 +98,57 @@ input,textarea{font:inherit;color:inherit}
 .steps p{margin:0;font-size:15px}
 #toast{position:fixed;left:50%;bottom:calc(90px + var(--sab));transform:translate(-50%,20px);background:#111;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:90%;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* --- resultados: tarjeta de PDF, formulario, visor --- */
+.pdfcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);min-width:250px;margin-top:4px}
+.pdfcard .head{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.pdfcard .ico{width:42px;height:50px;border-radius:6px;background:#E5484D;color:#fff;font-weight:800;font-size:12px;display:grid;place-items:end center;padding-bottom:6px;flex:none;position:relative}
+.pdfcard .ico::before{content:"";position:absolute;right:0;top:0;border-style:solid;border-width:0 12px 12px 0;border-color:transparent var(--surface) transparent transparent}
+.pdfcard h4{margin:0;font-size:15px;line-height:1.25}
+.pdfcard p{margin:2px 0 0;font-size:12.5px;color:var(--ink-2)}
+.pdfcard .acts{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.pdfcard .acts button{background:none;border:0;padding:12px 2px;min-height:48px;font-weight:600;font-size:13.5px;color:var(--brand);display:flex;align-items:center;justify-content:center;gap:4px}
+.pdfcard .acts button+button{border-left:1px solid var(--line)}
+.pdfcard .acts button:active{background:var(--surface-2)}
+.pdfcard .acts svg{width:16px;height:16px}
+@media (prefers-color-scheme:dark){.pdfcard .acts button{color:var(--ink)}}
+.hl{animation:hl 2.2s ease-out}
+@keyframes hl{0%,30%{outline:3px solid var(--brand);outline-offset:3px}100%{outline:3px solid transparent;outline-offset:3px}}
+.chip.primary{background:var(--brand);color:var(--on-brand)}
+.menu button{display:flex;flex-direction:column;align-items:flex-start;width:100%;background:none;border:0;padding:13px 4px;min-height:54px;text-align:left;font-size:16px;border-bottom:1px solid var(--line)}
+.menu button:last-child{border-bottom:0}
+.menu small{color:var(--ink-2);font-size:12.5px}
+label.f{display:block;margin:12px 0 0;font-weight:600;font-size:14.5px}
+label.f small{font-weight:400;color:var(--ink-2)}
+.inp{width:100%;margin-top:6px;padding:13px 14px;font-size:18px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface-2);outline:none}
+.inp:focus{border-color:var(--brand);background:var(--surface)}
+.inp.err{border-color:var(--danger)}
+.errtxt{font-size:13.5px;color:var(--danger);margin-top:6px;font-weight:600}
+.consent{display:flex;gap:10px;margin-top:16px;padding:12px;border-radius:12px;background:var(--surface-2);font-size:13.5px;color:var(--ink-2);align-items:flex-start}
+.consent input{width:22px;height:22px;flex:none;margin:1px 0 0;accent-color:var(--brand)}
+.btn.ghost{background:none;color:var(--brand);border:1.5px solid var(--brand)}
+.btn.sm{font-size:15px;min-height:44px;padding:10px;margin-top:10px}
+.btn:disabled{opacity:.5}
+.help{font-size:13px;color:var(--ink-2);margin-top:6px}
+.patient{display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--line);border-radius:14px;margin-top:10px;background:var(--surface);width:100%;text-align:left}
+.patient b{display:block}
+.patient small{color:var(--ink-2)}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-2);color:var(--ink-2)}
+.pill.ok{background:rgba(6,118,71,.14);color:#067647}
+.pill.wait{background:var(--warn-bg);color:var(--warn)}
+.steps .pic{flex:none;width:56px;height:56px;border-radius:14px;background:var(--surface-2);display:grid;place-items:center;border:1px solid var(--line)}
+.steps .pic svg{width:30px;height:30px;color:var(--brand)}
+#viewer{position:fixed;inset:0;background:#2b2f33;z-index:40;display:none;flex-direction:column}
+#viewer.on{display:flex}
+#vbar{flex:none;display:flex;align-items:center;gap:2px;padding:calc(6px + var(--sat)) 6px 6px;background:#1b1e21;color:#fff}
+#vbar .t{flex:1;min-width:0;padding:0 8px;font-size:14px;line-height:1.2}
+#vbar .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#vbar .t span{font-size:12px;opacity:.7}
+#vscroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px 0 calc(24px + var(--sab));text-align:center}
+#vscroll canvas{display:block;margin:0 auto 12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.5)}
+#vmsg{color:#fff;padding:40px 24px;font-size:15px}
+#vzoom{flex:none;display:flex;justify-content:center;gap:10px;padding:8px 8px calc(8px + var(--sab));background:#1b1e21;color:#fff}
+#vzoom button{background:#3a3f44;border:0;color:#fff;border-radius:12px;min-width:56px;min-height:44px;font-weight:700;font-size:18px}
 </style>
 </head>
 <body>
@@ -123,6 +174,16 @@ input,textarea{font:inherit;color:inherit}
   <div class="sh-body" id="shBody"></div>
 </section>
 <div id="toast"></div>
+<div id="viewer" role="dialog" aria-modal="true" aria-label="Visor de análisis">
+  <div id="vbar">
+    <button class="iconbtn" id="vClose" aria-label="Cerrar visor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <div class="t"><b id="vTitle">Análisis</b><span id="vInfo"></span></div>
+    <button class="iconbtn" id="vShare" aria-label="Compartir"></button>
+    <button class="iconbtn" id="vDown" aria-label="Descargar"></button>
+  </div>
+  <div id="vscroll"><div id="vmsg">Cargando…</div></div>
+  <div id="vzoom"><button id="zOut" aria-label="Alejar">−</button><button id="zFit" style="font-size:14px">Ajustar</button><button id="zIn" aria-label="Acercar">+</button></div>
+</div>
 
 <script id="cfg-data" type="application/json">{{ {"cfg": cfg, "slug": slug}|tojson }}</script>
 <script>
@@ -184,7 +245,14 @@ function renderHeader(){
   const av = $('#avatar'); av.textContent = '';
   if (CFG.logo){ const im = document.createElement('img'); im.alt = ''; im.src = CFG.logo; im.onerror = () => { av.textContent = (CFG.title[0] || 'A').toUpperCase(); }; av.appendChild(im); }
   else av.textContent = (CFG.title[0] || 'A').toUpperCase();
+  renderChips();
+}
+function renderChips(){
   const box = $('#chips'); box.innerHTML = '';
+  if (CFG.results){
+    const p = document.createElement('button'); p.type = 'button'; p.className = 'chip primary';
+    p.textContent = LINKS.length ? 'Ver mis análisis' : '📄 Ver mis análisis'; p.addEventListener('click', () => openMine()); box.appendChild(p);
+  }
   for (const t of CFG.buttons){
     const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = t;
     b.addEventListener('click', () => send(t)); box.appendChild(b);
@@ -210,7 +278,7 @@ function renderEvent(e){
     el = document.createElement('div'); el.className = 'row ' + (e.kind === 'user' ? 'me' : 'bot');
     if (e.kind === 'admin'){ const t = document.createElement('div'); t.className = 'who-tag'; t.textContent = 'Atención personal'; el.appendChild(t); }
     if (e.text){ const b = document.createElement('div'); b.className = 'bubble'; if (e.kind === 'user') b.textContent = e.text; else b.innerHTML = fmt(e.text); el.appendChild(b); }
-    const url = e.attach && safeUrl(e.attach.url);
+    const url = e.attach && e.attach.type !== 'result' && safeUrl(e.attach.url);
     if (url){
       const c = document.createElement('div'); c.className = 'filecard';
       const name = String(e.attach.name || 'archivo'); const ext = (name.split('.').pop() || '').slice(0, 4);
@@ -219,8 +287,10 @@ function renderEvent(e){
       c.querySelector('.nm').textContent = name; c.querySelector('a').href = url;
       el.appendChild(c);
     }
+    if (e.attach && e.attach.type === 'result') el.appendChild(resultCard(e));
     const tm = document.createElement('span'); tm.className = 'time'; tm.textContent = hhmm(e.ts); el.appendChild(tm);
   }
+  el.dataset.id = e.id;
   insert(el);
   if (stick || e.kind === 'user') scrollEnd();
 }
@@ -253,6 +323,9 @@ async function startSession(){
   // Bienvenida propia del chat (no es un mensaje del bot: no se guarda ni gasta IA)
   if (!started){ started = true; welcome(); }
   (j.events || []).forEach(renderEvent);
+  setLinks(j.links);
+  if (j.push) PUSH = j.push;
+  silentResubscribe();
   setTyping(!!j.busy);
   return j;
 }
@@ -277,6 +350,7 @@ async function poll(){
     setOnline(true);
     let gotReply = false;
     (j.events || []).forEach(e => { if (!seen.has(e.id) && e.kind !== 'user') gotReply = true; renderEvent(e); });
+    if (j.links) setLinks(j.links);
     if (gotReply) waiting = false;
     if (waiting && Date.now() - waitSince > 120000) waiting = false;   // por las dudas: no dejar "escribiendo" para siempre
     setTyping(!!j.busy || waiting);
@@ -310,22 +384,364 @@ function closeSheet(){ sheet.classList.remove('on'); backdrop.classList.remove('
 $('#shClose').addEventListener('click', closeSheet); backdrop.addEventListener('click', closeSheet);
 let deferredInstall = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
-$('#btnMenu').addEventListener('click', () => {
+/* ---------- menu, instalacion y vinculacion ---------- */
+const IC = {
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  plusbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8M5 10v10h14V10"/></svg>'
+};
+$('#vShare').innerHTML = IC.share; $('#vDown').innerHTML = IC.down;
+function h(html){ const d = document.createElement('div'); d.innerHTML = html; return d; }
+let LINKS = [];
+let LINKS_SIG = '[]';
+function setLinks(a){ a = a || []; const sig = JSON.stringify(a); if (sig === LINKS_SIG) return; LINKS_SIG = sig; LINKS = a; renderChips(); }
+
+function openMenu(){
+  const m = document.createElement('div'); m.className = 'menu';
+  const items = [];
+  if (CFG.results){
+    items.push(['Mis análisis', LINKS.length ? 'Ver tus resultados' : 'Vincular tu DNI para ver tus resultados', openMine]);
+    if (LINKS.length){
+      items.push(['Agregar otro paciente', 'Un familiar, un hijo/a…', startLink]);
+      items.push(['No soy yo / desvincular', 'Quitar el DNI de este celular', confirmUnlink]);
+    }
+  }
+  items.push(['Avisos en este celular', pushLabel(), openPushSheet]);
+  items.push([env.standalone ? 'Chat instalado ✓' : 'Instalar el chat en el celular',
+              env.standalone ? 'Ya está en tu pantalla de inicio' : (env.ios ? 'Guía de 3 pasos' : 'Queda como una app'), () => showInstall()]);
+  for (const [t, s, fn] of items){
+    const b = document.createElement('button'); b.type = 'button'; b.innerHTML = '<span class="t"></span><small></small>';
+    b.querySelector('.t').textContent = t; b.querySelector('small').textContent = s;
+    b.addEventListener('click', () => { closeSheet(); setTimeout(fn, 260); });
+    m.appendChild(b);
+  }
+  openSheet('Menú', m);
+}
+$('#btnMenu').addEventListener('click', openMenu);
+
+function showInstall(after){
   const n = document.createElement('div');
-  if (env.standalone){ n.innerHTML = '<p style="margin:6px 0">El chat ya está instalado en tu pantalla de inicio ✓</p>'; }
+  if (env.standalone){ n.innerHTML = '<p style="margin:6px 0">El chat ya está instalado en tu pantalla de inicio ✓</p>'; if (typeof after === 'function'){ after(); return; } }
   else if (env.ios){
-    n.innerHTML = '<p style="margin:4px 0 12px">Agregá el chat a tu pantalla de inicio para abrirlo más rápido:</p><ol class="steps">'
-      + '<li><span class="n">1</span><p>Tocá el botón <b>Compartir</b> de Safari (el cuadrado con la flecha).</p></li>'
-      + '<li><span class="n">2</span><p>Elegí <b>“Agregar a inicio”</b>.</p></li>'
-      + '<li><span class="n">3</span><p>Tocá <b>“Agregar”</b>.</p></li></ol>';
+    n.innerHTML = '<p style="margin:4px 0 12px">Agregá el chat a tu pantalla de inicio: se abre más rápido y <b>tus análisis quedan guardados</b> en la app.</p><ol class="steps">'
+      + '<li><span class="n">1</span><span class="pic">' + IC.share + '</span><p>Tocá el botón <b>Compartir</b> de Safari (el cuadrado con la flecha).</p></li>'
+      + '<li><span class="n">2</span><span class="pic">' + IC.plusbox + '</span><p>Elegí <b>“Agregar a inicio”</b> (deslizá el menú hacia arriba si no lo ves).</p></li>'
+      + '<li><span class="n">3</span><span class="pic">' + IC.home + '</span><p>Tocá <b>“Agregar”</b> y abrí el chat desde el ícono nuevo.</p></li></ol>'
+      + '<div class="help" style="margin-top:12px">Tiene que ser desde <b>Safari</b>. Si abriste el link desde WhatsApp o Instagram, primero abrilo en Safari.</div>';
   } else if (deferredInstall){
     n.innerHTML = '<p style="margin:4px 0 0">Instalalo como app: queda en tu pantalla de inicio.</p><button class="btn" id="doInst">Instalar</button>';
     n.querySelector('#doInst').addEventListener('click', async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; closeSheet(); });
   } else {
     n.innerHTML = '<p style="margin:4px 0 0">En Chrome: tocá el menú <b>⋮</b> y elegí <b>“Instalar aplicación”</b> o <b>“Agregar a la pantalla principal”</b>.</p>';
   }
-  openSheet('Instalar el chat', n);
-});
+  if (typeof after === 'function'){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.textContent = 'Continuar sin instalar';
+    b.addEventListener('click', () => { closeSheet(); after(); }); n.appendChild(b);
+  }
+  openSheet(env.ios ? 'Agregar a la pantalla de inicio' : 'Instalar el chat', n);
+}
+
+function startLink(){
+  // En iPhone, lo vinculado en Safari puede no verse en la app instalada: la guia va antes de pedir los datos.
+  if (env.ios && !env.standalone && !ls.get('iosGuide')){ ls.set('iosGuide', '1'); return showInstall(openLinkForm); }
+  openLinkForm();
+}
+function openLinkForm(){
+  const n = h('<form id="lf" novalidate>'
+    + '<p style="margin:4px 0 0;color:var(--ink-2);font-size:14.5px">Así te mostramos tus análisis acá mismo. Lo pedimos <b>una sola vez</b> en este celular.</p>'
+    + '<label class="f">DNI<input class="inp" id="fDni" inputmode="numeric" pattern="[0-9.]*" autocomplete="off" maxlength="11" placeholder="12.345.678"></label><div class="errtxt" id="eDni" hidden></div>'
+    + '<label class="f">Número de protocolo <small>(figura en el papel que te dieron)</small><input class="inp" id="fProt" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" maxlength="12" placeholder="A300044"></label><div class="errtxt" id="eProt" hidden></div>'
+    + '<label class="f">Tu nombre <small>(opcional, para saludarte)</small><input class="inp" id="fName" autocomplete="off" autocapitalize="words" maxlength="40" placeholder="María"></label>'
+    + '<label class="consent"><input type="checkbox" id="fOk"><span id="fConsent"></span></label><div class="errtxt" id="eOk" hidden>Tenés que aceptar para continuar.</div>'
+    + '<div class="errtxt" id="eGen" hidden></div>'
+    + '<button class="btn" id="fGo" type="submit">Vincular mi celular</button></form>');
+  n.querySelector('#fConsent').textContent = CFG.consent;
+  const dni = n.querySelector('#fDni'), prot = n.querySelector('#fProt');
+  dni.addEventListener('input', () => { const d = dni.value.replace(/\D/g, '').slice(0, 8); dni.value = d.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); });
+  prot.addEventListener('input', () => { prot.value = prot.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  n.querySelector('#lf').addEventListener('submit', async e => {
+    e.preventDefault();
+    const show = (id, t) => { const x = n.querySelector(id); if (t !== undefined) x.textContent = t; x.hidden = false; };
+    ['#eDni', '#eProt', '#eOk', '#eGen'].forEach(id => n.querySelector(id).hidden = true);
+    dni.classList.remove('err'); prot.classList.remove('err');
+    const d = dni.value.replace(/\D/g, ''), p = prot.value.trim().toUpperCase();
+    let bad = false;
+    if (d.length < 7 || d.length > 8){ show('#eDni', 'Revisá el DNI: tiene 7 u 8 números.'); dni.classList.add('err'); bad = true; }
+    if (!/^[A-Z0-9]{3,12}$/.test(p) || !/\d/.test(p)){ show('#eProt', 'El protocolo es una letra y números, por ejemplo A300044.'); prot.classList.add('err'); bad = true; }
+    if (!n.querySelector('#fOk').checked){ show('#eOk'); bad = true; }
+    if (bad) return;
+    const go = n.querySelector('#fGo'); go.disabled = true; go.textContent = 'Verificando…';
+    try{
+      const r = await api('/link', {method: 'POST', body: JSON.stringify({dni: d, protocol: p, name: n.querySelector('#fName').value.trim(), consent: true})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok){
+        go.disabled = false; go.textContent = 'Vincular mi celular';
+        if (j.error === 'dni') show('#eDni', j.message); else if (j.error === 'protocol') show('#eProt', j.message); else show('#eGen', j.message || 'No se pudo vincular. Probá de nuevo.');
+        return;
+      }
+      closeSheet(); setOnline(true);
+      (j.events || []).forEach(renderEvent); setLinks(j.links);
+      if (!(j.events || []).length) toast('Ese paciente ya estaba vinculado');
+      waiting = false; schedule(true);
+      setTimeout(offerPush, 1200);
+    }catch(_){ go.disabled = false; go.textContent = 'Vincular mi celular'; show('#eGen', 'Sin conexión. Probá de nuevo.'); }
+  });
+  openSheet('Vinculá tu celular', n);
+}
+function confirmUnlink(){
+  if (!LINKS.length) return toast('Este celular no está vinculado');
+  const n = document.createElement('div');
+  n.innerHTML = '<p style="margin:6px 0">Vas a quitar de este celular a: </p>';
+  for (const l of LINKS){
+    const p = document.createElement('div'); p.className = 'patient';
+    p.innerHTML = '<span style="flex:1"><b></b><small></small></span><button type="button" class="btn ghost sm" style="width:auto;margin:0;padding:8px 14px;min-height:40px">Quitar</button>';
+    p.querySelector('b').textContent = (l.name || 'Paciente') + ' · DNI ' + l.dni_mask;
+    p.querySelector('small').textContent = 'Protocolo ' + l.protocol + (l.status === 'verificado' ? '' : ' · pendiente');
+    p.querySelector('button').addEventListener('click', () => doUnlink(l.id)); n.appendChild(p);
+  }
+  if (LINKS.length > 1){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = 'Quitar a todos'; b.addEventListener('click', () => doUnlink(0)); n.appendChild(b); }
+  n.appendChild(h('<p class="help">Sus análisis dejan de verse en este celular. Podés volver a vincular cuando quieras.</p>'));
+  openSheet('¿No sos vos?', n);
+}
+async function doUnlink(id){
+  try{
+    const r = await api('/unlink', {method: 'POST', body: JSON.stringify({link_id: id})});
+    if (!r.ok) throw new Error('x');
+    closeSheet(); await resetChat(); toast('Listo, quitamos los análisis de este celular');
+  }catch(_){ toast('No se pudo desvincular. Probá de nuevo.'); }
+}
+async function resetChat(){
+  msgsEl.innerHTML = ''; seen.clear(); lastId = 0; typingEl = null; started = false;
+  await startSession(); scrollEnd();
+}
+function openMine(){
+  if (!LINKS.length) return startLink();
+  const goTo = l => {
+    const cards = [...msgsEl.querySelectorAll('.pdfcard')].filter(c => Number(c.dataset.link) === l.id);
+    const last = cards.pop();
+    if (last){ last.scrollIntoView({block: 'center'}); last.classList.remove('hl'); void last.offsetWidth; last.classList.add('hl'); }
+    else addLocal('', l.status === 'verificado' ? 'Todavía no hay análisis para ' + l.dni_mask + '. Cuando llegue, aparece acá.' : 'Todavía no está el análisis del protocolo ' + l.protocol + '. Cuando aparezca, lo ves acá.');
+  };
+  if (LINKS.length === 1) return goTo(LINKS[0]);
+  const n = h('<p style="margin:4px 0 0">¿De quién querés ver los resultados?</p>');
+  for (const l of LINKS){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'patient';
+    b.innerHTML = '<span style="flex:1"><b></b><small></small></span><span class="pill"></span>';
+    b.querySelector('b').textContent = l.name || 'Paciente'; b.querySelector('small').textContent = 'DNI ' + l.dni_mask + ' · ' + l.protocol;
+    const pl = b.querySelector('.pill'); pl.textContent = l.status === 'verificado' ? 'Verificado' : 'Pendiente'; pl.classList.add(l.status === 'verificado' ? 'ok' : 'wait');
+    b.addEventListener('click', () => { closeSheet(); setTimeout(() => goTo(l), 260); });
+    n.appendChild(b);
+  }
+  openSheet('Mis análisis', n);
+}
+
+/* ---------- visor de PDF (PDF.js propio, sin salir del chat) ---------- */
+const PDFJS = '/static/vendor/pdfjs/';
+let pdfjsPromise = null, pdfDoc = null, zoom = 1, curEv = null;
+function loadPdfjs(){
+  if (pdfjsPromise) return pdfjsPromise;
+  pdfjsPromise = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = PDFJS + 'pdf.min.js';
+    s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; res(pdfjsLib); };
+    s.onerror = () => { pdfjsPromise = null; rej(new Error('No se pudo cargar el visor')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsPromise;
+}
+async function fetchPdf(ev, dl){
+  const r = await api('/file/' + ev.id + (dl ? '?dl=1' : ''));
+  if (r.status === 404) throw new Error('Este análisis ya no está disponible.');
+  if (!r.ok) throw new Error('No pudimos traer el análisis en este momento. Probá de nuevo en un rato.');
+  return r.blob();
+}
+async function openViewer(ev){
+  curEv = ev; $('#viewer').classList.add('on');
+  $('#vTitle').textContent = ev.attach.label; $('#vInfo').textContent = 'Protocolo ' + ev.attach.protocol;
+  const sc = $('#vscroll'); sc.innerHTML = '<div id="vmsg">Cargando…</div>';
+  history.pushState({v: 1}, '');
+  try{
+    const [lib, blob] = await Promise.all([loadPdfjs(), fetchPdf(ev, false)]);
+    pdfDoc = await lib.getDocument({data: new Uint8Array(await blob.arrayBuffer())}).promise;
+    zoom = 1; await renderPages();
+  }catch(err){
+    const m = document.createElement('div'); m.id = 'vmsg'; m.textContent = (err && err.message) || 'No se pudo mostrar el análisis.'; sc.innerHTML = ''; sc.appendChild(m);
+  }
+}
+async function renderPages(){
+  const sc = $('#vscroll'); const top = sc.scrollTop / (sc.scrollHeight || 1);
+  sc.innerHTML = '';
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const first = await pdfDoc.getPage(1); const fit = (sc.clientWidth - 16) / first.getViewport({scale: 1}).width;
+  for (let i = 1; i <= pdfDoc.numPages; i++){
+    const pg = await pdfDoc.getPage(i); const vp = pg.getViewport({scale: fit * zoom});
+    const cv = document.createElement('canvas');
+    cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+    cv.style.width = Math.floor(vp.width) + 'px'; cv.style.height = Math.floor(vp.height) + 'px';
+    sc.appendChild(cv);
+    await pg.render({canvasContext: cv.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined}).promise;
+  }
+  $('#vInfo').textContent = 'Protocolo ' + curEv.attach.protocol + ' · ' + pdfDoc.numPages + ' págs. · ' + Math.round(zoom * 100) + '%';
+  sc.scrollTop = top * sc.scrollHeight;
+}
+function closeViewer(fromPop){ $('#viewer').classList.remove('on'); pdfDoc = null; if (!fromPop && history.state && history.state.v) history.back(); }
+window.addEventListener('popstate', () => { if ($('#viewer').classList.contains('on')) closeViewer(true); });
+$('#vClose').addEventListener('click', () => closeViewer(false));
+$('#zIn').addEventListener('click', () => { if (pdfDoc && zoom < 3){ zoom = Math.min(3, zoom + .25); renderPages(); } });
+$('#zOut').addEventListener('click', () => { if (pdfDoc && zoom > .5){ zoom = Math.max(.5, zoom - .25); renderPages(); } });
+$('#zFit').addEventListener('click', () => { if (pdfDoc){ zoom = 1; renderPages(); } });
+$('#vDown').addEventListener('click', () => curEv && downloadPdf(curEv));
+$('#vShare').addEventListener('click', () => curEv && sharePdf(curEv));
+async function downloadPdf(ev){
+  try{
+    const blob = await fetchPdf(ev, true);
+    const file = new File([blob], ev.attach.name || 'Analisis.pdf', {type: 'application/pdf'});
+    // iPhone con el chat instalado: bajar directo suele fallar -> menu Compartir ("Guardar en Archivos")
+    if (env.ios && env.standalone && navigator.canShare && navigator.canShare({files: [file]})){ await navigator.share({files: [file], title: file.name}); return; }
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000); toast('Descargando…');
+  }catch(err){ if (err && err.name === 'AbortError') return; toast(err.message || 'No se pudo descargar'); }
+}
+async function sharePdf(ev){
+  try{
+    const blob = await fetchPdf(ev, true);
+    const file = new File([blob], ev.attach.name || 'Analisis.pdf', {type: 'application/pdf'});
+    if (navigator.canShare && navigator.canShare({files: [file]})){ await navigator.share({files: [file], title: ev.attach.label}); return; }
+    toast('Este navegador no permite compartir el archivo. Usá “Bajar”.');
+  }catch(err){ if (err && err.name === 'AbortError') return; toast(err.message || 'No se pudo compartir'); }
+}
+
+function resultCard(e){
+  const c = document.createElement('div'); c.className = 'pdfcard'; c.dataset.link = e.attach.link || 0;
+  c.innerHTML = '<div class="head"><div class="ico">PDF</div><div><h4></h4><p></p></div></div>'
+    + '<div class="acts"><button type="button" data-a="ver">' + IC.eye + 'Ver</button><button type="button" data-a="bajar">' + IC.down + 'Bajar</button><button type="button" data-a="compartir">' + IC.share + 'Compartir</button></div>';
+  c.querySelector('h4').textContent = e.attach.label || 'Análisis';
+  c.querySelector('p').textContent = 'Protocolo ' + e.attach.protocol + (e.attach.dni_mask ? ' · DNI ' + e.attach.dni_mask : '');
+  c.querySelector('.acts').addEventListener('click', ev => {
+    const btn = ev.target.closest('button'); if (!btn) return;
+    ({ver: () => openViewer(e), bajar: () => downloadPdf(e), compartir: () => sharePdf(e)})[btn.dataset.a]();
+  });
+  return c;
+}
+
+/* ---------- avisos (notificaciones push) ---------- */
+let PUSH = {key: null, subscribed: false, alerts: false, news: false};
+const pushCapable = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function b64ToU8(s){
+  const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...b].map(c => c.charCodeAt(0)));
+}
+function swReady(){
+  return Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error('sw')), 8000))]);
+}
+async function pushSubscribe(alerts, news){
+  const reg = await swReady();
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub){
+    try{ sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToU8(PUSH.key)}); }
+    catch(e){ throw e; }
+  }
+  let r = await api('/push/subscribe', {method: 'POST', body: JSON.stringify({subscription: sub.toJSON(), alerts, news})});
+  if (!r.ok) throw new Error('subscribe');
+  PUSH = Object.assign({}, PUSH, await r.json());
+}
+function pushBlockedMsg(){
+  addLocal('err', 'Las notificaciones están bloqueadas en este celular. Para activarlas: tocá el candado 🔒 junto a la dirección (o Ajustes del navegador) → Notificaciones → Permitir. Tus análisis igual quedan siempre acá.');
+}
+async function enablePush(){
+  if (!pushCapable){ if (env.ios && !env.standalone) return showInstall(); return toast('Este navegador no permite avisos. Tus análisis quedan siempre acá.'); }
+  if (Notification.permission === 'denied') return pushBlockedMsg();
+  try{
+    // El permiso solo se puede pedir despues de un toque del usuario: por eso este boton.
+    const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (perm !== 'granted'){ addLocal('', 'Sin problema. Tus análisis quedan siempre acá: solo tenés que entrar a verlos.'); return; }
+    await pushSubscribe(true, PUSH.news);
+    ls.del('pushOff'); toast('Listo, te vamos a avisar 🔔');
+    setTimeout(offerNews, 1500);
+  }catch(_){ addLocal('err', 'No pudimos activar los avisos en este celular. Probá de nuevo más tarde.'); }
+}
+function offerPush(){
+  if (!PUSH.key || PUSH.subscribed) return;
+  if (pushCapable && Notification.permission === 'denied') return;
+  if (!pushCapable && !(env.ios && !env.standalone)) return;       // este navegador no soporta avisos
+  const el = document.createElement('div'); el.className = 'row bot';
+  el.innerHTML = '<div class="bubble"></div>';
+  const b = el.querySelector('.bubble');
+  b.innerHTML = fmt('¿Querés que el celular te **avise** cuando haya novedades, por ejemplo cuando esté tu análisis? La notificación no dice nada de tu salud, solo que hay novedades.');
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn sm';
+  btn.textContent = pushCapable ? 'Sí, avisame' : 'Cómo activar los avisos';
+  btn.addEventListener('click', () => { btn.disabled = true; enablePush().finally(() => { btn.disabled = false; }); });
+  b.appendChild(btn); insert(el); scrollEnd();
+}
+function offerNews(){
+  if (!PUSH.subscribed || PUSH.news || ls.get('newsAsked')) return;
+  ls.set('newsAsked', '1');
+  const el = document.createElement('div'); el.className = 'row bot';
+  el.innerHTML = '<div class="bubble"></div>';
+  const b = el.querySelector('.bubble');
+  b.innerHTML = fmt('¿Querés también recibir **novedades del laboratorio** (comunicados y campañas)? Son pocos avisos y lo podés cambiar cuando quieras desde el menú.');
+  const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn sm'; yes.textContent = 'Sí, quiero';
+  const no = document.createElement('button'); no.type = 'button'; no.className = 'btn ghost sm'; no.textContent = 'No, gracias';
+  yes.addEventListener('click', async () => {
+    yes.disabled = no.disabled = true;
+    try{ const r = await api('/push/topics', {method: 'POST', body: JSON.stringify({alerts: true, news: true})}); PUSH = Object.assign({}, PUSH, await r.json()); toast('Listo, te avisamos las novedades'); }
+    catch(_){ toast('No se pudo guardar'); }
+    el.remove();
+  });
+  no.addEventListener('click', () => el.remove());
+  b.appendChild(yes); b.appendChild(no); insert(el); scrollEnd();
+}
+function pushLabel(){
+  if (!pushCapable) return env.ios && !env.standalone ? 'Requiere instalar el chat' : 'No disponible en este navegador';
+  if (Notification.permission === 'denied') return 'Bloqueados';
+  return PUSH.subscribed ? (PUSH.alerts ? 'Activados' : 'Apagados') : 'Desactivados';
+}
+function openPushSheet(){
+  if (!PUSH.subscribed) return enablePush();
+  const n = document.createElement('div');
+  n.innerHTML = '<p style="margin:4px 0 8px;color:var(--ink-2);font-size:14.5px">Elegí qué avisos querés recibir en este celular. Ninguno muestra datos de salud.</p>'
+    + '<label class="consent" style="margin-top:8px"><input type="checkbox" id="pAlerts"><span><b>Mis análisis y respuestas</b><br>Cuando llegue un análisis, te conteste una persona o tengas un turno.</span></label>'
+    + '<label class="consent" style="margin-top:8px"><input type="checkbox" id="pNews"><span><b>Novedades del laboratorio</b> (opcional)<br>Comunicados y campañas.</span></label>'
+    + '<button class="btn ghost sm" id="pOff" type="button">Desactivar avisos en este celular</button>';
+  const a = n.querySelector('#pAlerts'), nw = n.querySelector('#pNews');
+  a.checked = !!PUSH.alerts; nw.checked = !!PUSH.news;
+  const save = async () => {
+    try{ const r = await api('/push/topics', {method: 'POST', body: JSON.stringify({alerts: a.checked, news: nw.checked})}); PUSH = Object.assign({}, PUSH, await r.json()); toast('Guardado'); }
+    catch(_){ toast('No se pudo guardar'); }
+  };
+  a.addEventListener('change', save); nw.addEventListener('change', save);
+  n.querySelector('#pOff').addEventListener('click', async () => {
+    try{
+      const reg = await swReady(); const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe();
+      const r = await api('/push/unsubscribe', {method: 'POST', body: '{}'}); PUSH = Object.assign({}, PUSH, await r.json());
+      ls.set('pushOff', '1'); closeSheet(); toast('Avisos desactivados');
+    }catch(_){ toast('No se pudo desactivar'); }
+  });
+  openSheet('Avisos en este celular', n);
+}
+// Si ya dio permiso pero el servidor no lo tiene (p. ej. cambio de navegador o de clave): se reactiva sin preguntar.
+function silentResubscribe(){
+  if (pushCapable && PUSH.key && !PUSH.subscribed && Notification.permission === 'granted' && !ls.get('pushOff')){
+    pushSubscribe(true, false).catch(() => {});
+  }
+}
+
+/* ---------- abrir el chat en un mensaje (desde la notificacion) ---------- */
+function countClick(b){ api('/push/click', {method: 'POST', body: JSON.stringify({b: Number(b)})}).catch(() => {}); }
+function focusEvent(id){
+  const el = msgsEl.querySelector('[data-id="' + Number(id) + '"]'); if (!el) return false;
+  el.scrollIntoView({block: 'center'}); el.classList.remove('hl'); void el.offsetWidth; el.classList.add('hl'); return true;
+}
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'open'){
+      if (e.data.b) countClick(e.data.b);
+      clearTimeout(pollT); poll().then(() => { if (e.data.m) setTimeout(() => focusEvent(e.data.m), 300); });
+    }
+  });
+}
 
 /* ---------- teclado en pantalla: el alto de la app sigue al area visible ---------- */
 function fitViewport(){
@@ -341,7 +757,12 @@ addEventListener('resize', fitViewport); fitViewport();
 /* ---------- arranque ---------- */
 if ('serviceWorker' in navigator){ navigator.serviceWorker.register('/chat/' + SLUG + '/sw.js', {scope: '/chat/' + SLUG + '/'}).catch(() => {}); }
 applyBrand(); renderHeader();
-startSession().then(() => { scrollEnd(); schedule(); }).catch(() => {});
+startSession().then(() => {
+  scrollEnd(); schedule();
+  const qs = new URLSearchParams(location.search), mm = qs.get('m'), bb = qs.get('b');
+  if (bb) countClick(bb);
+  if (mm && Number(mm)) setTimeout(() => focusEvent(mm), 400);
+}).catch(() => {});
 </script>
 </body>
 </html>

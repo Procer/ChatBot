@@ -684,6 +684,11 @@ async def view_chat_session(request: Request, thread_id: str, db: Session = Depe
         "total_forms": len(submissions),
         "avatar": user_avatar
     }
+    if web_chat.is_web_thread(thread_id):
+        from src.database.models import WebDevice, WebLink
+        _dev = db.query(WebDevice).filter_by(client_id=target_client_id, public_id=thread_id[len(web_chat.THREAD_PREFIX):]).first()
+        _links = db.query(WebLink).filter(WebLink.device_id == _dev.id, WebLink.status.in_(("pendiente", "verificado"))).all() if _dev else []
+        metadata["phone"] = ("Web · " + " / ".join(f"DNI {l.dni} · prot. {l.protocol} ({l.status})" for l in _links)) if _links else "Chat web (sin paciente vinculado)"
 
     # Cargar conversaciones del sidebar (Threads)
     subquery = db.query(
@@ -856,6 +861,12 @@ async def delete_chat_session(request: Request, thread_id: str, db: Session = De
     db.query(Submission).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
     db.query(SessionAnalytics).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
     db.query(TokenUsage).filter_by(client_id=target_client_id, thread_id=thread_id).delete()
+    if web_chat.is_web_thread(thread_id):
+        from src.database.models import WebDevice
+        from src import web_results
+        _dev = db.query(WebDevice).filter_by(client_id=target_client_id, public_id=thread_id[len(web_chat.THREAD_PREFIX):]).first()
+        if _dev:
+            web_results.purge_device(db, _dev.id)
     
     import sqlite3
     db_path_c = os.path.join("checkpoints.sqlite")
@@ -3361,7 +3372,7 @@ async def web_chat_panel(request: Request, db: Session = Depends(get_db), curren
 
 @app.get("/api/admin/web_chat")
 async def api_web_chat_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from src.database.models import WebDevice, WebEvent
+    from src.database.models import WebDevice, WebEvent, WebPushSub
     target_client_id, _, _ = get_admin_context(request, current_user, db)
     if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
@@ -3376,6 +3387,7 @@ async def api_web_chat_get(request: Request, db: Session = Depends(get_db), curr
         "devices_7d": db.query(WebDevice).filter(WebDevice.client_id == target_client_id, WebDevice.last_seen_at >= week_ago).count(),
         "messages_today": db.query(WebEvent).filter(WebEvent.client_id == target_client_id, WebEvent.kind == "user", WebEvent.created_at >= day_start).count(),
         "messages_7d": db.query(WebEvent).filter(WebEvent.client_id == target_client_id, WebEvent.kind == "user", WebEvent.created_at >= week_ago).count(),
+        "push_devices": db.query(WebPushSub.device_id).filter(WebPushSub.client_id == target_client_id).distinct().count(),
     }
     return {
         "enabled": bool(settings.web_chat_enabled),
@@ -3385,6 +3397,15 @@ async def api_web_chat_get(request: Request, db: Session = Depends(get_db), curr
         "color": settings.web_chat_color or "",
         "logo": settings.web_chat_logo or "",
         "logo_default": getattr(settings, "logo_path", None) or "",
+        "broadcast_cap": settings.web_chat_broadcast_cap if settings.web_chat_broadcast_cap is not None else 3,
+        "hours_from": settings.web_chat_broadcast_from if settings.web_chat_broadcast_from is not None else 9,
+        "hours_to": settings.web_chat_broadcast_to if settings.web_chat_broadcast_to is not None else 20,
+        "retention_days": settings.web_chat_retention_days if settings.web_chat_retention_days is not None else 180,
+        "results_enabled": bool(settings.web_chat_results_enabled),
+        "results_ready": bool(settings.results_portal_folder_id and settings.gdrive_service_account_json_encrypted),
+        "folder_name": settings.results_portal_folder_name or "",
+        "consent": settings.web_chat_consent or "",
+        "consent_default": web_chat.get_config(client, ClientSettings(web_chat_consent=None))["consent"],
         "buttons": web_chat.parse_buttons(settings.web_chat_buttons),
         "daily_cap": settings.web_chat_daily_cap if settings.web_chat_daily_cap is not None else web_chat.DEFAULT_DAILY_CAP,
         "global_cap": settings.web_chat_global_daily_cap if settings.web_chat_global_daily_cap is not None else web_chat.DEFAULT_GLOBAL_CAP,
@@ -3403,6 +3424,12 @@ class WebChatPayload(BaseModel):
     buttons: list[str] = []
     daily_cap: int = 30
     global_cap: int = 1000
+    results_enabled: bool = False
+    consent: str = ""
+    broadcast_cap: int = 3
+    hours_from: int = 9
+    hours_to: int = 20
+    retention_days: int = 180
 
 @app.post("/api/admin/web_chat")
 async def api_web_chat_save(payload: WebChatPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -3423,7 +3450,174 @@ async def api_web_chat_save(payload: WebChatPayload, request: Request, db: Sessi
     settings.web_chat_buttons = json.dumps(buttons, ensure_ascii=False) if buttons else None
     settings.web_chat_daily_cap = max(0, min(1000, payload.daily_cap))
     settings.web_chat_global_daily_cap = max(0, min(100000, payload.global_cap))
+    if payload.results_enabled and not (settings.results_portal_folder_id and settings.gdrive_service_account_json_encrypted):
+        return JSONResponse(status_code=400, content={"error": "Para entregar resultados en el chat primero configurá la carpeta de PROTOCOLOS en el portal de resultados (Biblioteca de Documentos)."})
+    settings.web_chat_results_enabled = payload.results_enabled
+    settings.web_chat_consent = payload.consent.strip() or None
+    settings.web_chat_broadcast_cap = max(0, min(60, payload.broadcast_cap))
+    settings.web_chat_broadcast_from = max(0, min(23, payload.hours_from))
+    settings.web_chat_broadcast_to = max(settings.web_chat_broadcast_from + 1, min(24, payload.hours_to))
+    settings.web_chat_retention_days = 0 if payload.retention_days <= 0 else max(30, min(3650, payload.retention_days))
     db.commit()
+    return {"ok": True}
+
+class BroadcastPayload(BaseModel):
+    title: str
+    body: str
+    chat_message: str = ""
+    audience: str = "all"      # all | recent
+    days: int = 30
+    when: str = "now"          # now | scheduled
+    scheduled_local: str = ""  # "YYYY-MM-DDTHH:MM" hora de Argentina
+
+class BroadcastAudience(BaseModel):
+    audience: str = "all"
+    days: int = 30
+
+def _web_broadcast_ctx(request, db, current_user):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None:
+        return None, None, JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not getattr(settings, 'feat_web_chat', False):
+        return None, None, JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    return target_client_id, settings, None
+
+@app.get("/api/admin/web_chat/broadcasts")
+async def api_web_broadcasts(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import web_broadcast as wb
+    from src.database.models import WebBroadcast, WebBroadcastRecipient
+    from sqlalchemy import func
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    rows = db.query(WebBroadcast).filter_by(client_id=cid).order_by(WebBroadcast.id.desc()).limit(50).all()
+    clicks = dict(db.query(WebBroadcastRecipient.broadcast_id, func.count(WebBroadcastRecipient.id))
+                  .filter(WebBroadcastRecipient.clicked_at.isnot(None), WebBroadcastRecipient.broadcast_id.in_([r.id for r in rows] or [0]))
+                  .group_by(WebBroadcastRecipient.broadcast_id).all())
+    fmt = lambda d: wb.to_local(d).strftime("%d/%m/%Y %H:%M") if d else ""
+    hfrom, hto = wb.hours_window(settings)
+    now = datetime.utcnow()
+    return {
+        "summary": {"subscribers": len(wb.audience_devices(db, cid, "all")), "used": wb.used_in_month(db, cid, now),
+                    "cap": wb.cap_of(settings), "hours_from": hfrom, "hours_to": hto, "chat_on": bool(settings.web_chat_enabled)},
+        "broadcasts": [{"id": r.id, "title": r.title, "body": r.body, "chat_message": r.chat_message or "", "status": r.status,
+                        "audience": r.audience, "days": r.audience_days, "scheduled": fmt(r.scheduled_at), "sent_at": fmt(r.sent_at),
+                        "recipients": r.recipients or 0, "sent": r.sent or 0, "failed": r.failed or 0, "clicks": clicks.get(r.id, 0)} for r in rows],
+    }
+
+@app.post("/api/admin/web_chat/broadcasts/preview")
+async def api_web_broadcast_preview(payload: BroadcastAudience, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import web_broadcast as wb
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    return {"recipients": len(wb.audience_devices(db, cid, payload.audience, payload.days))}
+
+@app.post("/api/admin/web_chat/broadcasts")
+async def api_web_broadcast_create(payload: BroadcastPayload, request: Request, background_tasks: BackgroundTasks,
+                                   db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import web_broadcast as wb
+    from src.database.models import WebBroadcast
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    bad = lambda msg: JSONResponse(status_code=400, content={"error": msg})
+    if not settings.web_chat_enabled:
+        return bad("El chat está apagado: encendelo para poder enviar avisos.")
+    title, body, chat_msg = payload.title.strip(), payload.body.strip(), payload.chat_message.strip()
+    if not title or len(title) > wb.MAX_TITLE: return bad(f"El título es obligatorio (hasta {wb.MAX_TITLE} caracteres).")
+    if not body or len(body) > wb.MAX_BODY: return bad(f"El texto es obligatorio (hasta {wb.MAX_BODY} caracteres).")
+    if len(chat_msg) > wb.MAX_CHAT: return bad(f"El mensaje dentro del chat admite hasta {wb.MAX_CHAT} caracteres.")
+    if payload.audience not in ("all", "recent"): return bad("Audiencia inválida.")
+    days = max(1, min(365, payload.days)) if payload.audience == "recent" else None
+
+    now = datetime.utcnow()
+    if payload.when == "scheduled":
+        try:
+            when = wb.to_utc(datetime.strptime(payload.scheduled_local, "%Y-%m-%dT%H:%M"))
+        except ValueError:
+            return bad("Elegí fecha y hora para programar el aviso.")
+        if when < now - timedelta(minutes=1) or when > now + timedelta(days=60):
+            return bad("La fecha tiene que ser futura (hasta 60 días).")
+    else:
+        when = now
+    hfrom, hto = wb.hours_window(settings)
+    adjusted = wb.adjust_to_window(when, hfrom, hto)
+    cap = wb.cap_of(settings)
+    used = wb.used_in_month(db, cid, adjusted)
+    if cap and used >= cap:
+        return bad(f"Alcanzaste el tope de {cap} avisos masivos para ese mes. Se puede cambiar en Límites.")
+    recipients = len(wb.audience_devices(db, cid, payload.audience, days))
+    if recipients == 0:
+        return bad("Nadie recibiría este aviso: todavía no hay celulares con “Novedades” activadas para esa audiencia.")
+    row = WebBroadcast(client_id=cid, title=title, body=body, chat_message=chat_msg or None, audience=payload.audience,
+                       audience_days=days, status="programado", scheduled_at=adjusted, recipients=recipients,
+                       created_by=(current_user.email if current_user else None))
+    db.add(row); db.commit(); db.refresh(row)
+    if adjusted <= now + timedelta(minutes=1):
+        background_tasks.add_task(asyncio.to_thread, wb.send_broadcast, row.id)
+    return {"ok": True, "id": row.id, "recipients": recipients, "delayed": adjusted > when + timedelta(minutes=1),
+            "scheduled": wb.to_local(adjusted).strftime("%d/%m/%Y %H:%M"), "now": adjusted <= now + timedelta(minutes=1)}
+
+@app.post("/api/admin/web_chat/broadcasts/{bid}/cancel")
+async def api_web_broadcast_cancel(bid: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import WebBroadcast
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    n = db.query(WebBroadcast).filter(WebBroadcast.id == bid, WebBroadcast.client_id == cid, WebBroadcast.status == "programado") \
+        .update({"status": "cancelado"}, synchronize_session=False)
+    db.commit()
+    if not n:
+        return JSONResponse(status_code=409, content={"error": "Ese aviso ya no se puede cancelar."})
+    return {"ok": True}
+
+@app.get("/api/admin/web_chat/metrics")
+async def api_web_chat_metrics(request: Request, days: int = 14, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import web_metrics
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    return {"metrics": web_metrics.compute(db, cid, days), "checklist": web_metrics.checklist(db, cid, settings)}
+
+@app.get("/api/admin/web_chat/metrics.csv")
+async def api_web_chat_metrics_csv(request: Request, days: int = 14, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import web_metrics
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    if err: return err
+    return Response(content=web_metrics.to_csv(web_metrics.compute(db, cid, days)), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="chat-web-metricas.csv"'})
+
+@app.get("/api/admin/web_chat/health")
+async def api_web_chat_health(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Consumo del servidor: solo para el súper admin (no para el cliente)."""
+    from src import web_metrics
+    if not require_superadmin(current_user):
+        return JSONResponse(status_code=403, content={"error": "Solo súper admin"})
+    return web_metrics.server_health(db)
+
+@app.get("/api/admin/web_chat/links")
+async def api_web_chat_links(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import WebLink, WebDevice, WebDelivery, WebPushSub
+    from sqlalchemy import func
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    rows = (db.query(WebLink, WebDevice).join(WebDevice, WebDevice.id == WebLink.device_id)
+            .filter(WebLink.client_id == target_client_id, WebLink.status != "revocado")
+            .order_by(WebLink.id.desc()).limit(200).all())
+    counts = dict(db.query(WebDelivery.link_id, func.count(WebDelivery.id)).filter(WebDelivery.client_id == target_client_id).group_by(WebDelivery.link_id).all())
+    push_devs = {d for (d,) in db.query(WebPushSub.device_id).filter(WebPushSub.client_id == target_client_id).all()}
+    def iso(d): return d.isoformat() if d else None
+    return {"links": [{"id": l.id, "push": l.device_id in push_devs, "dni": l.dni, "name": l.name or "", "protocol": l.protocol, "status": l.status,
+                       "created_at": iso(l.created_at), "verified_at": iso(l.verified_at), "last_check_at": iso(l.last_check_at),
+                       "expires_at": iso(l.expires_at), "deliveries": counts.get(l.id, 0), "thread_id": d.thread_id}
+                      for l, d in rows]}
+
+@app.post("/api/admin/web_chat/links/{link_id}/revoke")
+async def api_web_chat_link_revoke(link_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import WebLink
+    from src import web_results
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    link = db.query(WebLink).filter_by(id=link_id, client_id=target_client_id).first()
+    if not link: return JSONResponse(status_code=404, content={"error": "No encontrado"})
+    web_results.revoke_link(db, link)
     return {"ok": True}
 
 @app.post("/api/admin/web_chat/logo")
@@ -6140,7 +6334,7 @@ async def scheduler_reminders_loop():
                         
                         success = False
                         if web_chat.is_web_thread(app.thread_id):
-                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message))
+                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message, notify=True))
                         if not success and settings.telegram_enabled and app.thread_id.isdigit():
                             res = await send_telegram_message_saas(app.client_id, app.thread_id, message)
                             if res:
@@ -6187,7 +6381,7 @@ async def scheduler_reminders_loop():
                         
                         success = False
                         if web_chat.is_web_thread(app.thread_id):
-                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message))
+                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message, notify=True))
                         if not success and settings.telegram_enabled and app.thread_id.isdigit():
                             res = await send_telegram_message_saas(app.client_id, app.thread_id, message)
                             if res:
@@ -6298,7 +6492,7 @@ async def expire_pending_payments_loop():
                     )
                     wa_id = appt.thread_id
                     if web_chat.is_web_thread(wa_id):
-                        await send_web_message_saas(appt.client_id, wa_id, message)
+                        await send_web_message_saas(appt.client_id, wa_id, message, notify=True)
                     else:
                         if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                             wa_id = f"{wa_id}@c.us"
@@ -6312,6 +6506,55 @@ async def expire_pending_payments_loop():
             logging.error(f"[DepositExpiration] Error in loop: {e}")
 
         await asyncio.sleep(DEPOSIT_EXPIRATION_TICK_SECONDS)
+
+
+async def web_chat_watch_loop():
+    """Vigía de PROTOCOLOS para el chat web: cada 3 min busca archivos nuevos y, para los pacientes
+    vinculados, entrega el análisis en el chat y avisa por push (ver src/web_results.py)."""
+    from src.web_results import WATCH_TICK_SECONDS, watch_client
+    logging.info("[WebWatch] Starting web chat results watcher...")
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                ids = [r[0] for r in db.query(ClientSettings.client_id).filter(
+                    ClientSettings.feat_web_chat == True, ClientSettings.web_chat_enabled == True,
+                    ClientSettings.web_chat_results_enabled == True).all()]
+            finally:
+                db.close()
+            for cid in ids:
+                try:
+                    await asyncio.to_thread(watch_client, cid)
+                except Exception as e:
+                    logging.error(f"[WebWatch] Error con client_id={cid}: {e}")
+        except Exception as e:
+            logging.error(f"[WebWatch] Error in loop: {e}")
+        await asyncio.sleep(WATCH_TICK_SECONDS)
+
+
+async def web_broadcast_loop():
+    """Manda los avisos masivos programados cuando llega su hora (ver src/web_broadcast.py)."""
+    from src.web_broadcast import run_due
+    logging.info("[WebBroadcast] Starting scheduled broadcasts service...")
+    while True:
+        try:
+            await asyncio.to_thread(run_due)
+        except Exception as e:
+            logging.error(f"[WebBroadcast] Error in loop: {e}")
+        await asyncio.sleep(60)
+
+
+async def web_retention_loop():
+    """Borra los chats web inactivos según la retención de cada cliente (ver src/web_retention.py)."""
+    from src.web_retention import LOOP_SECONDS, run_all
+    logging.info("[WebRetention] Starting web chat retention service...")
+    await asyncio.sleep(300)         # no competir con el arranque
+    while True:
+        try:
+            await asyncio.to_thread(run_all)
+        except Exception as e:
+            logging.error(f"[WebRetention] Error in loop: {e}")
+        await asyncio.sleep(LOOP_SECONDS)
 
 
 OPENAI_ALERT_TICK_SECONDS = 900  # cada 15 min
@@ -6375,6 +6618,9 @@ async def startup_event():
     asyncio.create_task(gdrive_sync_loop())
     asyncio.create_task(expire_pending_payments_loop())
     asyncio.create_task(openai_credit_alert_loop())
+    asyncio.create_task(web_chat_watch_loop())
+    asyncio.create_task(web_broadcast_loop())
+    asyncio.create_task(web_retention_loop())
 
 
 # ==========================================

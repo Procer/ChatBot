@@ -4,15 +4,23 @@
 
 {% block content %}
 <style>
-  #poster{display:none}
+  #poster,#guide{display:none}
   @media print{
     body *{visibility:hidden}
-    #poster,#poster *{visibility:visible}
-    #poster{display:flex;position:fixed;inset:0;background:#fff;color:#111;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24mm;z-index:9999}
+    body[data-print="poster"] #poster,body[data-print="poster"] #poster *{visibility:visible}
+    body[data-print="poster"] #poster{display:flex;position:fixed;inset:0;background:#fff;color:#111;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24mm;z-index:9999}
     #poster h1{font-size:44pt;line-height:1.1;margin:0 0 10mm;font-family:system-ui,sans-serif}
     #poster p{font-size:22pt;margin:0 0 12mm;font-family:system-ui,sans-serif}
     #poster .qr svg,#poster .qr img{width:120mm;height:120mm}
     #poster .url{font-size:14pt;margin-top:10mm;color:#444;word-break:break-all;font-family:system-ui,sans-serif}
+    body[data-print="guide"] #guide,body[data-print="guide"] #guide *{visibility:visible}
+    body[data-print="guide"] #guide{display:block;position:absolute;left:0;top:0;width:100%;background:#fff;color:#111;padding:16mm 18mm;font-family:system-ui,sans-serif;font-size:11pt;line-height:1.4}
+    #guide h1{font-size:20pt;margin:0 0 2mm}
+    #guide h2{font-size:13pt;margin:6mm 0 1.5mm;border-bottom:1px solid #999;padding-bottom:1mm}
+    #guide p,#guide li{margin:0 0 1.2mm}
+    #guide ul,#guide ol{margin:0 0 2mm;padding-left:6mm}
+    #guide .box{border:1.5px solid #111;border-radius:2mm;padding:3mm 4mm;margin:3mm 0;font-size:12pt}
+    #guide .small{font-size:9.5pt;color:#444}
     @page{size:A4;margin:0}
   }
 </style>
@@ -26,6 +34,100 @@
             Un link (y un QR) que abre el chat a pantalla completa en el celular, sin instalar nada. Responde con el mismo cerebro y los mismos Conocimientos que WhatsApp.
         </p>
     </div>
+
+    <!-- Guia: como funciona y como configurarlo -->
+    <details class="group bg-panel rounded-xl border border-slate-800/50 overflow-hidden mb-6" open>
+        <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none text-sm font-bold text-white list-none">
+            <i data-lucide="help-circle" class="w-4 h-4 text-brand-500"></i>
+            ¿Cómo funciona el Chat Web y cómo se configura? (leer antes de encenderlo)
+            <i data-lucide="chevron-down" class="w-4 h-4 text-slate-500 ml-auto transition-transform group-open:rotate-180"></i>
+        </summary>
+        <div class="px-4 pb-5 pt-2 space-y-6 text-sm text-slate-400 leading-relaxed">
+
+            <div>
+                <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">En una frase</h4>
+                <p>Una página (con su link y su QR) que abre un chat en el celular del paciente, <b class="text-slate-200">sin instalar nada</b>. Responde con el mismo cerebro y los mismos Conocimientos que WhatsApp y, si se activa, le muestra sus <b class="text-slate-200">análisis dentro del mismo chat</b> (con su DNI y el número de protocolo) y le <b class="text-slate-200">avisa al celular</b> cuando hay novedades.</p>
+            </div>
+
+            <div>
+                <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">Puesta en marcha, paso a paso</h4>
+                <ol class="list-decimal pl-5 space-y-1.5">
+                    <li><b class="text-slate-200">Habilitar el módulo:</b> lo hace el Súper Admin, en la configuración del cliente (casilla “Chat Web (link / QR)”). Si no ves “Chat Web” en el menú de la izquierda, está apagado para este cliente o tu usuario no tiene ese permiso (se da en Gestión de Usuarios → permisos).</li>
+                    <li><b class="text-slate-200">Cargar el contenido del bot:</b> en Configuración → Base de Conocimiento. El chat contesta con eso (horarios, preparación para análisis, precios, turnos…). Sin contenido cargado, responde en genérico.</li>
+                    <li><b class="text-slate-200">Personalizarlo acá abajo:</b> título, subtítulo, saludo, color de marca, logo y botones iniciales. Guardá y mirá el resultado abriendo el link.</li>
+                    <li><b class="text-slate-200">Solo si van a entregar análisis:</b> primero conectá la carpeta <b>PROTOCOLOS</b> en Biblioteca de Documentos → Portal “Mis Resultados” (necesita la cuenta de Google Drive del cliente). Después, en este panel, activá <b>“Entregar resultados en el chat”</b> y revisá el texto de consentimiento.</li>
+                    <li><b class="text-slate-200">Encender:</b> tildá <b>“Chat encendido”</b> arriba y guardá. Mientras esté apagado, el link muestra “este chat no está disponible” (WhatsApp no se ve afectado).</li>
+                    <li><b class="text-slate-200">Probarlo con tu celular:</b> abrí el link, escribile una pregunta al bot, vinculá un DNI y protocolo reales y tocá “Sí, avisame”. En “Piloto en recepción” el checklist te marca lo que falta.</li>
+                    <li><b class="text-slate-200">Ponerlo en recepción:</b> imprimí el cartel A4 con el QR y el instructivo para el personal (botones de esta pantalla).</li>
+                </ol>
+            </div>
+
+            <div>
+                <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">Reglas de comportamiento</h4>
+                <ul class="list-disc pl-5 space-y-1.5">
+                    <li><b class="text-slate-200">Un celular = una conversación.</b> Se reconoce por un código secreto guardado en su navegador (en el servidor solo queda una huella). Si el paciente borra los datos del navegador o cambia de celular, es una conversación nueva y tiene que volver a vincular.</li>
+                    <li><b class="text-slate-200">Vincular pide DNI + número de protocolo</b> (el del papel, ej. A300044) y que acepte el consentimiento. Se pide una sola vez por celular. Un mismo celular puede tener varios pacientes (un familiar, un hijo).</li>
+                    <li><b class="text-slate-200">Verificación:</b> el vínculo queda <b>Verificado</b> solo cuando en la carpeta PROTOCOLOS existe un archivo con <b>exactamente</b> ese protocolo y ese DNI (formato <code>PROTOCOLO DNI.pdf</code>, ej. <code>A300044 004593922.pdf</code>). Mientras el archivo no esté queda <b>Pendiente</b> hasta 10 días; pasado ese plazo, la próxima vez que el paciente abra el chat se marca como <b>Venció</b> y el chat se lo avisa.</li>
+                    <li><b>Por privacidad, el chat nunca le dice al paciente si un DNI tiene análisis ni si el protocolo “no coincide”:</b> la respuesta es siempre la misma. Así nadie puede averiguar si otra persona se hizo estudios. Hay un tope de 5 intentos por celular por hora.</li>
+                    <li><b class="text-slate-200">Los PDFs no se copian.</b> Se traen de Drive en el momento, y solo los ve el celular vinculado (ver, bajar o compartir dentro del chat). Al verificar aparecen también los análisis de los últimos días de ese DNI (los mismos días que el portal “Mis Resultados”, por defecto 30).</li>
+                    <li><b class="text-slate-200">Análisis nuevos:</b> un vigía revisa la carpeta cada 3 minutos. Cuando aparece un archivo de un DNI vinculado, lo entrega como tarjeta dentro del chat y avisa al celular. No hace falta que el paciente tenga el chat abierto.</li>
+                    <li><b class="text-slate-200">Avisos (notificaciones):</b> el texto es siempre genérico (“Tenés novedades”) porque se ve con la pantalla bloqueada: nunca lleva datos de salud. Hay dos permisos separados: <b>“Mis análisis y respuestas”</b> (análisis, respuesta de una persona, recordatorio de turno) y <b>“Novedades”</b> (solo los avisos masivos). No se avisa a quien ya tiene el chat abierto.</li>
+                    <li><b class="text-slate-200">En iPhone</b> las notificaciones solo funcionan si el paciente agrega el chat a la pantalla de inicio (iOS 16.4 o superior); el chat le muestra la guía de 3 pasos. En <b>Android</b> alcanza con aceptar el permiso. <b>Si el paciente no acepta los avisos, sus análisis igual están siempre en el chat</b> cuando entra.</li>
+                    <li><b class="text-slate-200">Atención personal:</b> si alguien del laboratorio responde desde Historial de Chats (las conversaciones web aparecen como “web”, con el DNI y protocolo vinculados), el paciente lo ve en el chat y le llega un aviso. Al responder, el bot se pausa en esa conversación por 2 horas.</li>
+                    <li><b class="text-slate-200">Costo de IA:</b> como el link es público, hay topes contra el abuso: mensajes por celular por día, mensajes de todo el chat por día (freno de emergencia) y por IP. Cuando un paciente llega al tope, el chat le avisa que vuelva más tarde.</li>
+                    <li><b class="text-slate-200">Retención:</b> un chat sin actividad por más de los días configurados (por defecto 180) se borra por completo: DNI vinculado, mensajes, avisos y memoria del bot. No se tocan turnos, formularios ni consumo.</li>
+                </ul>
+            </div>
+
+            <div>
+                <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-3">Ejemplos de uso</h4>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <p class="text-slate-200 font-bold mb-1">Ejemplo paso a paso: un paciente</p>
+                        <ul class="text-[12px] text-slate-400 space-y-1">
+                            <li>10:00 — escanea el QR de recepción → ve el saludo y los botones.</li>
+                            <li>10:01 — pregunta “¿necesito ayuno?” → el bot responde con los Conocimientos cargados.</li>
+                            <li>10:03 — toca <b class="text-slate-200">Ver mis análisis</b>, escribe DNI 12.345.678 y protocolo A300044, acepta y vincula.</li>
+                            <li>10:04 — el chat le dice que el análisis aparecerá solo; toca <b class="text-slate-200">Sí, avisame</b> y acepta el permiso.</li>
+                            <li>12:40 — el laboratorio sube <code>A300044 012345678.pdf</code> a PROTOCOLOS.</li>
+                            <li>12:43 — le llega “Tenés novedades”; al tocarla, el chat abre justo la tarjeta del análisis → <b class="text-slate-200">Ver</b>.</li>
+                        </ul>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <p class="text-slate-200 font-bold mb-1">Ejemplo de aviso masivo</p>
+                        <p class="text-[12px] text-slate-500 mb-2">Audiencia: todos los que aceptaron novedades · Enviar ahora</p>
+                        <p class="text-[12px] text-slate-300">Título: <b>Vacunación antigripal</b></p>
+                        <p class="italic text-slate-300 text-[12px]">“Este sábado atendemos de 8 a 12 hs, sin turno previo.”</p>
+                        <p class="text-[12px] text-slate-500 mt-2">Si se pide enviar a las 22:30, se corre solo al día siguiente a las 9:00 (horario permitido). Después en el historial ves cuántos lo recibieron, cuántos fallaron y cuántos lo tocaron.</p>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <p class="text-slate-200 font-bold mb-1">Ejemplo de “tope de mensajes”</p>
+                        <p class="text-[12px] text-slate-500 mb-2">Mensajes por celular por día: <b>30</b></p>
+                        <p class="text-[12px] text-slate-400">Un curioso que le escribe 50 veces al bot hoy recibe un aviso al llegar al mensaje 31 y no gasta más IA. Mañana vuelve a empezar. Poné <b>0</b> para no limitar.</p>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <p class="text-slate-200 font-bold mb-1">Ejemplo: el paciente se equivoca de DNI</p>
+                        <p class="text-[12px] text-slate-400">Carga un DNI mal escrito → el chat lo acepta igual (por privacidad) y queda <b>Pendiente</b>; como nunca aparece un archivo con ese DNI, sigue pendiente y, pasados los 10 días, cuando abra el chat se le avisa que <b>Venció</b>. Solución: en el chat, Menú → “No soy yo / desvincular” y volver a cargar; o desvincularlo desde la tabla de abajo.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-[13px] font-bold text-slate-300 uppercase tracking-widest mb-2">Si algo no anda</h4>
+                <ul class="list-disc pl-5 space-y-1.5">
+                    <li><b class="text-slate-200">“No me aparece mi análisis”:</b> buscalo en <b>Pacientes vinculados</b>. Si está <b>Pendiente</b>, todavía no hay un archivo en PROTOCOLOS con ese protocolo y DNI (o hay un error de tipeo): revisá el nombre del archivo en Drive, tiene que ser <code>PROTOCOLO DNI.pdf</code>.</li>
+                    <li><b class="text-slate-200">“No me llegan los avisos”:</b> mirá la columna <b>Avisos</b>: “No” significa que no los aceptó, los bloqueó en el navegador, o (en iPhone) no instaló el chat en la pantalla de inicio.</li>
+                    <li><b class="text-slate-200">El bot responde genérico:</b> falta cargar Conocimientos (Configuración → Base de Conocimiento).</li>
+                    <li><b class="text-slate-200">Quiero pausar todo:</b> destildá “Chat encendido”. Para dejar de entregar solo análisis, destildá “Entregar resultados en el chat”.</li>
+                    <li><b class="text-slate-200">Quiero borrar los datos de un paciente:</b> Pacientes vinculados → Desvincular (borra sus tarjetas), o Historial de Chats → abrir la conversación → “Eliminar Hilo” (borra todo el chat).</li>
+                </ul>
+            </div>
+
+            <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-[13px] text-amber-200/80">
+                <b>Tené en cuenta:</b> (1) el texto de consentimiento por defecto es un borrador: conviene que lo revise el asesor legal del laboratorio, porque se trata de datos de salud. (2) En los avisos masivos <b>no incluyas datos de salud ni nombres</b>: se leen con la pantalla bloqueada. (3) Con avisos masivos muy seguidos, los navegadores suelen quitar el permiso: pocos y útiles. (4) Antes de arrancar con pacientes reales, revisá el checklist de “Piloto en recepción”.
+            </div>
+        </div>
+    </details>
 
     <!-- Estado + link -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
@@ -50,6 +152,54 @@
                 </button>
             </div>
             <div class="bg-white rounded-xl p-3 w-40 h-40 flex items-center justify-center" id="wcQr"></div>
+        </div>
+    </div>
+
+    <!-- Piloto: metricas, checklist e instructivo -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="pilotBox">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-500"></i> Piloto en recepción: cómo va</h2>
+            <div class="flex items-center gap-2">
+                <select id="pilotDays" class="px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white outline-none">
+                    <option value="7">Últimos 7 días</option><option value="14" selected>Últimos 14 días</option><option value="30">Últimos 30 días</option>
+                </select>
+                <a id="pilotCsv" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold">Bajar CSV</a>
+                <button onclick="printGuide()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold">Imprimir instructivo para recepción</button>
+            </div>
+        </div>
+        <details class="mb-4 text-xs text-slate-500">
+            <summary class="cursor-pointer text-slate-400 hover:text-slate-200">Cómo leer estos números</summary>
+            <ul class="list-disc pl-5 mt-2 space-y-1">
+                <li><b class="text-slate-300">Celulares que abrieron el chat:</b> celulares distintos que entraron alguna vez (no cuenta cada visita). Es una buena medida de “cuántos escanearon el QR”.</li>
+                <li><b class="text-slate-300">Activos en 7 días:</b> celulares que volvieron a abrir el chat en la última semana.</li>
+                <li><b class="text-slate-300">Mensajes al bot / Análisis entregados:</b> del período elegido (no acumulado).</li>
+                <li><b class="text-slate-300">Costo de IA:</b> solo lo gastado por conversaciones web en el período (no incluye WhatsApp), y el promedio por mensaje.</li>
+                <li><b class="text-slate-300">Embudo:</b> del total de celulares que abrieron el chat, cuántos le escribieron al bot, vincularon su DNI, quedaron verificados (vieron un análisis), activaron los avisos y aceptaron las novedades. Sirve para ver dónde se “caen” los pacientes y qué explicar mejor en recepción.</li>
+                <li><b class="text-slate-300">Checklist:</b> ✓ listo · ! recomendado · ✗ falta · las casillas vacías las tildás vos (se guardan en este navegador).</li>
+            </ul>
+        </details>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="pilotKpis"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Embudo (histórico)</h3>
+                <div id="pilotFunnel" class="space-y-2"></div>
+            </div>
+            <div>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Checklist para arrancar</h3>
+                <ul id="pilotChecklist" class="space-y-1.5 text-sm"></ul>
+            </div>
+        </div>
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mt-5 mb-2">Por día</h3>
+        <div class="overflow-x-auto max-h-64 overflow-y-auto">
+            <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-800">
+                    <th class="py-2 pr-3">Día</th><th class="py-2 pr-3">Celulares nuevos</th><th class="py-2 pr-3">Mensajes al bot</th><th class="py-2 pr-3">Vinculaciones</th><th class="py-2 pr-3">Verificadas</th><th class="py-2 pr-3">Análisis entregados</th><th class="py-2">Avisos activados</th>
+                </tr></thead>
+                <tbody id="pilotDaily"></tbody>
+            </table>
+        </div>
+        <div id="pilotHealth" class="hidden mt-5 p-3 rounded-lg border border-slate-700 text-xs text-slate-300">
+            <div class="font-bold text-slate-200 mb-1">Uso del servidor (solo súper admin)</div><div id="pilotHealthBody"></div>
         </div>
     </div>
 
@@ -97,7 +247,7 @@
     <!-- Limites -->
     <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4 text-brand-500"></i> Límites (cuidan el costo de IA)</h2>
-        <p class="text-xs text-slate-500 mb-3">Como el link es público, cualquiera con el enlace puede escribir. Estos topes evitan gastos por abuso. 0 = sin tope.</p>
+        <p class="text-xs text-slate-500 mb-3">Como el link es público, cualquiera con el enlace puede escribir. Estos topes evitan gastos por abuso. 0 = sin tope. Cuando un paciente llega al tope de mensajes, el chat le avisa que vuelva mañana (o que llame, si cargaste el teléfono de la empresa); no ve ningún error.</p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
                 <label class="text-xs text-slate-500 block mb-1">Mensajes por celular por día</label>
@@ -107,6 +257,118 @@
                 <label class="text-xs text-slate-500 block mb-1">Mensajes de todo el chat por día (freno de emergencia)</label>
                 <input type="number" id="wcGlobal" min="0" max="100000" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
             </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Avisos masivos por mes (0 = sin tope)</label>
+                <input type="number" id="wcBcCap" min="0" max="60" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Días que se conserva un chat sin actividad (0 = no borrar nunca)</label>
+                <input type="number" id="wcRetention" min="0" max="3650" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                <p class="text-xs text-slate-500 mt-1">Pasado ese tiempo se borra todo el chat de ese celular (DNI vinculado, mensajes, avisos). Mínimo 30 días. Recomendado: 180.</p>
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Horario permitido para masivos (hora de Argentina)</label>
+                <div class="flex items-center gap-2 text-sm text-slate-400">
+                    de <input type="number" id="wcBcFrom" min="0" max="23" class="w-20 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-white outline-none"> a
+                    <input type="number" id="wcBcTo" min="1" max="24" class="w-20 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-white outline-none"> hs
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resultados de analisis dentro del chat -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4 text-brand-500"></i> Resultados de análisis dentro del chat</h2>
+        <p class="text-xs text-slate-500 mb-3">El paciente vincula su celular con <b>DNI + número de protocolo</b> (el del papel) y sus PDFs aparecen dentro del chat: los ve, baja o comparte ahí mismo. Usa la carpeta de PROTOCOLOS del portal “Mis Resultados” (archivos <code>PROTOCOLO DNI.pdf</code>).</p>
+        <label class="flex items-center gap-3 cursor-pointer mb-2">
+            <input type="checkbox" id="wcResults" class="w-5 h-5 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+            <span class="text-sm font-bold text-white">Entregar resultados en el chat</span>
+        </label>
+        <p id="wcResultsHint" class="text-xs text-amber-400/90 mb-3"></p>
+        <label class="text-xs text-slate-500 block mb-1">Texto de consentimiento (lo ve el paciente al vincular; conviene que lo revise su asesor legal)</label>
+        <textarea id="wcConsent" rows="3" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+        <p class="text-xs text-slate-500 mt-2">Seguridad: sin el protocolo del papel nadie puede ver los análisis de un DNI. Máximo 5 intentos por celular por hora. Los PDFs no se copian: se traen de Drive en el momento y solo los ve el celular vinculado.</p>
+    </div>
+
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Pacientes vinculados</h2>
+        <p class="text-xs text-slate-500 mb-3"><b class="text-slate-300">Verificado:</b> ya se encontró su archivo en PROTOCOLOS y ve sus análisis. <b class="text-slate-300">Pendiente:</b> cargó DNI y protocolo pero todavía no hay un archivo con ambos (espera hasta 10 días). <b class="text-slate-300">Venció:</b> pasaron 10 días sin encontrarlo (se marca cuando el paciente vuelve a abrir el chat). <b class="text-slate-300">Avisos “Sí”:</b> ese celular puede recibir notificaciones. <b class="text-slate-300">Desvincular</b> borra sus tarjetas del chat y le quita el acceso a los PDFs.</p>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-800">
+                    <th class="py-2 pr-3">DNI</th><th class="py-2 pr-3">Nombre</th><th class="py-2 pr-3">Protocolo</th><th class="py-2 pr-3">Estado</th><th class="py-2 pr-3">Análisis entregados</th><th class="py-2 pr-3">Avisos</th><th class="py-2 pr-3">Vinculado</th><th class="py-2"></th>
+                </tr></thead>
+                <tbody id="wcLinks"><tr><td colspan="8" class="py-4 text-slate-500 text-xs">Cargando…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Avisos masivos -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="bcBox">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="megaphone" class="w-4 h-4 text-brand-500"></i> Avisos masivos</h2>
+        <p class="text-xs text-slate-500 mb-3">Una notificación al celular de quienes aceptaron recibir <b>“Novedades”</b> (es un permiso aparte del de sus análisis). <span class="text-amber-400/90">No incluyas datos de salud ni nombres: la notificación se ve con la pantalla bloqueada.</span></p>
+        <div id="bcSummary" class="text-xs text-slate-400 mb-4"></div>
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs text-slate-500 block mb-1">Título (aparece en negrita)</label>
+                    <input type="text" id="bcTitle" maxlength="65" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Campaña de vacunación">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-500 block mb-1">Texto de la notificación <span id="bcBodyCount" class="text-slate-600"></span></label>
+                    <textarea id="bcBody" rows="2" maxlength="140" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Este sábado atendemos de 8 a 12 hs sin turno."></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-500 block mb-1">Mensaje dentro del chat (opcional). Si lo completás, al tocar la notificación se abre justo ese mensaje.</label>
+                    <textarea id="bcChat" rows="3" maxlength="1000" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Más detalle: horarios, requisitos, dirección…"></textarea>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs text-slate-500 block mb-1">Audiencia</label>
+                        <select id="bcAud" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+                            <option value="all">Todos los que aceptaron novedades</option>
+                            <option value="recent">Con análisis recibidos en los últimos días…</option>
+                        </select>
+                        <div id="bcDaysBox" class="mt-2 hidden text-xs text-slate-400">Últimos <input type="number" id="bcDays" min="1" max="365" value="30" class="w-20 px-2 py-1 bg-slate-900 border border-slate-800 rounded text-white outline-none"> días</div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 block mb-1">Cuándo</label>
+                        <select id="bcWhen" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+                            <option value="now">Enviar ahora</option>
+                            <option value="scheduled">Programar…</option>
+                        </select>
+                        <input type="datetime-local" id="bcAt" class="mt-2 hidden w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+                    </div>
+                </div>
+                <div class="text-sm text-slate-300" id="bcCount"></div>
+                <div class="flex items-center gap-3">
+                    <button onclick="sendBroadcast()" id="bcSend" class="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Enviar aviso</button>
+                    <span id="bcMsg" class="text-sm"></span>
+                </div>
+            </div>
+            <div>
+                <div class="text-xs text-slate-500 mb-2">Así se ve en el celular</div>
+                <div class="rounded-3xl p-3 bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600">
+                    <div class="bg-white/95 text-slate-900 rounded-2xl p-3 shadow-lg">
+                        <div class="flex items-center gap-2 mb-1">
+                            <img id="bcPrevIcon" alt="" class="w-5 h-5 rounded bg-slate-200 object-contain">
+                            <span id="bcPrevApp" class="text-[11px] text-slate-500 font-semibold"></span>
+                            <span class="text-[11px] text-slate-400 ml-auto">ahora</span>
+                        </div>
+                        <div id="bcPrevTitle" class="text-sm font-bold leading-tight"></div>
+                        <div id="bcPrevBody" class="text-sm text-slate-700 leading-snug mt-0.5 break-words"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mt-6 mb-2">Historial</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-800">
+                    <th class="py-2 pr-3">Aviso</th><th class="py-2 pr-3">Cuándo</th><th class="py-2 pr-3">Estado</th><th class="py-2 pr-3">Enviados</th><th class="py-2 pr-3">Fallidos</th><th class="py-2 pr-3">Lo tocaron</th><th class="py-2"></th>
+                </tr></thead>
+                <tbody id="bcList"><tr><td colspan="7" class="py-4 text-slate-500 text-xs">Cargando…</td></tr></tbody>
+            </table>
         </div>
     </div>
 
@@ -114,6 +376,44 @@
         <button onclick="saveCfg()" class="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Guardar</button>
         <span id="wcMsg" class="text-sm"></span>
     </div>
+</div>
+
+<!-- Instructivo imprimible para recepcion -->
+<div id="guide">
+    <h1>Chat de <span class="g-title"></span>: cómo ayudar al paciente</h1>
+    <p class="small">Instructivo para recepción · Link del chat: <b class="g-url"></b></p>
+    <div class="box"><b>Qué decir:</b> “Escaneá este código con la cámara del celular. Ahí podés consultar horarios y turnos. Cuando quieras ver tus análisis, tocá <b>Ver mis análisis</b> y cargá tu <b>DNI</b> y el <b>número de protocolo</b> del papel. Si aceptás los avisos, te llega una notificación cuando estén listos.”</div>
+    <h2>1. Cómo lo usa el paciente</h2>
+    <ol>
+        <li>Escanea el QR del cartel (o abre el link que le mandamos) y se abre el chat.</li>
+        <li>Puede preguntar lo que quiera (horarios, preparación, turnos) o tocar los botones.</li>
+        <li>Para ver resultados: toca <b>Ver mis análisis</b> → escribe su DNI, el protocolo (letra y números que figuran en el papel, por ejemplo A300044) y acepta el consentimiento.</li>
+        <li>El PDF aparece dentro del chat: lo puede <b>ver, bajar o compartir</b> ahí mismo.</li>
+        <li>Toca <b>“Sí, avisame”</b> para recibir una notificación cuando haya un análisis nuevo (no dice nada de su salud).</li>
+    </ol>
+    <h2>2. Si tiene iPhone</h2>
+    <ul>
+        <li>Para recibir avisos tiene que <b>agregar el chat a la pantalla de inicio</b>: abrir el link en <b>Safari</b> → botón Compartir → “Agregar a inicio” → “Agregar”. Después abre el chat desde ese ícono.</li>
+        <li>Si abrió el link desde WhatsApp o Instagram, primero tiene que abrirlo en Safari.</li>
+        <li>Aunque no active los avisos, sus análisis siempre aparecen dentro del chat cuando entra.</li>
+    </ul>
+    <h2>3. Si algo no funciona</h2>
+    <ul>
+        <li><b>“No me aparece el análisis”:</b> los resultados aparecen apenas el laboratorio sube el archivo. Pedile que revise que el DNI y el protocolo estén bien escritos. Queda esperando hasta 10 días y aparece solo.</li>
+        <li><b>“Me equivoqué de DNI o protocolo”:</b> Menú (los tres puntos) → “No soy yo / desvincular” y volver a cargar los datos.</li>
+        <li><b>“No me llegan los avisos”:</b> revisar que aceptó las notificaciones (Menú → Avisos en este celular). Si tocó “No permitir”, hay que habilitarlas desde los Ajustes del navegador. En iPhone, tiene que tener el chat instalado.</li>
+        <li><b>“Es el celular de otra persona / de la familia”:</b> puede vincular a varios pacientes: Menú → “Agregar otro paciente”. Si presta el celular, que use “No soy yo / desvincular”.</li>
+        <li><b>“Quiero dejar de recibir avisos”:</b> Menú → Avisos en este celular → Desactivar.</li>
+        <li><b>“No tengo cámara / no entiendo”:</b> mandale el link por WhatsApp o ayudalo a cargar sus datos.</li>
+    </ul>
+    <h2>4. Importante</h2>
+    <ul>
+        <li>No prometas horarios de entrega de resultados: dependen del laboratorio.</li>
+        <li>No pidas al paciente que te diga sus datos en voz alta si hay más gente esperando; que los cargue él en su celular.</li>
+        <li>Los avisos <b>nunca</b> muestran resultados ni datos de salud; solo dicen que hay novedades.</li>
+        <li>Si un paciente quiere que se borren sus datos del chat, se hace desde el panel (Pacientes vinculados → Desvincular).</li>
+    </ul>
+    <p class="small">Cualquier problema técnico: avisar al responsable del sistema.</p>
 </div>
 
 <!-- Cartel imprimible -->
@@ -148,10 +448,19 @@ async function load(){
     $('wcColor').value = CFG.color; $('wcColorPick').value = CFG.color || CFG.defaults.color;
     $('wcButtons').value = CFG.buttons.join('\n');
     showLogo(CFG.logo || CFG.logo_default, !!CFG.logo);
+    $('wcResults').checked = CFG.results_enabled;
+    $('wcConsent').value = CFG.consent; $('wcConsent').placeholder = CFG.consent_default;
+    $('wcResultsHint').textContent = CFG.results_ready ? ('Carpeta de resultados: ' + (CFG.folder_name || 'configurada')) :
+        'Falta configurar la carpeta de PROTOCOLOS en Biblioteca de Documentos → Portal “Mis Resultados”. Hasta entonces no se puede activar.';
+    loadLinks();
     $('wcDaily').value = CFG.daily_cap; $('wcGlobal').value = CFG.global_cap;
+    $('wcRetention').value = CFG.retention_days;
+    $('wcBcCap').value = CFG.broadcast_cap; $('wcBcFrom').value = CFG.hours_from; $('wcBcTo').value = CFG.hours_to;
+    $('bcPrevApp').textContent = CFG.title || CFG.defaults.title; $('bcPrevIcon').src = (CFG.logo || CFG.logo_default) || '';
+    updatePreview(); loadBroadcasts(); loadPilot(); loadHealth();
     $('wcUrl').value = CFG.public_url; $('wcOpen').href = CFG.public_url;
     const s = CFG.stats;
-    $('wcStatsLine').textContent = `${s.devices_total} celulares · ${s.devices_7d} activos en 7 días · ${s.messages_today} mensajes hoy · ${s.messages_7d} en 7 días`;
+    $('wcStatsLine').textContent = `${s.devices_total} celulares · ${s.devices_7d} activos en 7 días · ${s.messages_today} mensajes hoy · ${s.messages_7d} en 7 días · ${s.push_devices} con avisos`;
     drawQr($('wcQr'), CFG.public_url, 4);
     document.title = 'Chat Web | anka';
 }
@@ -173,6 +482,88 @@ $('wcLogoFile').addEventListener('change', async e => {
     e.target.value = '';
 });
 async function removeLogo(){ await fetch('/api/admin/web_chat/logo', {method: 'DELETE'}); await load(); }
+const BC_STATUS = {programado: ['Programado', 'text-amber-300'], enviando: ['Enviando…', 'text-sky-300'], enviado: ['Enviado', 'text-emerald-400'], cancelado: ['Cancelado', 'text-slate-500'], error: ['Con error', 'text-red-400']};
+function updatePreview(){
+    $('bcPrevTitle').textContent = $('bcTitle').value.trim() || 'Título del aviso';
+    $('bcPrevBody').textContent = $('bcBody').value.trim() || 'Texto del aviso';
+    $('bcBodyCount').textContent = '(' + $('bcBody').value.length + '/140)';
+}
+async function updateCount(){
+    const aud = $('bcAud').value, days = parseInt($('bcDays').value, 10) || 30;
+    $('bcDaysBox').classList.toggle('hidden', aud !== 'recent');
+    const r = await fetch('/api/admin/web_chat/broadcasts/preview', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({audience: aud, days})});
+    if (!r.ok) return;
+    const n = (await r.json()).recipients;
+    $('bcCount').innerHTML = n ? 'Lo recibirían <b>' + n + '</b> celular' + (n === 1 ? '' : 'es') + '.' : '<span class="text-amber-400">Nadie lo recibiría todavía: ningún celular activó “Novedades” para esa audiencia.</span>';
+}
+['bcTitle', 'bcBody'].forEach(id => $(id).addEventListener('input', updatePreview));
+['bcAud', 'bcDays'].forEach(id => $(id).addEventListener('change', updateCount));
+$('bcWhen').addEventListener('change', () => $('bcAt').classList.toggle('hidden', $('bcWhen').value !== 'scheduled'));
+async function loadBroadcasts(){
+    const r = await fetch('/api/admin/web_chat/broadcasts'); if (!r.ok) return;
+    const j = await r.json(), s = j.summary;
+    $('bcSummary').innerHTML = `<b>${s.subscribers}</b> celulares aceptaron Novedades · Este mes: <b>${s.used}</b>${s.cap ? ' de ' + s.cap : ''} avisos${s.cap && s.used >= s.cap ? ' <span class="text-amber-400">(tope alcanzado)</span>' : ''} · Horario permitido: ${s.hours_from} a ${s.hours_to} hs` + (s.chat_on ? '' : ' · <span class="text-amber-400">El chat está apagado</span>');
+    const body = $('bcList');
+    if (!j.broadcasts.length){ body.innerHTML = '<tr><td colspan="7" class="py-4 text-slate-500 text-xs">Todavía no enviaste avisos.</td></tr>'; updateCount(); return; }
+    body.innerHTML = '';
+    for (const b of j.broadcasts){
+        const tr = document.createElement('tr'); tr.className = 'border-b border-slate-800/50';
+        const st = BC_STATUS[b.status] || [b.status, ''];
+        const first = document.createElement('td'); first.className = 'py-2 pr-3 text-slate-300';
+        first.innerHTML = '<b></b><div class="text-xs text-slate-500"></div>'; first.querySelector('b').textContent = b.title; first.querySelector('div').textContent = b.body;
+        tr.appendChild(first);
+        const cells = [b.sent_at || b.scheduled, st[0], b.status === 'enviado' ? String(b.sent) : (b.recipients ? '(' + b.recipients + ' previstos)' : '—'), b.status === 'enviado' ? String(b.failed) : '—',
+                       b.status === 'enviado' ? b.clicks + (b.sent ? ' (' + Math.round(100 * b.clicks / b.sent) + '%)' : '') : '—'];
+        cells.forEach((c, i) => { const td = document.createElement('td'); td.className = 'py-2 pr-3 ' + (i === 1 ? st[1] : 'text-slate-300'); td.textContent = c; tr.appendChild(td); });
+        const td = document.createElement('td'); td.className = 'py-2 text-right';
+        if (b.status === 'programado'){
+            const x = document.createElement('button'); x.className = 'text-xs text-red-400 hover:text-red-300 underline'; x.textContent = 'Cancelar';
+            x.addEventListener('click', async () => { if (!confirm('¿Cancelar este aviso programado?')) return; await fetch('/api/admin/web_chat/broadcasts/' + b.id + '/cancel', {method: 'POST'}); loadBroadcasts(); });
+            td.appendChild(x);
+        }
+        tr.appendChild(td); body.appendChild(tr);
+    }
+    updateCount();
+}
+async function sendBroadcast(){
+    const m = $('bcMsg'); m.className = 'text-sm text-slate-400'; m.textContent = '';
+    const when = $('bcWhen').value;
+    if (!confirm(when === 'now' ? '¿Enviar este aviso ahora a los celulares elegidos?' : '¿Programar este aviso?')) return;
+    $('bcSend').disabled = true;
+    const r = await fetch('/api/admin/web_chat/broadcasts', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+        title: $('bcTitle').value, body: $('bcBody').value, chat_message: $('bcChat').value, audience: $('bcAud').value,
+        days: parseInt($('bcDays').value, 10) || 30, when, scheduled_local: $('bcAt').value})});
+    const j = await r.json().catch(() => ({}));
+    $('bcSend').disabled = false;
+    if (!r.ok){ m.className = 'text-sm text-red-400'; m.textContent = j.error || 'No se pudo enviar'; return; }
+    m.className = 'text-sm text-emerald-400';
+    m.textContent = j.now ? 'Enviando a ' + j.recipients + ' celulares…' : ('Programado para el ' + j.scheduled + (j.delayed ? ' (se corrió al próximo horario permitido)' : ''));
+    ['bcTitle', 'bcBody', 'bcChat'].forEach(id => $(id).value = ''); updatePreview();
+    setTimeout(loadBroadcasts, j.now ? 4000 : 300);
+}
+const STATUS_LBL = {pendiente: 'Pendiente (esperando el PDF)', verificado: 'Verificado', vencido: 'Venció'};
+async function loadLinks(){
+    const body = $('wcLinks');
+    const r = await fetch('/api/admin/web_chat/links');
+    if (!r.ok){ body.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-500 text-xs">No se pudo cargar.</td></tr>'; return; }
+    const j = await r.json();
+    if (!j.links.length){ body.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-500 text-xs">Todavía no hay pacientes vinculados.</td></tr>'; return; }
+    body.innerHTML = '';
+    for (const l of j.links){
+        const tr = document.createElement('tr'); tr.className = 'border-b border-slate-800/50';
+        const cells = [l.dni, l.name || '—', l.protocol, STATUS_LBL[l.status] || l.status, String(l.deliveries), l.push ? 'Sí' : 'No',
+                       l.created_at ? new Date(l.created_at + 'Z').toLocaleDateString('es-AR') : ''];
+        for (const c of cells){ const td = document.createElement('td'); td.className = 'py-2 pr-3 text-slate-300'; td.textContent = c; tr.appendChild(td); }
+        const td = document.createElement('td'); td.className = 'py-2 text-right whitespace-nowrap';
+        const a = document.createElement('a'); a.href = '/admin/chat/' + encodeURIComponent(l.thread_id); a.className = 'text-xs text-slate-400 hover:text-white underline mr-3'; a.textContent = 'Ver chat';
+        const b = document.createElement('button'); b.className = 'text-xs text-red-400 hover:text-red-300 underline'; b.textContent = 'Desvincular';
+        b.addEventListener('click', async () => {
+            if (!confirm('¿Desvincular este paciente? Sus análisis dejan de verse en ese celular.')) return;
+            await fetch('/api/admin/web_chat/links/' + l.id + '/revoke', {method: 'POST'}); loadLinks();
+        });
+        td.appendChild(a); td.appendChild(b); tr.appendChild(td); body.appendChild(tr);
+    }
+}
 function clearColor(){ $('wcColor').value = ''; $('wcColorPick').value = CFG.defaults.color; }
 function copyUrl(){ navigator.clipboard.writeText($('wcUrl').value).then(() => { $('wcMsg').className = 'text-sm text-emerald-400'; $('wcMsg').textContent = 'Link copiado'; }); }
 async function saveCfg(){
@@ -181,7 +572,10 @@ async function saveCfg(){
         title: $('wcTitle').value, subtitle: $('wcSubtitle').value, welcome: $('wcWelcome').value,
         color: $('wcColor').value.trim(),
         buttons: $('wcButtons').value.split('\n').map(x => x.trim()).filter(Boolean),
-        daily_cap: parseInt($('wcDaily').value, 10) || 0, global_cap: parseInt($('wcGlobal').value, 10) || 0
+        daily_cap: parseInt($('wcDaily').value, 10) || 0, global_cap: parseInt($('wcGlobal').value, 10) || 0,
+        results_enabled: $('wcResults').checked, consent: $('wcConsent').value,
+        retention_days: parseInt($('wcRetention').value, 10) || 0,
+        broadcast_cap: parseInt($('wcBcCap').value, 10) || 0, hours_from: parseInt($('wcBcFrom').value, 10) || 0, hours_to: parseInt($('wcBcTo').value, 10) || 24
     };
     const r = await fetch('/api/admin/web_chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     const j = await r.json().catch(() => ({}));
@@ -189,13 +583,75 @@ async function saveCfg(){
     if (r.ok){ m.className = 'text-sm text-emerald-400'; m.textContent = 'Guardado'; await load(); }
     else { m.className = 'text-sm text-red-400'; m.textContent = j.error || 'No se pudo guardar'; }
 }
+function printMode(mode){
+    document.body.dataset.print = mode;
+    window.onafterprint = () => { delete document.body.dataset.print; };
+    setTimeout(() => window.print(), 150);
+}
 function printPoster(){
     if (!CFG) return;
     $('posterTitle').textContent = 'Chateá con ' + (CFG.title || CFG.defaults.title);
     drawQr($('posterQr'), CFG.public_url, 8);
     $('posterUrl').textContent = CFG.public_url.replace(/^https?:\/\//, '');
-    setTimeout(() => window.print(), 150);
+    printMode('poster');
 }
+function printGuide(){
+    if (!CFG) return;
+    document.querySelectorAll('#guide .g-title').forEach(e => e.textContent = CFG.title || CFG.defaults.title);
+    document.querySelectorAll('#guide .g-url').forEach(e => e.textContent = CFG.public_url);
+    printMode('guide');
+}
+const FUNNEL_COLOR = {scanned: 'bg-slate-500', chatted: 'bg-sky-500', linked: 'bg-indigo-500', verified: 'bg-emerald-500', push: 'bg-amber-500', news: 'bg-fuchsia-500'};
+const CK_ICON = {ok: ['✓', 'text-emerald-400'], warn: ['!', 'text-amber-400'], todo: ['✗', 'text-red-400'], manual: ['', 'text-slate-400']};
+async function loadPilot(){
+    const days = parseInt($('pilotDays').value, 10) || 14;
+    $('pilotCsv').href = '/api/admin/web_chat/metrics.csv?days=' + days;
+    const r = await fetch('/api/admin/web_chat/metrics?days=' + days); if (!r.ok) return;
+    const j = await r.json(), m = j.metrics, t = m.totals;
+    const kpis = [['Celulares que abrieron el chat', t.devices], ['Activos en 7 días', t.active_7d], ['Mensajes al bot (período)', t.messages],
+                  ['Análisis entregados (período)', t.deliveries], ['Costo de IA (período)', 'US$ ' + t.ai_cost_usd.toFixed(3) + (t.messages ? ' · US$ ' + t.ai_cost_per_msg_usd.toFixed(4) + '/msg' : '')], ['Avisos masivos enviados', t.broadcasts]];
+    $('pilotKpis').innerHTML = '';
+    for (const [l, v] of kpis){ const d = document.createElement('div'); d.className = 'bg-slate-900/60 rounded-lg p-3 border border-slate-800'; d.innerHTML = '<div class="text-lg font-bold text-white"></div><div class="text-[11px] text-slate-500 leading-tight mt-1"></div>'; d.children[0].textContent = v; d.children[1].textContent = l; $('pilotKpis').appendChild(d); }
+    $('pilotFunnel').innerHTML = '';
+    for (const f of m.funnel){
+        const row = document.createElement('div');
+        row.innerHTML = '<div class="flex justify-between text-xs text-slate-300 mb-0.5"><span></span><span></span></div><div class="h-2 rounded bg-slate-800 overflow-hidden"><div class="h-2 rounded"></div></div>';
+        row.children[0].children[0].textContent = f.label; row.children[0].children[1].textContent = f.n + ' (' + f.pct + '%)';
+        const bar = row.children[1].children[0]; bar.className = 'h-2 rounded ' + (FUNNEL_COLOR[f.key] || 'bg-slate-500'); bar.style.width = Math.max(f.pct, f.n ? 2 : 0) + '%';
+        $('pilotFunnel').appendChild(row);
+    }
+    const ul = $('pilotChecklist'); ul.innerHTML = '';
+    let manual = {}; try { manual = JSON.parse(localStorage.getItem('wcChecklistManual') || '{}'); } catch (_) {}
+    for (const c of j.checklist){
+        const li = document.createElement('li'); li.className = 'flex gap-2 items-start';
+        const ic = CK_ICON[c.status] || CK_ICON.manual;
+        if (c.status === 'manual'){
+            li.innerHTML = '<input type="checkbox" class="mt-1 w-4 h-4 rounded bg-slate-800 border-slate-700"><span><span class="text-slate-200"></span><span class="block text-xs text-slate-500"></span></span>';
+            const cb = li.querySelector('input'); cb.checked = !!manual[c.key];
+            cb.addEventListener('change', () => { manual[c.key] = cb.checked; try { localStorage.setItem('wcChecklistManual', JSON.stringify(manual)); } catch (_) {} });
+            li.querySelector('span span').textContent = c.label; li.querySelector('span span:last-child').textContent = c.hint;
+        } else {
+            li.innerHTML = '<span class="w-4 text-center font-bold shrink-0 ' + ic[1] + '">' + ic[0] + '</span><span><span class="text-slate-200"></span><span class="block text-xs text-slate-500"></span></span>';
+            li.querySelector('span span').textContent = c.label; li.querySelector('span span:last-child').textContent = c.status === 'ok' ? '' : c.hint;
+        }
+        ul.appendChild(li);
+    }
+    const body = $('pilotDaily'); body.innerHTML = '';
+    for (let i = m.days.length - 1; i >= 0; i--){
+        const tr = document.createElement('tr'); tr.className = 'border-b border-slate-800/50';
+        const s = m.series; const cells = [m.days[i].split('-').reverse().join('/'), s.new_devices[i], s.messages[i], s.links_new[i], s.links_verified[i], s.deliveries[i], s.push_subs[i]];
+        cells.forEach((c, k) => { const td = document.createElement('td'); td.className = 'py-1.5 pr-3 ' + (k && !c ? 'text-slate-600' : 'text-slate-300'); td.textContent = c; tr.appendChild(td); });
+        body.appendChild(tr);
+    }
+}
+async function loadHealth(){
+    const r = await fetch('/api/admin/web_chat/health'); if (!r.ok) return;
+    const h = await r.json();
+    $('pilotHealthBody').textContent = 'Memoria del proceso: ' + (h.process_rss_mb != null ? h.process_rss_mb + ' MB' : 'n/d') + ' · Memoria del bot (checkpoints): ' + (h.checkpoints_mb != null ? h.checkpoints_mb + ' MB' : 'n/d')
+        + ' · Celulares web: ' + h.web_devices + ' · Mensajes: ' + h.web_events + ' · Vínculos: ' + h.web_links + ' · Suscripciones de avisos: ' + h.push_subs;
+    $('pilotHealth').classList.remove('hidden');
+}
+$('pilotDays').addEventListener('change', loadPilot);
 load();
 if (window.lucide) lucide.createIcons();
 </script>
