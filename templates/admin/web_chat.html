@@ -1,0 +1,177 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Chat Web | anka{% endblock %}
+
+{% block content %}
+<style>
+  #poster{display:none}
+  @media print{
+    body *{visibility:hidden}
+    #poster,#poster *{visibility:visible}
+    #poster{display:flex;position:fixed;inset:0;background:#fff;color:#111;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24mm;z-index:9999}
+    #poster h1{font-size:44pt;line-height:1.1;margin:0 0 10mm;font-family:system-ui,sans-serif}
+    #poster p{font-size:22pt;margin:0 0 12mm;font-family:system-ui,sans-serif}
+    #poster .qr svg,#poster .qr img{width:120mm;height:120mm}
+    #poster .url{font-size:14pt;margin-top:10mm;color:#444;word-break:break-all;font-family:system-ui,sans-serif}
+    @page{size:A4;margin:0}
+  }
+</style>
+
+<div class="h-full flex flex-col p-6 max-w-[1100px] mx-auto w-full animate-fade-in overflow-y-auto custom-scrollbar">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+            <i data-lucide="message-circle" class="w-6 h-6 text-brand-500"></i> Chat Web
+        </h1>
+        <p class="text-slate-400 text-sm mt-1">
+            Un link (y un QR) que abre el chat a pantalla completa en el celular, sin instalar nada. Responde con el mismo cerebro y los mismos Conocimientos que WhatsApp.
+        </p>
+    </div>
+
+    <!-- Estado + link -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <div class="flex flex-col md:flex-row md:items-center gap-4 justify-between">
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="wcEnabled" class="w-5 h-5 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
+                <span class="text-sm font-bold text-white">Chat encendido <span class="text-slate-500 font-normal">(apagado, el link muestra “no disponible”)</span></span>
+            </label>
+            <div class="text-xs text-slate-500" id="wcStatsLine"></div>
+        </div>
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-start">
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Link del chat</label>
+                <div class="flex gap-2">
+                    <input type="text" id="wcUrl" readonly class="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+                    <button onclick="copyUrl()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold">Copiar</button>
+                    <a id="wcOpen" target="_blank" rel="noopener" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold">Abrir</a>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">Sirve para el QR de recepción, un botón de tu web, redes sociales o cualquier mensaje.</p>
+                <button onclick="printPoster()" class="mt-4 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-semibold inline-flex items-center gap-2">
+                    <i data-lucide="printer" class="w-4 h-4"></i> Imprimir cartel A4 con el QR
+                </button>
+            </div>
+            <div class="bg-white rounded-xl p-3 w-40 h-40 flex items-center justify-center" id="wcQr"></div>
+        </div>
+    </div>
+
+    <!-- Apariencia y textos -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="palette" class="w-4 h-4 text-brand-500"></i> Apariencia y textos</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Título (vacío = nombre del negocio)</label>
+                <input type="text" id="wcTitle" maxlength="100" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Subtítulo</label>
+                <input type="text" id="wcSubtitle" maxlength="100" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-xs text-slate-500 block mb-1">Mensaje de bienvenida (lo primero que ve quien abre el chat; no consume IA)</label>
+                <textarea id="wcWelcome" rows="3" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Color de marca</label>
+                <div class="flex gap-2 items-center">
+                    <input type="color" id="wcColorPick" class="w-12 h-10 bg-slate-900 border border-slate-800 rounded-lg p-1">
+                    <input type="text" id="wcColor" maxlength="7" placeholder="#0F766E" class="w-32 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+                    <button onclick="clearColor()" class="text-xs text-slate-500 hover:text-white underline">Usar el color por defecto</button>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">El logo del chat es el del negocio (se carga en Configuración → Empresa).</p>
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Botones iniciales (uno por línea, máximo 8)</label>
+                <textarea id="wcButtons" rows="5" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
+                <p class="text-xs text-slate-500 mt-1">Al tocarlos, el texto se envía como una pregunta y el bot responde con los Conocimientos cargados.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Limites -->
+    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4 text-brand-500"></i> Límites (cuidan el costo de IA)</h2>
+        <p class="text-xs text-slate-500 mb-3">Como el link es público, cualquiera con el enlace puede escribir. Estos topes evitan gastos por abuso. 0 = sin tope.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Mensajes por celular por día</label>
+                <input type="number" id="wcDaily" min="0" max="1000" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+            <div>
+                <label class="text-xs text-slate-500 block mb-1">Mensajes de todo el chat por día (freno de emergencia)</label>
+                <input type="number" id="wcGlobal" min="0" max="100000" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none">
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-3 mb-10">
+        <button onclick="saveCfg()" class="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Guardar</button>
+        <span id="wcMsg" class="text-sm"></span>
+    </div>
+</div>
+
+<!-- Cartel imprimible -->
+<div id="poster">
+    <h1 contenteditable="true" id="posterTitle">Chateá con nosotros</h1>
+    <p contenteditable="true">Escaneá el código con la cámara de tu celular</p>
+    <div class="qr" id="posterQr"></div>
+    <div class="url" id="posterUrl"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+let CFG = null;
+const $ = id => document.getElementById(id);
+
+function drawQr(target, url, cell){
+    try {
+        const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+        target.innerHTML = qr.createSvgTag({cellSize: cell, margin: 0, scalable: true});
+        const svg = target.querySelector('svg'); if (svg){ svg.style.width = '100%'; svg.style.height = '100%'; }
+    } catch (e) { target.textContent = 'No se pudo generar el QR'; }
+}
+
+async function load(){
+    const r = await fetch('/api/admin/web_chat');
+    if (!r.ok){ $('wcMsg').textContent = 'No se pudo cargar la configuración.'; return; }
+    CFG = await r.json();
+    $('wcEnabled').checked = CFG.enabled;
+    $('wcTitle').value = CFG.title; $('wcTitle').placeholder = CFG.defaults.title;
+    $('wcSubtitle').value = CFG.subtitle; $('wcSubtitle').placeholder = CFG.defaults.subtitle;
+    $('wcWelcome').value = CFG.welcome; $('wcWelcome').placeholder = CFG.defaults.welcome;
+    $('wcColor').value = CFG.color; $('wcColorPick').value = CFG.color || CFG.defaults.color;
+    $('wcButtons').value = CFG.buttons.join('\n');
+    $('wcDaily').value = CFG.daily_cap; $('wcGlobal').value = CFG.global_cap;
+    $('wcUrl').value = CFG.public_url; $('wcOpen').href = CFG.public_url;
+    const s = CFG.stats;
+    $('wcStatsLine').textContent = `${s.devices_total} celulares · ${s.devices_7d} activos en 7 días · ${s.messages_today} mensajes hoy · ${s.messages_7d} en 7 días`;
+    drawQr($('wcQr'), CFG.public_url, 4);
+    document.title = 'Chat Web | anka';
+}
+$('wcColorPick').addEventListener('input', e => { $('wcColor').value = e.target.value.toUpperCase(); });
+$('wcColor').addEventListener('input', e => { if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) $('wcColorPick').value = e.target.value; });
+function clearColor(){ $('wcColor').value = ''; $('wcColorPick').value = CFG.defaults.color; }
+function copyUrl(){ navigator.clipboard.writeText($('wcUrl').value).then(() => { $('wcMsg').className = 'text-sm text-emerald-400'; $('wcMsg').textContent = 'Link copiado'; }); }
+async function saveCfg(){
+    const body = {
+        enabled: $('wcEnabled').checked,
+        title: $('wcTitle').value, subtitle: $('wcSubtitle').value, welcome: $('wcWelcome').value,
+        color: $('wcColor').value.trim(),
+        buttons: $('wcButtons').value.split('\n').map(x => x.trim()).filter(Boolean),
+        daily_cap: parseInt($('wcDaily').value, 10) || 0, global_cap: parseInt($('wcGlobal').value, 10) || 0
+    };
+    const r = await fetch('/api/admin/web_chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    const m = $('wcMsg');
+    if (r.ok){ m.className = 'text-sm text-emerald-400'; m.textContent = 'Guardado'; await load(); }
+    else { m.className = 'text-sm text-red-400'; m.textContent = j.error || 'No se pudo guardar'; }
+}
+function printPoster(){
+    if (!CFG) return;
+    $('posterTitle').textContent = 'Chateá con ' + (CFG.title || CFG.defaults.title);
+    drawQr($('posterQr'), CFG.public_url, 8);
+    $('posterUrl').textContent = CFG.public_url.replace(/^https?:\/\//, '');
+    setTimeout(() => window.print(), 150);
+}
+load();
+if (window.lucide) lucide.createIcons();
+</script>
+{% endblock %}

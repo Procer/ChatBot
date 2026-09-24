@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="{{ cfg.color }}">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ cfg.title[:12] }}">
+<link rel="manifest" href="/chat/{{ slug }}/manifest.json">
+<link rel="apple-touch-icon" href="/chat/{{ slug }}/icon-180.png">
+<link rel="icon" href="/chat/{{ slug }}/icon-192.png">
+<title>{{ cfg.title }}</title>
+<style>
+:root{
+  --brand:{{ cfg.color }}; --on-brand:#fff;
+  --bg:#EEF3F2; --surface:#fff; --surface-2:#F3F6F6; --ink:#12201F; --ink-2:#4E6360; --line:#DCE5E3;
+  --bubble-user:var(--brand); --bubble-user-ink:var(--on-brand); --danger:#B42318; --warn:#B54708; --warn-bg:#FEF0C7;
+  --shadow:0 1px 2px rgba(16,40,38,.12);
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0B1413; --surface:#15211F; --surface-2:#1B2A28; --ink:#E7F0EE; --ink-2:#9DB3AF; --line:#27403C;
+    --danger:#F97066; --warn:#FEC84B; --warn-bg:#3A2F0B; --shadow:none;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;overscroll-behavior:none}
+body{position:fixed;inset:0;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+
+#app{position:absolute;left:0;right:0;top:0;height:100%;display:flex;flex-direction:column;max-width:720px;margin:0 auto;background:var(--bg)}
+.top{flex:none;display:flex;align-items:center;gap:12px;padding:calc(10px + var(--sat)) 12px 10px 14px;background:var(--brand);color:var(--on-brand)}
+.avatar{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;font-weight:800;font-size:20px;flex:none;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:contain;background:#fff}
+.top .who{flex:1;min-width:0}
+.top .who b{display:block;font-size:17px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .who span{font-size:12.5px;opacity:.85}
+.iconbtn{background:none;border:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:inherit;flex:none}
+.iconbtn:active{background:rgba(127,127,127,.25)}
+.iconbtn svg{width:24px;height:24px}
+.banner{flex:none;padding:8px 14px;background:var(--warn-bg);color:var(--warn);font-size:13.5px;text-align:center;border-bottom:1px solid var(--line)}
+.banner[hidden]{display:none}
+
+#msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 12px 8px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain}
+.row{display:flex;flex-direction:column;max-width:86%}
+.row.bot{align-self:flex-start}
+.row.me{align-self:flex-end;align-items:flex-end}
+.bubble{padding:9px 13px;border-radius:18px;box-shadow:var(--shadow);word-wrap:break-word;overflow-wrap:anywhere}
+.bot .bubble{background:var(--surface);border-bottom-left-radius:5px}
+.me .bubble{background:var(--bubble-user);color:var(--bubble-user-ink);border-bottom-right-radius:5px}
+.bubble a{color:inherit;text-decoration:underline}
+.who-tag{font-size:11.5px;font-weight:700;color:var(--brand);margin:0 8px 2px}
+.sys{align-self:center;background:var(--surface-2);color:var(--ink-2);font-size:13px;padding:5px 12px;border-radius:999px;text-align:center;max-width:92%}
+.sys.err{background:var(--warn-bg);color:var(--warn)}
+.time{font-size:11px;color:var(--ink-2);margin:2px 6px 0}
+.bubble ul{margin:6px 0 2px;padding-left:20px}
+.typing{display:inline-flex;gap:4px;padding:4px 2px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--ink-2);animation:b 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,60%,100%{opacity:.3;transform:none}30%{opacity:1;transform:translateY(-3px)}}
+
+.filecard{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 12px;margin-top:4px;box-shadow:var(--shadow);min-width:230px}
+.filecard .ico{width:40px;height:46px;border-radius:6px;background:#E5484D;color:#fff;font-weight:800;font-size:11px;display:grid;place-items:end center;padding-bottom:5px;flex:none;text-transform:uppercase}
+.filecard .nm{flex:1;min-width:0;font-weight:600;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filecard a{color:var(--brand);font-weight:700;text-decoration:none;padding:10px 4px;font-size:14.5px}
+
+#chips{flex:none;display:flex;gap:8px;overflow-x:auto;padding:6px 12px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:none;background:var(--surface);border:1.5px solid var(--brand);color:var(--brand);border-radius:999px;padding:9px 15px;font-weight:600;font-size:14.5px;min-height:40px;white-space:nowrap}
+.chip:active{transform:scale(.97)}
+@media (prefers-color-scheme:dark){.chip{color:var(--ink)}}
+
+#composer{flex:none;display:flex;gap:8px;align-items:flex-end;padding:8px 10px calc(8px + var(--sab));background:var(--surface);border-top:1px solid var(--line)}
+#composer textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--surface-2);border-radius:22px;padding:10px 16px;max-height:110px;min-height:44px;line-height:1.35;outline:none}
+#composer textarea:focus{border-color:var(--brand)}
+#send{flex:none;width:46px;height:46px;border-radius:50%;border:0;background:var(--brand);color:var(--on-brand);display:grid;place-items:center}
+#send svg{width:22px;height:22px}
+
+#backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+#backdrop.on{opacity:1;pointer-events:auto}
+#sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:720px;background:var(--surface);border-radius:22px 22px 0 0;z-index:21;transform:translateY(105%);transition:transform .25s ease;display:flex;flex-direction:column;max-height:92%;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+#sheet.on{transform:none}
+#sheet .grab{width:42px;height:5px;border-radius:9px;background:var(--line);margin:9px auto 2px;flex:none}
+#sheet .sh-head{display:flex;align-items:center;padding:4px 8px 4px 20px;flex:none}
+#sheet .sh-head h3{margin:0;flex:1;font-size:18px}
+#sheet .sh-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 20px calc(20px + var(--sab));overscroll-behavior:contain}
+.btn{display:block;width:100%;border:0;border-radius:14px;background:var(--brand);color:var(--on-brand);font-weight:700;font-size:17px;padding:14px;min-height:52px;margin-top:16px}
+.steps{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:14px}
+.steps li{display:flex;gap:14px;align-items:center}
+.steps .n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-weight:800}
+.steps p{margin:0;font-size:15px}
+#toast{position:fixed;left:50%;bottom:calc(90px + var(--sab));transform:translate(-50%,20px);background:#111;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:60;max-width:90%;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="avatar" id="avatar" aria-hidden="true"></div>
+    <div class="who"><b id="ttl"></b><span id="sub"></span></div>
+    <button class="iconbtn" id="btnMenu" aria-label="Menú"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+  </header>
+  <div class="banner" id="conn" hidden>Sin conexión. Reintentando…</div>
+  <main id="msgs" aria-live="polite"></main>
+  <div id="chips"></div>
+  <form id="composer" autocomplete="off">
+    <textarea id="inp" rows="1" placeholder="Escribí tu consulta…" enterkeyhint="send" maxlength="1000" aria-label="Mensaje"></textarea>
+    <button id="send" type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10.2 15 12 3.4 13.8z"/></svg></button>
+  </form>
+</div>
+
+<div id="backdrop"></div>
+<section id="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+  <div class="grab"></div>
+  <div class="sh-head"><h3 id="shTitle"></h3><button class="iconbtn" id="shClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="sh-body" id="shBody"></div>
+</section>
+<div id="toast"></div>
+
+<script id="cfg-data" type="application/json">{{ {"cfg": cfg, "slug": slug}|tojson }}</script>
+<script>
+'use strict';
+const BOOT = JSON.parse(document.getElementById('cfg-data').textContent);
+const SLUG = BOOT.slug;
+let CFG = BOOT.cfg;
+const API = '/api/chat/' + encodeURIComponent(SLUG);
+const $ = s => document.querySelector(s);
+const UA = navigator.userAgent || '';
+const env = {
+  ios: /iPad|iPhone|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  standalone: (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true
+};
+
+/* ---------- almacenamiento (puede fallar en modo privado) ---------- */
+const LSK = 'wc:' + SLUG + ':';
+const ls = {
+  get(k){ try{ return localStorage.getItem(LSK + k); }catch(_){ return null; } },
+  set(k, v){ try{ localStorage.setItem(LSK + k, v); }catch(_){} },
+  del(k){ try{ localStorage.removeItem(LSK + k); }catch(_){} }
+};
+
+/* ---------- utilidades ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Formato minimo y seguro: se escapa TODO y solo se habilita **negrita**, listas "- ", links http(s) y saltos de linea.
+function fmt(t){
+  const lines = esc(t).split('\n'); let out = '', inList = false;
+  for (const ln of lines){
+    const li = /^- (.*)$/.exec(ln);
+    if (li){ if(!inList){ out += '<ul>'; inList = true; } out += '<li>' + li[1] + '</li>'; }
+    else { if(inList){ out += '</ul>'; inList = false; } out += (out && !out.endsWith('</ul>') ? '<br>' : '') + ln; }
+  }
+  if (inList) out += '</ul>';
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/(^|[\s(>])_([^_\n<]+)_(?=$|[\s.,;:!?)<])/g, '$1<em>$2</em>');
+  return out.replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/g, u => '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + u + '</a>');
+}
+function hhmm(ts){ return new Date(ts).toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'}); }
+let toastT; function toast(t){ const e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('on'), 2800); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ---------- color de marca (contraste automatico, tambien en modo oscuro) ---------- */
+function lum(hex){ const c = [1,3,5].map(i => parseInt(hex.substr(i,2),16)/255).map(v => v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4)); return .2126*c[0] + .7152*c[1] + .0722*c[2]; }
+function mix(hex, w){ const c = [1,3,5].map(i => parseInt(hex.substr(i,2),16)); return '#' + c.map(v => Math.round(v + (255 - v) * w).toString(16).padStart(2,'0')).join(''); }
+function applyBrand(){
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  let b = /^#[0-9a-fA-F]{6}$/.test(CFG.color) ? CFG.color : '#0F766E';
+  if (dark && lum(b) < .18) b = mix(b, .45);
+  const r = document.documentElement.style;
+  r.setProperty('--brand', b); r.setProperty('--on-brand', lum(b) > .45 ? '#0B1413' : '#FFFFFF');
+  const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = b;
+}
+try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyBrand); }catch(_){}
+
+/* ---------- cabecera y botones ---------- */
+function renderHeader(){
+  $('#ttl').textContent = CFG.title; $('#sub').textContent = CFG.subtitle; document.title = CFG.title;
+  const av = $('#avatar'); av.textContent = '';
+  if (CFG.logo){ const im = document.createElement('img'); im.alt = ''; im.src = CFG.logo; im.onerror = () => { av.textContent = (CFG.title[0] || 'A').toUpperCase(); }; av.appendChild(im); }
+  else av.textContent = (CFG.title[0] || 'A').toUpperCase();
+  const box = $('#chips'); box.innerHTML = '';
+  for (const t of CFG.buttons){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.textContent = t;
+    b.addEventListener('click', () => send(t)); box.appendChild(b);
+  }
+}
+
+/* ---------- mensajes ---------- */
+const msgsEl = $('#msgs');
+const seen = new Set();
+let lastId = 0, typingEl = null;
+function scrollEnd(){ requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; }); }
+function isNearEnd(){ return msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 140; }
+function addLocal(cls, text){ const el = document.createElement('div'); el.className = 'sys ' + (cls || ''); el.textContent = text; insert(el); scrollEnd(); }
+function insert(el){ if (typingEl && typingEl.parentNode === msgsEl) msgsEl.insertBefore(el, typingEl); else msgsEl.appendChild(el); }
+function safeUrl(u){ return (typeof u === 'string' && /^(https?:\/\/|\/(?!\/))/.test(u)) ? u : ''; }
+function renderEvent(e){
+  if (seen.has(e.id)) return;
+  seen.add(e.id); if (e.id > lastId) lastId = e.id;
+  const stick = isNearEnd();
+  let el;
+  if (e.kind === 'sys'){ el = document.createElement('div'); el.className = 'sys'; el.textContent = e.text; }
+  else {
+    el = document.createElement('div'); el.className = 'row ' + (e.kind === 'user' ? 'me' : 'bot');
+    if (e.kind === 'admin'){ const t = document.createElement('div'); t.className = 'who-tag'; t.textContent = 'Atención personal'; el.appendChild(t); }
+    if (e.text){ const b = document.createElement('div'); b.className = 'bubble'; if (e.kind === 'user') b.textContent = e.text; else b.innerHTML = fmt(e.text); el.appendChild(b); }
+    const url = e.attach && safeUrl(e.attach.url);
+    if (url){
+      const c = document.createElement('div'); c.className = 'filecard';
+      const name = String(e.attach.name || 'archivo'); const ext = (name.split('.').pop() || '').slice(0, 4);
+      c.innerHTML = '<div class="ico"></div><div class="nm"></div><a target="_blank" rel="noopener noreferrer">Abrir</a>';
+      c.querySelector('.ico').textContent = ext.length <= 4 && name.includes('.') ? ext : 'ARCH';
+      c.querySelector('.nm').textContent = name; c.querySelector('a').href = url;
+      el.appendChild(c);
+    }
+    const tm = document.createElement('span'); tm.className = 'time'; tm.textContent = hhmm(e.ts); el.appendChild(tm);
+  }
+  insert(el);
+  if (stick || e.kind === 'user') scrollEnd();
+}
+function setTyping(on){
+  if (on && !typingEl){
+    typingEl = document.createElement('div'); typingEl.className = 'row bot';
+    typingEl.innerHTML = '<div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(typingEl); scrollEnd();
+  } else if (!on && typingEl){ typingEl.remove(); typingEl = null; }
+}
+
+/* ---------- red ---------- */
+let token = ls.get('token');
+async function api(path, opts){
+  opts = opts || {};
+  const headers = {'Content-Type': 'application/json'};
+  if (token) headers['X-Device-Token'] = token;
+  return fetch(API + path, Object.assign({credentials: 'same-origin', headers, cache: 'no-store'}, opts));
+}
+function setOnline(ok){ $('#conn').hidden = ok; }
+
+let started = false;
+async function startSession(){
+  const r = await api('/session', {method: 'POST', body: '{}'});
+  if (r.status === 404){ document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;padding:4rem 1.5rem">Este chat no está disponible.</p>'; throw new Error('unavailable'); }
+  if (r.status === 429 || r.status === 403){ addLocal('err', 'No pudimos abrir el chat en este momento. Probá más tarde.'); throw new Error('denied'); }
+  const j = await r.json();
+  if (j.token){ token = j.token; ls.set('token', token); }
+  if (j.config){ CFG = j.config; applyBrand(); renderHeader(); }
+  // Bienvenida propia del chat (no es un mensaje del bot: no se guarda ni gasta IA)
+  if (!started){ started = true; welcome(); }
+  (j.events || []).forEach(renderEvent);
+  setTyping(!!j.busy);
+  return j;
+}
+function welcome(){
+  const el = document.createElement('div'); el.className = 'row bot';
+  el.innerHTML = '<div class="bubble"></div>'; el.querySelector('.bubble').innerHTML = fmt(CFG.welcome);
+  msgsEl.appendChild(el);
+}
+
+let pollT = null, lastActivity = Date.now(), waiting = false, waitSince = 0;
+function schedule(fast){
+  clearTimeout(pollT);
+  const busy = waiting || !!typingEl;
+  const d = document.hidden ? 15000 : (fast ? 700 : (busy || Date.now() - lastActivity < 120000 ? 2000 : 5000));
+  pollT = setTimeout(poll, d);
+}
+async function poll(){
+  try{
+    let r = await api('/events?after=' + lastId);
+    if (r.status === 401){ await startSession(); schedule(); return; }
+    const j = await r.json();
+    setOnline(true);
+    let gotReply = false;
+    (j.events || []).forEach(e => { if (!seen.has(e.id) && e.kind !== 'user') gotReply = true; renderEvent(e); });
+    if (gotReply) waiting = false;
+    if (waiting && Date.now() - waitSince > 120000) waiting = false;   // por las dudas: no dejar "escribiendo" para siempre
+    setTyping(!!j.busy || waiting);
+    if (gotReply) lastActivity = Date.now();
+  }catch(_){ setOnline(false); }
+  schedule();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && started) { clearTimeout(pollT); poll(); } });
+
+async function send(text){
+  text = (text || '').trim(); if (!text) return;
+  lastActivity = Date.now();
+  try{
+    let r = await api('/message', {method: 'POST', body: JSON.stringify({text})});
+    if (r.status === 401){ await startSession(); r = await api('/message', {method: 'POST', body: JSON.stringify({text})}); }
+    if (r.status === 429){ const j = await r.json().catch(() => ({})); addLocal('err', j.message || 'Probá de nuevo en un rato.'); return; }
+    if (!r.ok){ addLocal('err', 'No se pudo enviar el mensaje. Probá de nuevo.'); return; }
+    const j = await r.json(); setOnline(true);
+    renderEvent(j.event);
+    waiting = true; waitSince = Date.now(); setTyping(true);
+    schedule(true);
+  }catch(_){ setOnline(false); toast('Sin conexión. No se envió el mensaje.'); }
+}
+$('#composer').addEventListener('submit', e => { e.preventDefault(); const i = $('#inp'); const t = i.value; i.value = ''; i.style.height = ''; send(t); i.focus(); });
+$('#inp').addEventListener('input', e => { const t = e.target; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 110) + 'px'; });
+
+/* ---------- hoja inferior + instalacion ---------- */
+const sheet = $('#sheet'), backdrop = $('#backdrop');
+function openSheet(title, node){ $('#shTitle').textContent = title; const b = $('#shBody'); b.innerHTML = ''; b.appendChild(node); sheet.classList.add('on'); backdrop.classList.add('on'); }
+function closeSheet(){ sheet.classList.remove('on'); backdrop.classList.remove('on'); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+$('#shClose').addEventListener('click', closeSheet); backdrop.addEventListener('click', closeSheet);
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
+$('#btnMenu').addEventListener('click', () => {
+  const n = document.createElement('div');
+  if (env.standalone){ n.innerHTML = '<p style="margin:6px 0">El chat ya está instalado en tu pantalla de inicio ✓</p>'; }
+  else if (env.ios){
+    n.innerHTML = '<p style="margin:4px 0 12px">Agregá el chat a tu pantalla de inicio para abrirlo más rápido:</p><ol class="steps">'
+      + '<li><span class="n">1</span><p>Tocá el botón <b>Compartir</b> de Safari (el cuadrado con la flecha).</p></li>'
+      + '<li><span class="n">2</span><p>Elegí <b>“Agregar a inicio”</b>.</p></li>'
+      + '<li><span class="n">3</span><p>Tocá <b>“Agregar”</b>.</p></li></ol>';
+  } else if (deferredInstall){
+    n.innerHTML = '<p style="margin:4px 0 0">Instalalo como app: queda en tu pantalla de inicio.</p><button class="btn" id="doInst">Instalar</button>';
+    n.querySelector('#doInst').addEventListener('click', async () => { deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; closeSheet(); });
+  } else {
+    n.innerHTML = '<p style="margin:4px 0 0">En Chrome: tocá el menú <b>⋮</b> y elegí <b>“Instalar aplicación”</b> o <b>“Agregar a la pantalla principal”</b>.</p>';
+  }
+  openSheet('Instalar el chat', n);
+});
+
+/* ---------- teclado en pantalla: el alto de la app sigue al area visible ---------- */
+function fitViewport(){
+  const vv = window.visualViewport, app = $('#app');
+  const vh = vv ? vv.height : innerHeight, top = vv ? vv.offsetTop : 0;
+  app.style.height = vh + 'px'; app.style.top = top + 'px';
+  sheet.style.bottom = Math.max(0, innerHeight - (vh + top)) + 'px'; sheet.style.maxHeight = (vh - 12) + 'px';
+  if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') scrollEnd();
+}
+if (window.visualViewport){ visualViewport.addEventListener('resize', fitViewport); visualViewport.addEventListener('scroll', fitViewport); }
+addEventListener('resize', fitViewport); fitViewport();
+
+/* ---------- arranque ---------- */
+if ('serviceWorker' in navigator){ navigator.serviceWorker.register('/chat/' + SLUG + '/sw.js', {scope: '/chat/' + SLUG + '/'}).catch(() => {}); }
+applyBrand(); renderHeader();
+startSession().then(() => { scrollEnd(); schedule(); }).catch(() => {});
+</script>
+</body>
+</html>

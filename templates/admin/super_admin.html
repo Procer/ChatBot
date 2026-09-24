@@ -413,6 +413,10 @@
                                     <input type="checkbox" id="feat_document_library" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
                                     <span class="text-sm font-semibold text-brand-400">Biblioteca de Documentos</span>
                                 </label>
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" id="feat_web_chat" class="w-4 h-4 rounded border-slate-700 text-brand-500 focus:ring-brand-500 bg-slate-800">
+                                    <span class="text-sm font-semibold text-brand-400">Chat Web (link / QR)</span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -552,6 +556,7 @@
         document.getElementById('feat_catalog').checked = data.settings?.feat_catalog || false;
         document.getElementById('feat_catalog_dynamic').checked = data.settings?.feat_catalog_dynamic_fields || false;
         document.getElementById('feat_document_library').checked = data.settings?.feat_document_library || false;
+        document.getElementById('feat_web_chat').checked = data.settings?.feat_web_chat || false;
 
         document.getElementById('gauth_sa_json').value = '';
         document.getElementById('gdrive_sync_interval').value = data.settings?.gdrive_sync_interval_minutes || 480;
@@ -813,6 +818,7 @@
             feat_catalog: document.getElementById('feat_catalog').checked,
             feat_catalog_dynamic_fields: document.getElementById('feat_catalog_dynamic').checked,
             feat_document_library: document.getElementById('feat_document_library').checked,
+            feat_web_chat: document.getElementById('feat_web_chat').checked,
             gdrive_service_account_json: document.getElementById('gauth_sa_json').value.trim(),
             gdrive_sync_interval_minutes: parseInt(document.getElementById('gdrive_sync_interval').value, 10) || 480,
             openai_api_key: document.getElementById('openai_api_key').value.trim(),

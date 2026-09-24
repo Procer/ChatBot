@@ -120,6 +120,11 @@
                         <i data-lucide="search" class="w-4 h-4 shrink-0"></i> Búsquedas de Documentos
                     </a>
                     {% endif %}
+                    {% if not user or 'web_chat' in user.permissions %}
+                    <a href="/admin/web-chat" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/web-chat' %}active{% endif %}">
+                        <i data-lucide="message-circle" class="w-4 h-4 shrink-0"></i> Chat Web (link / QR)
+                    </a>
+                    {% endif %}
                     {% if not user or 'gaps' in user.permissions %}
                     <a href="/admin/gaps" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/gaps' %}active{% endif %}">
                         <i data-lucide="help-circle" class="w-4 h-4 shrink-0"></i> Preguntas sin Respuesta

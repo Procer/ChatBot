@@ -23,6 +23,8 @@ from src.database.models import Client, ClientSettings, Conversation, User
 from src.database.analytics_engine_saas import log_message, log_token_usage, mark_human_intervention, get_dashboard_metrics
 from src.agents.graph_saas import app as chatbot_app
 from src.scheduling_hours import parse_schedule, default_schedule, is_open_now, format_schedule_text
+from src import web_chat
+from src.web_chat import send_web_message_saas, send_web_file_saas
 import hashlib
 import shutil
 
@@ -167,6 +169,7 @@ class ClientSettingsUpdate(BaseModel):
     feat_catalog: bool = False
     feat_catalog_dynamic_fields: bool = False
     feat_document_library: bool = False
+    feat_web_chat: bool = False
     gdrive_service_account_json: str = None  # vacío/None = no tocar la clave ya guardada
     gdrive_sync_interval_minutes: int = 480  # cada cuánto sincroniza Drive este cliente (piso de 5min, ver update_client_settings)
     openai_api_key: str = None  # vacío/None = no tocar la key ya guardada (aislamiento de billing por cliente, ver openai_key.py)
@@ -185,6 +188,7 @@ DEFAULT_MENU_ITEMS = [
     {"key": "catalog", "label": "Catálogo de Productos", "icon": "shopping-bag", "section": "Operación"},
     {"key": "catalog_requests", "label": "Consultas y Pedidos", "icon": "shopping-cart", "section": "Operación"},
     {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
+    {"key": "web_chat", "label": "Chat Web (link / QR)", "icon": "message-circle", "section": "Operación"},
     {"key": "gaps", "label": "Preguntas sin Respuesta", "icon": "help-circle", "section": "Cerebro"},
     {"key": "config_identidad", "label": "Config: Identidad (nombre, tono, System Prompt)", "icon": "bot", "section": "Configuración"},
     {"key": "config_bienvenida", "label": "Config: Mensaje de Bienvenida", "icon": "hand-metal", "section": "Configuración"},
@@ -254,6 +258,7 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_audit', True): active_modules.append("audit")
         if getattr(settings, 'feat_catalog', False): active_modules.extend(["catalog", "catalog_requests"])
         if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
+        if getattr(settings, 'feat_web_chat', False): active_modules.append("web_chat")
     else:
         active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "audit",
             "config", "config_identidad", "config_bienvenida", "config_conocimiento",
@@ -317,7 +322,7 @@ def fallback_admin_redirect(user_mock):
         ("dashboard", "/admin"), ("history", "/admin/history"), ("contacts", "/admin/contacts"),
         ("submissions", "/admin/submissions"), ("appointments", "/admin/appointments"),
         ("catalog", "/admin/catalog"), ("catalog_requests", "/admin/catalog-requests"),
-        ("document_library", "/admin/document-library"),
+        ("document_library", "/admin/document-library"), ("web_chat", "/admin/web-chat"),
         ("gaps", "/admin/gaps"), ("channels", "/admin/channels"), ("audit", "/admin/audit"),
         ("users", "/admin/users"),
     ]
@@ -746,7 +751,9 @@ async def send_chat_message(request: Request, thread_id: str, message: str = For
     target_client_id, _, _ = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
     
-    if thread_id.isdigit():
+    if web_chat.is_web_thread(thread_id):
+        wa_id = await send_web_message_saas(target_client_id, thread_id, message, kind="admin")
+    elif thread_id.isdigit():
         await send_telegram_message_saas(target_client_id, thread_id, message)
         wa_id = None
     else:
@@ -786,7 +793,9 @@ async def chat_send_file(request: Request, thread_id: str, file: UploadFile = Fi
     base_url = str(request.base_url).rstrip('/')
     public_url = f"{base_url}/uploads/{file.filename}"
     
-    if thread_id.isdigit():
+    if web_chat.is_web_thread(thread_id):
+        await send_web_file_saas(target_client_id, thread_id, f"/uploads/{file.filename}", file.filename, "Adjunto enviado desde el panel", kind="admin")
+    elif thread_id.isdigit():
         await send_telegram_file_saas(target_client_id, thread_id, local_path=file_path, caption="Adjunto enviado desde el panel")
     else:
         await send_whatsapp_file_saas(target_client_id, thread_id, public_url, file.filename, "Adjunto enviado desde el panel")
@@ -904,12 +913,16 @@ async def send_knowledge_to_chat(request: Request, thread_id: str, knowledge_id:
         base_url = str(request.base_url).rstrip('/')
         public_url = f"{base_url}{knowledge.media_path}"
         filename = os.path.basename(knowledge.media_path)
-        if thread_id.isdigit():
+        if web_chat.is_web_thread(thread_id):
+            await send_web_file_saas(target_client_id, thread_id, knowledge.media_path, filename, knowledge.content, kind="admin")
+        elif thread_id.isdigit():
             await send_telegram_file_saas(target_client_id, thread_id, local_path=knowledge.media_path, caption=knowledge.content)
         else:
             await send_whatsapp_file_saas(target_client_id, thread_id, public_url, filename, knowledge.content)
     else:
-        if thread_id.isdigit():
+        if web_chat.is_web_thread(thread_id):
+            await send_web_message_saas(target_client_id, thread_id, knowledge.content, kind="admin")
+        elif thread_id.isdigit():
             await send_telegram_message_saas(target_client_id, thread_id, knowledge.content)
         else:
             await send_whatsapp_message_saas(target_client_id, thread_id, knowledge.content)
@@ -3333,6 +3346,84 @@ async def api_results_portal_save(payload: ResultsPortalPayload, request: Reques
     db.commit()
     return {"ok": True, "folder_name": settings.results_portal_folder_name}
 
+# ── CHAT WEB: panel del cliente (ver src/web_chat.py) ─────────────────────────────
+@app.get("/admin/web-chat", response_class=HTMLResponse)
+async def web_chat_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "web_chat"): return fallback_admin_redirect(user_mock)
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not getattr(settings, 'feat_web_chat', False):
+        return RedirectResponse(url="/admin")
+    return templates.TemplateResponse(request=request, name="admin/web_chat.html", context={
+        "user": user_mock, "settings": settings, "is_impersonating": is_impersonating, "active_section": "operacion"
+    })
+
+@app.get("/api/admin/web_chat")
+async def api_web_chat_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import WebDevice, WebEvent
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    client = db.query(Client).filter_by(id=target_client_id).first()
+    if not settings or not client or not getattr(settings, 'feat_web_chat', False):
+        return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    day_start = web_chat._day_start_utc()
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    stats = {
+        "devices_total": db.query(WebDevice).filter_by(client_id=target_client_id).count(),
+        "devices_7d": db.query(WebDevice).filter(WebDevice.client_id == target_client_id, WebDevice.last_seen_at >= week_ago).count(),
+        "messages_today": db.query(WebEvent).filter(WebEvent.client_id == target_client_id, WebEvent.kind == "user", WebEvent.created_at >= day_start).count(),
+        "messages_7d": db.query(WebEvent).filter(WebEvent.client_id == target_client_id, WebEvent.kind == "user", WebEvent.created_at >= week_ago).count(),
+    }
+    return {
+        "enabled": bool(settings.web_chat_enabled),
+        "title": settings.web_chat_title or "",
+        "subtitle": settings.web_chat_subtitle or "",
+        "welcome": settings.web_chat_welcome or "",
+        "color": settings.web_chat_color or "",
+        "buttons": web_chat.parse_buttons(settings.web_chat_buttons),
+        "daily_cap": settings.web_chat_daily_cap if settings.web_chat_daily_cap is not None else web_chat.DEFAULT_DAILY_CAP,
+        "global_cap": settings.web_chat_global_daily_cap if settings.web_chat_global_daily_cap is not None else web_chat.DEFAULT_GLOBAL_CAP,
+        "public_url": f"{base}/chat/{client.slug}",
+        "defaults": {"title": client.business_name, "subtitle": "Asistente virtual", "welcome": web_chat.DEFAULT_WELCOME,
+                     "color": web_chat.DEFAULT_COLOR, "buttons": web_chat.DEFAULT_BUTTONS},
+        "stats": stats,
+    }
+
+class WebChatPayload(BaseModel):
+    enabled: bool = False
+    title: str = ""
+    subtitle: str = ""
+    welcome: str = ""
+    color: str = ""
+    buttons: list[str] = []
+    daily_cap: int = 30
+    global_cap: int = 1000
+
+@app.post("/api/admin/web_chat")
+async def api_web_chat_save(payload: WebChatPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, _, _ = get_admin_context(request, current_user, db)
+    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    if not settings or not getattr(settings, 'feat_web_chat', False):
+        return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    color = payload.color.strip()
+    if color and not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+        return JSONResponse(status_code=400, content={"error": "El color tiene que ser del estilo #0F766E"})
+    buttons = [b.strip()[:60] for b in payload.buttons if b and b.strip()][:8]
+    settings.web_chat_enabled = payload.enabled
+    settings.web_chat_title = payload.title.strip()[:100] or None
+    settings.web_chat_subtitle = payload.subtitle.strip()[:100] or None
+    settings.web_chat_welcome = payload.welcome.strip() or None
+    settings.web_chat_color = color or None
+    settings.web_chat_buttons = json.dumps(buttons, ensure_ascii=False) if buttons else None
+    settings.web_chat_daily_cap = max(0, min(1000, payload.daily_cap))
+    settings.web_chat_global_daily_cap = max(0, min(100000, payload.global_cap))
+    db.commit()
+    return {"ok": True}
+
 # ── API: Gestión de Usuarios ───────────────────────────────────────────────────
 class UserCreatePayload(BaseModel):
     full_name: str
@@ -4103,7 +4194,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             db_tm = SessionLocal()
             tm_settings = db_tm.query(ClientSettings).filter_by(client_id=client_id).first()
             db_tm.close()
-            if tm_settings and tm_settings.test_mode_enabled:
+            if tm_settings and tm_settings.test_mode_enabled and platform != "web":
                 allowed = {n.strip() for n in (tm_settings.test_numbers or "").split(",") if n.strip()}
                 sender_id = str(user_id)
                 sender_phone = sender_id.split("@")[0]
@@ -4155,7 +4246,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                 db_t.close()
                 if not prof_exists:
                     assign_tag_by_name(client_id, str(user_id), "👋 Nuevo Contacto")
-                channel_tag = "📱 Canal: WhatsApp" if platform == "whatsapp" else "💬 Canal: Telegram"
+                channel_tag = {"whatsapp": "📱 Canal: WhatsApp", "web": "🌐 Canal: Web"}.get(platform, "💬 Canal: Telegram")
                 assign_tag_by_name(client_id, str(user_id), channel_tag)
                 assign_tag_by_name(client_id, str(user_id), "⚡ Activo Reciente")
             except Exception as te:
@@ -4218,7 +4309,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     logging.error(f"[SaaS Reset] Error limpiando checkpoints: {e}")
                 
                 msg = "✅ Memoria de conversación borrada. Comenzando de cero."
-                if platform == 'telegram':
+                if platform == 'web':
+                    await send_web_message_saas(client_id, user_id, msg)
+                elif platform == 'telegram':
                     await send_telegram_message_saas(client_id, user_id, msg)
                 else:
                     await send_whatsapp_message_saas(client_id, user_id, msg)
@@ -4230,7 +4323,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             settings = db_local.query(ClientSettings).filter_by(client_id=client_id).first()
             
             # --- Lógica de Bienvenida ---
-            if settings and settings.welcome_message_enabled:
+            if settings and settings.welcome_message_enabled and platform != "web":
                 last_bot_msg = db_local.query(Message).filter(
                     Message.client_id == client_id,
                     Message.thread_id == user_id,
@@ -4339,7 +4432,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     ).first()
                     if not last_ooo:
                         ooo_msg = settings.out_of_office_message or "Actualmente estamos fuera de horario. Responderemos a la brevedad."
-                        if platform == 'telegram':
+                        if platform == 'web':
+                            await send_web_message_saas(client_id, user_id, ooo_msg)
+                        elif platform == 'telegram':
                             await send_telegram_message_saas(client_id, user_id, ooo_msg)
                         else:
                             await send_whatsapp_message_saas(client_id, user_id, ooo_msg)
@@ -4559,7 +4654,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     # 1. Enviar primero el texto (ya limpio sin el tag)
                     wa_id = None
                     if bot_msg:
-                        if platform == 'telegram':
+                        if platform == 'web':
+                            wa_id = await send_web_message_saas(client_id, user_id, bot_msg)
+                        elif platform == 'telegram':
                             wa_id = await send_telegram_message_saas(client_id, user_id, bot_msg)
                         else:
                             wa_id = await send_whatsapp_message_saas(client_id, user_id, bot_msg)
@@ -4568,7 +4665,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     # 2. Enviar después el archivo adjunto
                     for payload in file_to_send_payloads:
                         logging.info(f"[SaaS SEND_FILE] Enviando archivo: {payload['public_url']}")
-                        if platform == "whatsapp":
+                        if platform == "web":
+                            await send_web_file_saas(client_id, user_id, payload["public_url"], payload["filename"], "")
+                        elif platform == "whatsapp":
                             await send_whatsapp_file_saas(client_id, user_id, payload["public_url"], payload["filename"], "")
                         else:
                             await send_telegram_file_saas(client_id, user_id, payload["media_path"], "")
@@ -4579,6 +4678,9 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             
         except Exception as e:
             logging.error(f"[SaaS Process] Falla Crítica: {e}")
+
+# ── CHAT WEB PÚBLICO (ver src/web_chat.py) ───────────────────────────────────────
+app.include_router(web_chat.build_router(process_bot_response, _public_client_ip, templates))
 
 # ==========================================
 # PANEL SUPER ADMIN (MODO DIOS)
@@ -5498,6 +5600,7 @@ async def get_client(client_id: int, db: Session = Depends(get_db), current_user
             "feat_catalog": getattr(client.settings, 'feat_catalog', False),
             "feat_catalog_dynamic_fields": getattr(client.settings, 'feat_catalog_dynamic_fields', False),
             "feat_document_library": getattr(client.settings, 'feat_document_library', False),
+            "feat_web_chat": getattr(client.settings, 'feat_web_chat', False),
             "gdrive_service_account_email": getattr(client.settings, 'gdrive_service_account_email', None) or '',
             "gdrive_service_account_configured": bool(getattr(client.settings, 'gdrive_service_account_json_encrypted', None)),
             "gdrive_sync_interval_minutes": getattr(client.settings, 'gdrive_sync_interval_minutes', None) or 480,
@@ -5565,6 +5668,7 @@ async def update_client_settings(client_id: int, settings_data: ClientSettingsUp
     settings.feat_catalog = settings_data.feat_catalog
     settings.feat_catalog_dynamic_fields = settings_data.feat_catalog_dynamic_fields
     settings.feat_document_library = settings_data.feat_document_library
+    settings.feat_web_chat = settings_data.feat_web_chat
     settings.gdrive_sync_interval_minutes = max(5, settings_data.gdrive_sync_interval_minutes or 480)
     settings.openai_alert_threshold_usd = settings_data.openai_alert_threshold_usd if settings_data.openai_alert_threshold_usd is not None else 3.0
     settings.openai_project_id = (settings_data.openai_project_id or "").strip() or None
@@ -5996,11 +6100,13 @@ async def scheduler_reminders_loop():
                         )
                         
                         success = False
-                        if settings.telegram_enabled and app.thread_id.isdigit():
+                        if web_chat.is_web_thread(app.thread_id):
+                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message))
+                        if not success and settings.telegram_enabled and app.thread_id.isdigit():
                             res = await send_telegram_message_saas(app.client_id, app.thread_id, message)
                             if res:
                                 success = True
-                        if not success and settings.whatsapp_enabled:
+                        if not success and settings.whatsapp_enabled and not web_chat.is_web_thread(app.thread_id):
                             wa_id = app.thread_id
                             if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                                 wa_id = f"{wa_id}@c.us"
@@ -6041,11 +6147,13 @@ async def scheduler_reminders_loop():
                         )
                         
                         success = False
-                        if settings.telegram_enabled and app.thread_id.isdigit():
+                        if web_chat.is_web_thread(app.thread_id):
+                            success = bool(await send_web_message_saas(app.client_id, app.thread_id, message))
+                        if not success and settings.telegram_enabled and app.thread_id.isdigit():
                             res = await send_telegram_message_saas(app.client_id, app.thread_id, message)
                             if res:
                                 success = True
-                        if not success and settings.whatsapp_enabled:
+                        if not success and settings.whatsapp_enabled and not web_chat.is_web_thread(app.thread_id):
                             wa_id = app.thread_id
                             if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
                                 wa_id = f"{wa_id}@c.us"
@@ -6150,9 +6258,12 @@ async def expire_pending_payments_loop():
                         motivo=clean_appt_motivo(appt.reason) or "tu turno"
                     )
                     wa_id = appt.thread_id
-                    if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
-                        wa_id = f"{wa_id}@c.us"
-                    await send_whatsapp_message_saas(appt.client_id, wa_id, message, proactive=True)
+                    if web_chat.is_web_thread(wa_id):
+                        await send_web_message_saas(appt.client_id, wa_id, message)
+                    else:
+                        if not wa_id.endswith("@c.us") and not wa_id.endswith("@us") and wa_id.isdigit():
+                            wa_id = f"{wa_id}@c.us"
+                        await send_whatsapp_message_saas(appt.client_id, wa_id, message, proactive=True)
                     logging.info(f"[DepositExpiration] Turno {appt.id} (cliente {appt.client_id}) expirado por falta de pago")
                 except Exception as e:
                     logging.error(f"[DepositExpiration] Error expirando turno {appt.id}: {e}")

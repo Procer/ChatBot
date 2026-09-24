@@ -8,6 +8,7 @@ SYSTEM_TAGS = [
     {"name": "👋 Nuevo Contacto", "color": "#10B981"},
     {"name": "📱 Canal: WhatsApp", "color": "#25D366"},
     {"name": "💬 Canal: Telegram", "color": "#0088CC"},
+    {"name": "🌐 Canal: Web", "color": "#0F766E"},
     {"name": "⚡ Activo Reciente", "color": "#3B82F6"},
     {"name": "🗓️ Turno Agendado", "color": "#10B981"},
     {"name": "❌ Turno Cancelado", "color": "#6B7280"},

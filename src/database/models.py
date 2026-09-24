@@ -175,6 +175,17 @@ class ClientSettings(Base):
     results_portal_phone = Column(String(50), nullable=True)  # "¿No lo encontrás? Llamanos"; vacío = company_phone
     results_portal_welcome = Column(Text, nullable=True)
 
+    # --- CHAT WEB (ver src/web_chat.py) ---
+    feat_web_chat = Column(Boolean, default=False, server_default="0")  # modulo habilitado por el super admin
+    web_chat_enabled = Column(Boolean, default=False, server_default="0")  # el cliente enciende/pausa el link publico
+    web_chat_title = Column(String(100), nullable=True)  # vacio = nombre del negocio
+    web_chat_subtitle = Column(String(100), nullable=True)
+    web_chat_welcome = Column(Text, nullable=True)  # primer mensaje que ve quien abre el chat
+    web_chat_color = Column(String(9), nullable=True)  # #RRGGBB de marca; vacio = verde azulado por defecto
+    web_chat_buttons = Column(Text, nullable=True)  # JSON: lista de textos de los botones iniciales
+    web_chat_daily_cap = Column(Integer, default=30, server_default="30")  # mensajes al bot por celular por dia; 0 = sin tope
+    web_chat_global_daily_cap = Column(Integer, default=1000, server_default="1000")  # tope diario de todo el chat (interruptor de emergencia de costo); 0 = sin tope
+
     client = relationship("Client", back_populates="settings")
 
 class User(Base):
@@ -637,6 +648,33 @@ class ResultsSearchLog(Base):
 # ==========================================
 # CAPA 6: PRICING / CALCULADORA SAAS (SUPER ADMIN)
 # ==========================================
+
+class WebDevice(Base):
+    """Un celular/navegador que abrio el chat web. El token secreto vive solo en el celular: aca se guarda su hash."""
+    __tablename__ = "web_devices"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False, index=True)
+    public_id = Column(String(32), nullable=False, unique=True)  # forma parte del thread_id ("web:<public_id>")
+    token_hash = Column(String(64), nullable=False, index=True)
+    user_agent = Column(String(255), nullable=True)
+    blocked = Column(Boolean, default=False, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def thread_id(self):
+        return f"web:{self.public_id}"
+
+class WebEvent(Base):
+    """Un mensaje del chat web (del paciente, del bot, de una persona del panel o del sistema)."""
+    __tablename__ = "web_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False)
+    device_id = Column(Integer, ForeignKey("web_devices.id"), nullable=False, index=True)
+    kind = Column(String(12), nullable=False)  # user | bot | admin | sys
+    text = Column(Text, nullable=True)
+    attach_json = Column(Text, nullable=True)  # {"url","name"} de un archivo adjunto
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class ClientPricing(Base):
     __tablename__ = "adm_client_pricing"
