@@ -208,8 +208,11 @@ def solicitar_asistencia_humana(motivo: str, config: RunnableConfig):
     thread_id = config.get("configurable", {}).get("thread_id")
     try:
         db = SessionLocal()
-        db.add(Alert(client_id=client_id, motivo=motivo))
-        db.commit()
+        # Una sola alerta pendiente por conversación (el paciente puede insistir y no debe duplicar el aviso en el panel)
+        dup = thread_id and db.query(Alert).filter_by(client_id=client_id, thread_id=str(thread_id), leida=False).first()
+        if not dup:
+            db.add(Alert(client_id=client_id, motivo=(motivo or "")[:255], thread_id=str(thread_id)[:100] if thread_id else None))
+            db.commit()
         
         if thread_id:
             try:

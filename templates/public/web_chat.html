@@ -134,6 +134,11 @@ label.f small{font-weight:400;color:var(--ink-2)}
 .patient{display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--line);border-radius:14px;margin-top:10px;background:var(--surface);width:100%;text-align:left}
 .patient b{display:block}
 .patient small{color:var(--ink-2)}
+.minerow{display:flex;align-items:center;gap:8px;padding:10px 4px 10px 12px;border-bottom:1px solid var(--line)}
+.minerow .mi{flex:1;min-width:0}.minerow .mi b{display:block;font-size:15px}.minerow .mi small{color:var(--ink-2);font-size:12.5px}
+.minerow button{border:1.5px solid var(--brand);color:var(--brand);background:var(--surface);border-radius:999px;padding:8px 13px;font-weight:600;font-size:13.5px;min-height:38px}
+#instbar{display:flex;align-items:center;gap:10px;margin:0 12px 6px;padding:9px 12px;border-radius:12px;background:var(--surface-2);font-size:13.5px;color:var(--ink)}
+#instbar span{flex:1}#instbar button{border:0;background:var(--brand);color:#fff;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13px;min-height:34px}#instbar button.x{background:transparent;color:var(--ink-2);padding:7px 9px;font-size:16px}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:var(--surface-2);color:var(--ink-2)}
 .pill.ok{background:rgba(6,118,71,.14);color:#067647}
 .pill.wait{background:var(--warn-bg);color:var(--warn)}
@@ -162,6 +167,7 @@ label.f small{font-weight:400;color:var(--ink-2)}
   </header>
   <div class="banner" id="conn" hidden>Sin conexión. Reintentando…</div>
   <main id="msgs" aria-live="polite"></main>
+  <div id="instbar" hidden><span>📲 Instalá el chat en tu celular para recibir el aviso cuando estén tus análisis.</span><button type="button" id="instHow">Cómo</button><button type="button" class="x" id="instX" aria-label="Cerrar">✕</button></div>
   <div id="chips"></div>
   <form id="composer" autocomplete="off">
     <textarea id="inp" rows="1" placeholder="Escribí tu consulta…" enterkeyhint="send" maxlength="1000" aria-label="Mensaje"></textarea>
@@ -264,6 +270,7 @@ function renderChips(){
 /* ---------- mensajes ---------- */
 const msgsEl = $('#msgs');
 const seen = new Set();
+const RESULTS = new Map();   // id de evento -> evento con tarjeta de análisis (para la lista "Mis análisis")
 let lastId = 0, typingEl = null;
 function scrollEnd(){ requestAnimationFrame(() => { msgsEl.scrollTop = msgsEl.scrollHeight; }); }
 function isNearEnd(){ return msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 140; }
@@ -289,7 +296,7 @@ function renderEvent(e){
       c.querySelector('.nm').textContent = name; c.querySelector('a').href = url;
       el.appendChild(c);
     }
-    if (e.attach && e.attach.type === 'result') el.appendChild(resultCard(e));
+    if (e.attach && e.attach.type === 'result'){ RESULTS.set(e.id, e); el.appendChild(resultCard(e)); }
     if (e.attach && e.attach.type === 'news') el.appendChild(newsStopButton());
     const tm = document.createElement('span'); tm.className = 'time'; tm.textContent = hhmm(e.ts); el.appendChild(tm);
   }
@@ -446,6 +453,17 @@ function showInstall(after){
   openSheet(env.ios ? 'Agregar a la pantalla de inicio' : 'Instalar el chat', n);
 }
 
+
+/* ---------- invitación a instalar (una vez por semana si la ignoran) ---------- */
+(function(){
+  const bar = $('#instbar');
+  const last = Number(ls.get('instX') || 0);
+  if (env.standalone || (last && Date.now() - last < 7 * 24 * 3600 * 1000)) return;
+  setTimeout(() => { if (!env.standalone && CFG && CFG.results) bar.hidden = false; }, 4000);
+  $('#instHow').addEventListener('click', () => showInstall());
+  $('#instX').addEventListener('click', () => { bar.hidden = true; ls.set('instX', String(Date.now())); });
+})();
+
 function startLink(){
   // En iPhone, lo vinculado en Safari puede no verse en la app instalada: la guia va antes de pedir los datos.
   if (env.ios && !env.standalone && !ls.get('iosGuide')){ ls.set('iosGuide', '1'); return showInstall(openLinkForm); }
@@ -497,6 +515,7 @@ function confirmUnlink(){
   if (!LINKS.length) return toast('Este celular no está vinculado');
   const n = document.createElement('div');
   n.innerHTML = '<p style="margin:6px 0">Vas a quitar de este celular a: </p>';
+  if (LINKS.length > 1){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = 'Quitar a todos (' + LINKS.length + ')'; b.addEventListener('click', () => doUnlink(0)); n.appendChild(b); }
   for (const l of LINKS){
     const p = document.createElement('div'); p.className = 'patient';
     p.innerHTML = '<span style="flex:1"><b></b><small></small></span><button type="button" class="btn ghost sm" style="width:auto;margin:0;padding:8px 14px;min-height:40px">Quitar</button>';
@@ -504,7 +523,6 @@ function confirmUnlink(){
     p.querySelector('small').textContent = 'Protocolo ' + l.protocol + (l.status === 'verificado' ? '' : ' · pendiente');
     p.querySelector('button').addEventListener('click', () => doUnlink(l.id)); n.appendChild(p);
   }
-  if (LINKS.length > 1){ const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = 'Quitar a todos'; b.addEventListener('click', () => doUnlink(0)); n.appendChild(b); }
   n.appendChild(h('<p class="help">Sus análisis dejan de verse en este celular. Podés volver a vincular cuando quieras.</p>'));
   openSheet('¿No sos vos?', n);
 }
@@ -516,27 +534,39 @@ async function doUnlink(id){
   }catch(_){ toast('No se pudo desvincular. Probá de nuevo.'); }
 }
 async function resetChat(){
-  msgsEl.innerHTML = ''; seen.clear(); lastId = 0; typingEl = null; started = false;
+  msgsEl.innerHTML = ''; seen.clear(); RESULTS.clear(); lastId = 0; typingEl = null; started = false;
   await startSession(); scrollEnd();
 }
 function openMine(){
   if (!LINKS.length) return startLink();
-  const goTo = l => {
-    const cards = [...msgsEl.querySelectorAll('.pdfcard')].filter(c => Number(c.dataset.link) === l.id);
-    const last = cards.pop();
-    if (last){ last.scrollIntoView({block: 'center'}); last.classList.remove('hl'); void last.offsetWidth; last.classList.add('hl'); }
-    else addLocal('', l.status === 'verificado' ? 'Todavía no hay análisis para ' + l.dni_mask + '. Cuando llegue, aparece acá.' : 'Todavía no está el análisis del protocolo ' + l.protocol + '. Cuando aparezca, lo ves acá.');
-  };
-  if (LINKS.length === 1) return goTo(LINKS[0]);
-  const n = h('<p style="margin:4px 0 0">¿De quién querés ver los resultados?</p>');
+  const n = document.createElement('div');
+  n.appendChild(h('<p style="margin:4px 0 0">Tus análisis, del más nuevo al más viejo.</p>'));
   for (const l of LINKS){
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'patient';
-    b.innerHTML = '<span style="flex:1"><b></b><small></small></span><span class="pill"></span>';
-    b.querySelector('b').textContent = l.name || 'Paciente'; b.querySelector('small').textContent = 'DNI ' + l.dni_mask + ' · ' + l.protocol;
-    const pl = b.querySelector('.pill'); pl.textContent = l.status === 'verificado' ? 'Verificado' : 'Pendiente'; pl.classList.add(l.status === 'verificado' ? 'ok' : 'wait');
-    b.addEventListener('click', () => { closeSheet(); setTimeout(() => goTo(l), 260); });
-    n.appendChild(b);
+    const items = [...RESULTS.values()].filter(e => Number(e.attach.link) === l.id).sort((a, b) => b.id - a.id);
+    const head = document.createElement('div'); head.className = 'patient'; head.style.cursor = 'default';
+    head.innerHTML = '<span style="flex:1"><b></b><small></small></span><span class="pill"></span>';
+    head.querySelector('b').textContent = l.name || 'Paciente'; head.querySelector('small').textContent = 'DNI ' + l.dni_mask;
+    const pl = head.querySelector('.pill'); pl.textContent = l.status === 'verificado' ? 'Verificado' : 'Esperando'; pl.classList.add(l.status === 'verificado' ? 'ok' : 'wait');
+    n.appendChild(head);
+    if (!items.length){
+      n.appendChild(h('<p class="help" style="margin:6px 4px 0"></p>')).firstChild.textContent = l.status === 'verificado'
+        ? 'Todavía no hay análisis nuevos. Cuando llegue uno, aparece acá y te avisamos.' : 'Todavía no está el análisis del protocolo ' + l.protocol + '. Cuando aparezca, lo ves acá.';
+      continue;
+    }
+    for (const e of items){
+      const row = document.createElement('div'); row.className = 'minerow';
+      row.innerHTML = '<div class="mi"><b></b><small></small></div><button type="button" data-a="ver">Ver</button><button type="button" data-a="compartir">Compartir</button>';
+      row.querySelector('b').textContent = e.attach.label || 'Análisis'; row.querySelector('small').textContent = 'Protocolo ' + e.attach.protocol;
+      row.addEventListener('click', ev => {
+        const btn = ev.target.closest('button'); if (!btn) return;
+        if (btn.dataset.a === 'ver'){ closeSheet(); setTimeout(() => openViewer(e), 260); } else sharePdf(e);
+      });
+      n.appendChild(row);
+    }
   }
+  const more = document.createElement('button'); more.type = 'button'; more.className = 'btn ghost'; more.textContent = 'Agregar otro paciente';
+  more.addEventListener('click', () => { closeSheet(); setTimeout(startLink, 260); });
+  n.appendChild(more);
   openSheet('Mis análisis', n);
 }
 

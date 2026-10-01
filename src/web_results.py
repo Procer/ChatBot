@@ -15,6 +15,7 @@ Privacidad:
 """
 import asyncio
 import logging
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -26,9 +27,10 @@ from src.database.models import (ClientSettings, WebDelivery, WebDevice, WebEven
 from src.database.session import SessionLocal
 from src.web_chat import add_event
 
-PENDING_DAYS = 10             # ventana para que aparezca el PDF de un vínculo pendiente
-ATTEMPTS_PER_DEVICE = 5       # intentos de vincular por celular por hora
-ATTEMPTS_PER_IP = 20          # por IP por hora (la recepción comparte wifi)
+PENDING_NOTICE_HOURS = 24     # tras cuántas horas pendiente se le avisa (una vez) que revise sus datos
+PENDING_DAYS = 10            # ventana para que aparezca el PDF de un vínculo pendiente
+ATTEMPTS_PER_DEVICE = int(os.getenv("CHAT_LINK_ATTEMPTS_DEVICE", "5"))   # intentos de vincular por celular por hora
+ATTEMPTS_PER_IP = int(os.getenv("CHAT_LINK_ATTEMPTS_IP", "20"))          # por IP por hora (la recepción comparte wifi)
 ATTEMPT_WINDOW = 3600
 SYNC_MIN_INTERVAL = 90        # segundos entre consultas a Drive por celular (mientras el chat está abierto)
 MAX_DELIVER_PER_SYNC = 30
@@ -175,6 +177,13 @@ def _sync_links(client_id: int, device_id: int, force: bool = False):
             files.sort(key=lambda x: x["created"])          # más viejo primero: el más nuevo queda abajo
             if link.status == "pendiente":
                 if not any((f["protocolo"] or "").upper() == link.protocol for f in files):
+                    # Aviso temprano (una sola vez): si pasó un día sin aparecer, quizá hay un error de tipeo
+                    if not link.pending_notice_at and link.created_at and link.created_at < datetime.utcnow() - timedelta(hours=PENDING_NOTICE_HOURS):
+                        link.pending_notice_at = datetime.utcnow()
+                        db.commit()
+                        add_event(db, client_id, device.id, "bot",
+                                  f"Todavía no encontramos el análisis del protocolo **{link.protocol}**. Puede ser que aún no esté listo. "
+                                  f"Si ya te dijeron que sí, revisá que el DNI y el protocolo estén bien (Menú → “No soy yo / desvincular”){contact}. Recepción también puede corregirlos por vos.")
                     continue
                 link.status, link.verified_at, link.expires_at = "verificado", datetime.utcnow(), None
                 db.commit()
@@ -182,13 +191,16 @@ def _sync_links(client_id: int, device_id: int, force: bool = False):
                 add_event(db, client_id, device.id, "sys", f"Paciente vinculado · DNI {mask_dni(link.dni)}")
                 add_event(db, client_id, device.id, "bot",
                           f"¡Listo{who}! Encontré tu análisis. Lo podés ver, bajar o compartir desde acá.")
-                # Análisis de los últimos días de ese DNI, sin aviso (verificado por el protocolo del papel)
-                for f in files[-MAX_DELIVER_PER_SYNC:]:
+                # Sólo el análisis del protocolo ingresado; los nuevos del DNI llegan después como aviso
+                for f in [x for x in files if (x["protocolo"] or "").upper() == link.protocol][-MAX_DELIVER_PER_SYNC:]:
                     if _deliver(db, device, link, f):
                         delivered += 1
                         last_event = _last_delivered(db, device.id)
             else:
-                for f in files[-MAX_DELIVER_PER_SYNC:]:
+                since = link.verified_at or link.created_at
+                new = [x for x in files if not since or
+                       datetime.strptime(x["created"][:19], "%Y-%m-%dT%H:%M:%S") > since - timedelta(minutes=5)]
+                for f in new[-MAX_DELIVER_PER_SYNC:]:
                     if _deliver(db, device, link, f, text="Llegó un análisis nuevo."):
                         delivered += 1
                         last_event = _last_delivered(db, device.id)

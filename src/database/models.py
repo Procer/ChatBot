@@ -319,6 +319,7 @@ class Alert(Base):
     motivo = Column(String(255), nullable=False)
     leida = Column(Boolean, default=False)
     fecha = Column(DateTime, default=datetime.utcnow)
+    thread_id = Column(String(100), nullable=True)  # conversación que pidió una persona (para avisar en el panel)
 
 class ChatNote(Base):
     __tablename__ = "bot_chat_notes"
@@ -701,6 +702,7 @@ class WebLink(Base):
     verified_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)  # solo mientras esta pendiente
     last_check_at = Column(DateTime, nullable=True)
+    pending_notice_at = Column(DateTime, nullable=True)  # cuándo se le avisó al paciente que revise sus datos (una sola vez)
 
 class WebDelivery(Base):
     """Un PDF de Drive ya entregado a un celular (evita duplicados y ata el evento del chat al archivo)."""

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import func
 
-from src.database.models import (ClientSettings, TokenUsage, WebBroadcast, WebDelivery, WebDevice, WebEvent, WebLink,
+from src.database.models import (Alert, ClientSettings, TokenUsage, WebBroadcast, WebDelivery, WebDevice, WebEvent, WebLink,
                                  WebPushSub)
 
 _AR = timedelta(hours=3)
@@ -57,6 +57,12 @@ def compute(db, client_id: int, days: int = 14) -> dict:
     active_7d = db.query(WebDevice).filter(WebDevice.client_id == client_id, WebDevice.last_seen_at >= now - timedelta(days=7)).count()
     bcs = db.query(WebBroadcast).filter(WebBroadcast.client_id == client_id, WebBroadcast.status == "enviado", WebBroadcast.sent_at >= since).count()
 
+    # Atención: pedidos de una persona y vínculos que llevan más de un día esperando su análisis
+    handoffs = db.query(Alert).filter(Alert.client_id == client_id, Alert.thread_id.like("web:%"), Alert.fecha >= since).count()
+    handoffs_open = db.query(Alert).filter(Alert.client_id == client_id, Alert.thread_id.like("web:%"), Alert.leida == False).count()  # noqa: E712
+    waiting_old = db.query(WebLink).filter(WebLink.client_id == client_id, WebLink.status == "pendiente",
+                                           WebLink.created_at < now - timedelta(hours=24)).count()
+
     pct = lambda a, b: round(100.0 * a / b) if b else 0
     return {
         "days": labels,
@@ -72,6 +78,7 @@ def compute(db, client_id: int, days: int = 14) -> dict:
         ],
         "totals": {"devices": devices_total, "active_7d": active_7d, "messages": msgs_period,
                    "deliveries": sum(delivered), "links_by_status": status, "broadcasts": bcs,
+                   "handoffs": handoffs, "handoffs_open": handoffs_open, "waiting_old": waiting_old,
                    "ai_cost_usd": round(float(tu[0]), 4), "ai_tokens": int(tu[1]),
                    "ai_cost_per_msg_usd": round(float(tu[0]) / msgs_period, 5) if msgs_period else 0.0},
     }

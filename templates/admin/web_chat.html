@@ -129,8 +129,15 @@
         </div>
     </details>
 
+    <!-- Atencion: pacientes que piden una persona -->
+    <div data-perm="atencion" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="attBox">
+        <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4 text-rose-400"></i> Atención: pacientes que piden una persona</h2>
+        <p class="text-xs text-slate-500 mb-3">Cuando el bot no puede resolver algo (o el paciente pide hablar con alguien) aparece acá y <b class="text-slate-300">en cualquier pantalla del panel</b> con aviso visual y sonido. Tocá <b class="text-slate-300">Atender</b> para abrir la conversación: al responder, el bot se pausa 2 horas y el aviso se cierra solo.</p>
+        <div id="attList" class="space-y-2"><div class="text-xs text-slate-500">Cargando…</div></div>
+    </div>
+
     <!-- Estado + link -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-perm="estado" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <div class="flex flex-col md:flex-row md:items-center gap-4 justify-between">
             <label class="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" id="wcEnabled" class="w-5 h-5 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
@@ -156,7 +163,7 @@
     </div>
 
     <!-- Piloto: metricas, checklist e instructivo -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="pilotBox">
+    <div data-perm="metricas" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="pilotBox">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
             <h2 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-500"></i> Piloto en recepción: cómo va</h2>
             <div class="flex items-center gap-2">
@@ -178,7 +185,7 @@
                 <li><b class="text-slate-300">Checklist:</b> ✓ listo · ! recomendado · ✗ falta · las casillas vacías las tildás vos (se guardan en este navegador).</li>
             </ul>
         </details>
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="pilotKpis"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3 mb-5" id="pilotKpis"></div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Embudo (histórico)</h3>
@@ -204,7 +211,7 @@
     </div>
 
     <!-- Apariencia y textos -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="palette" class="w-4 h-4 text-brand-500"></i> Apariencia y textos</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -240,12 +247,21 @@
                 <label class="text-xs text-slate-500 block mb-1">Botones iniciales (uno por línea, máximo 8)</label>
                 <textarea id="wcButtons" rows="5" class="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:ring-1 focus:ring-brand-500 outline-none"></textarea>
                 <p class="text-xs text-slate-500 mt-1">Al tocarlos, el texto se envía como una pregunta y el bot responde con los Conocimientos cargados.</p>
+                <div class="mt-3 p-3 rounded-lg border border-slate-800 bg-slate-900/40">
+                    <label class="text-xs text-slate-400 block mb-1">Elegir desde tus Conocimientos <span class="text-slate-600">(así el botón siempre tiene una respuesta cargada)</span></label>
+                    <div class="flex gap-2">
+                        <input type="text" id="wcTopicSearch" list="wcTopicList" placeholder="Escribí para buscar un tema…" class="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+                        <datalist id="wcTopicList"></datalist>
+                        <button type="button" onclick="addTopicButton()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold">Agregar</button>
+                    </div>
+                    <div id="wcButtonsCheck" class="mt-2 text-xs space-y-0.5"></div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Limites -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4 text-brand-500"></i> Límites (cuidan el costo de IA)</h2>
         <p class="text-xs text-slate-500 mb-3">Como el link es público, cualquiera con el enlace puede escribir. Estos topes evitan gastos por abuso. 0 = sin tope. Cuando un paciente llega al tope de mensajes, el chat le avisa que vuelva mañana (o que llame, si cargaste el teléfono de la empresa); no ve ningún error.</p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -277,7 +293,7 @@
     </div>
 
     <!-- Resultados de analisis dentro del chat -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4 text-brand-500"></i> Resultados de análisis dentro del chat</h2>
         <p class="text-xs text-slate-500 mb-3">El paciente vincula su celular con <b>DNI + número de protocolo</b> (el del papel) y sus PDFs aparecen dentro del chat: los ve, baja o comparte ahí mismo. Usa la carpeta de PROTOCOLOS del portal “Mis Resultados” (archivos <code>PROTOCOLO-DNI.pdf</code>).</p>
         <label class="flex items-center gap-3 cursor-pointer mb-2">
@@ -290,9 +306,11 @@
         <p class="text-xs text-slate-500 mt-2">Seguridad: sin el protocolo del papel nadie puede ver los análisis de un DNI. Máximo 5 intentos por celular por hora. Los PDFs no se copian: se traen de Drive en el momento y solo los ve el celular vinculado.</p>
     </div>
 
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-perm="pacientes" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Pacientes vinculados</h2>
         <p class="text-xs text-slate-500 mb-3"><b class="text-slate-300">Verificado:</b> ya se encontró su archivo en PROTOCOLOS y ve sus análisis. <b class="text-slate-300">Pendiente:</b> cargó DNI y protocolo pero todavía no hay un archivo con ambos (espera hasta 10 días). <b class="text-slate-300">Venció:</b> pasaron 10 días sin encontrarlo (se marca cuando el paciente vuelve a abrir el chat). <b class="text-slate-300">Avisos “Sí”:</b> ese celular puede recibir notificaciones. <b class="text-slate-300">Desvincular</b> borra sus tarjetas del chat y le quita el acceso a los PDFs.</p>
+        <label class="flex items-center gap-2 text-xs text-slate-400 mb-3 cursor-pointer"><input type="checkbox" id="wcOnlyPending" class="w-4 h-4 rounded bg-slate-800 border-slate-700"> Mostrar sólo los que están esperando (pendientes o vencidos)</label>
+        <p class="text-xs text-slate-500 mb-3">Si un paciente escribió mal su DNI o protocolo, tocá <b class="text-slate-300">Corregir</b>: cambiás los datos acá y el sistema vuelve a buscar su análisis en Drive, sin que el paciente tenga que hacer nada. Los que llevan más de 24 h esperando se marcan en rojo.</p>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-800">
@@ -304,7 +322,7 @@
     </div>
 
     <!-- Avisos masivos -->
-    <div class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="bcBox">
+    <div data-perm="avisos" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="bcBox">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="megaphone" class="w-4 h-4 text-brand-500"></i> Avisos masivos</h2>
         <p class="text-xs text-slate-500 mb-3">Una notificación al celular de quienes aceptaron recibir <b>“Novedades”</b> (es un permiso aparte del de sus análisis). <span class="text-amber-400/90">No incluyas datos de salud ni nombres: la notificación se ve con la pantalla bloqueada.</span></p>
         <div id="bcSummary" class="text-xs text-slate-400 mb-4"></div>
@@ -372,9 +390,29 @@
         </div>
     </div>
 
-    <div class="flex items-center gap-3 mb-10">
+    <div data-perm="estado,config" class="flex items-center gap-3 mb-10">
         <button onclick="saveCfg()" class="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Guardar</button>
         <span id="wcMsg" class="text-sm"></span>
+    </div>
+</div>
+
+
+<!-- Corregir datos de un paciente pendiente -->
+<div id="editModal" class="hidden fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4">
+    <div class="bg-panel border border-slate-700 rounded-xl p-5 w-full max-w-sm">
+        <h3 class="text-sm font-bold text-white mb-1">Corregir datos del paciente</h3>
+        <p class="text-xs text-slate-500 mb-3">Se vuelve a buscar el análisis con estos datos. El paciente verá un aviso en su chat.</p>
+        <label class="text-xs text-slate-500 block mb-1">DNI</label>
+        <input id="edDni" inputmode="numeric" class="w-full mb-3 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+        <label class="text-xs text-slate-500 block mb-1">Protocolo (el del papel)</label>
+        <input id="edProto" class="w-full mb-3 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none uppercase">
+        <label class="text-xs text-slate-500 block mb-1">Nombre (opcional)</label>
+        <input id="edName" maxlength="60" class="w-full mb-3 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white outline-none">
+        <div id="edMsg" class="text-xs text-red-400 mb-2 min-h-[1rem]"></div>
+        <div class="flex justify-end gap-2">
+            <button type="button" onclick="closeEdit()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-semibold">Cancelar</button>
+            <button type="button" id="edSave" onclick="saveEdit()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Guardar y buscar</button>
+        </div>
     </div>
 </div>
 
@@ -428,6 +466,11 @@
 <script>
 let CFG = null;
 const $ = id => document.getElementById(id);
+const WC = {{ wc_perms | tojson }};
+// Cada sección se muestra sólo si el usuario tiene ese permiso (el servidor además lo exige en cada API; se oculta, no se borra, para no romper el resto del script)
+document.querySelectorAll('[data-perm]').forEach(el => {
+    if (!el.dataset.perm.split(',').some(k => WC[k])) el.style.display = 'none';
+});
 
 function drawQr(target, url, cell){
     try {
@@ -452,18 +495,54 @@ async function load(){
     $('wcConsent').value = CFG.consent; $('wcConsent').placeholder = CFG.consent_default;
     $('wcResultsHint').textContent = CFG.results_ready ? ('Carpeta de resultados: ' + (CFG.folder_name || 'configurada')) :
         'Falta configurar la carpeta de PROTOCOLOS en Biblioteca de Documentos → Portal “Mis Resultados”. Hasta entonces no se puede activar.';
-    loadLinks();
+    if (WC.pacientes) loadLinks();
     $('wcDaily').value = CFG.daily_cap; $('wcGlobal').value = CFG.global_cap;
     $('wcRetention').value = CFG.retention_days;
     $('wcBcCap').value = CFG.broadcast_cap; $('wcBcFrom').value = CFG.hours_from; $('wcBcTo').value = CFG.hours_to;
     $('bcPrevApp').textContent = CFG.title || CFG.defaults.title; $('bcPrevIcon').src = (CFG.logo || CFG.logo_default) || '';
-    updatePreview(); loadBroadcasts(); loadPilot(); loadHealth();
+    if (WC.avisos){ updatePreview(); loadBroadcasts(); }
+    if (WC.metricas){ loadPilot(); loadHealth(); }
+    if (WC.atencion) loadAttention();
+    loadTopics();
     $('wcUrl').value = CFG.public_url; $('wcOpen').href = CFG.public_url;
     const s = CFG.stats;
     $('wcStatsLine').textContent = `${s.devices_total} celulares · ${s.devices_7d} activos en 7 días · ${s.messages_today} mensajes hoy · ${s.messages_7d} en 7 días · ${s.push_devices} con avisos`;
     drawQr($('wcQr'), CFG.public_url, 4);
     document.title = 'Chat Web | anka';
 }
+
+let TOPICS = [];
+const norm = t => (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+async function loadTopics(){
+    if (!WC.config) return;
+    const r = await fetch('/api/admin/web_chat/topics'); if (!r.ok) return;
+    TOPICS = (await r.json()).topics;
+    const dl = $('wcTopicList'); dl.innerHTML = '';
+    for (const t of TOPICS){ const o = document.createElement('option'); o.value = t; dl.appendChild(o); }
+    checkButtons();
+}
+function currentButtons(){ return $('wcButtons').value.split('\n').map(x => x.trim()).filter(Boolean); }
+function addTopicButton(){
+    const v = $('wcTopicSearch').value.trim(); if (!v) return;
+    const list = currentButtons();
+    if (list.length >= 8){ $('wcMsg').className = 'text-sm text-amber-400'; $('wcMsg').textContent = 'Máximo 8 botones.'; return; }
+    if (!list.some(x => norm(x) === norm(v))) list.push(v.slice(0, 60));
+    $('wcButtons').value = list.join('\n'); $('wcTopicSearch').value = ''; checkButtons();
+}
+function checkButtons(){
+    const box = $('wcButtonsCheck'); if (!box) return; box.innerHTML = '';
+    if (!TOPICS.length) return;
+    const known = TOPICS.map(norm);
+    for (const b of currentButtons()){
+        const n = norm(b);
+        // coincide si es un tema cargado, o si contiene / está contenido en uno (el bot busca por tema)
+        const ok = known.some(k => k === n || (n.length > 3 && (k.includes(n) || n.includes(k))));
+        const d = document.createElement('div'); d.className = ok ? 'text-emerald-400' : 'text-amber-400';
+        d.textContent = (ok ? '✓ ' : '⚠ ') + b + (ok ? '' : ' — no coincide con ningún Conocimiento cargado: el bot puede no saber responder');
+        box.appendChild(d);
+    }
+}
+$('wcButtons').addEventListener('input', checkButtons);
 $('wcColorPick').addEventListener('input', e => { $('wcColor').value = e.target.value.toUpperCase(); });
 $('wcColor').addEventListener('input', e => { if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) $('wcColorPick').value = e.target.value; });
 function showLogo(url, own){
@@ -542,26 +621,69 @@ async function sendBroadcast(){
     setTimeout(loadBroadcasts, j.now ? 4000 : 300);
 }
 const STATUS_LBL = {pendiente: 'Pendiente (esperando el PDF)', verificado: 'Verificado', vencido: 'Venció'};
+let LINKS_ALL = [];
 async function loadLinks(){
     const body = $('wcLinks');
     const r = await fetch('/api/admin/web_chat/links');
     if (!r.ok){ body.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-500 text-xs">No se pudo cargar.</td></tr>'; return; }
-    const j = await r.json();
-    if (!j.links.length){ body.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-500 text-xs">Todavía no hay pacientes vinculados.</td></tr>'; return; }
+    LINKS_ALL = (await r.json()).links;
+    renderLinks();
+}
+$('wcOnlyPending').addEventListener('change', renderLinks);
+function renderLinks(){
+    const body = $('wcLinks');
+    const only = $('wcOnlyPending').checked;
+    const list = LINKS_ALL.filter(l => !only || l.status === 'pendiente' || l.status === 'vencido');
+    if (!list.length){ body.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-500 text-xs">' + (only ? 'No hay pacientes esperando.' : 'Todavía no hay pacientes vinculados.') + '</td></tr>'; return; }
     body.innerHTML = '';
-    for (const l of j.links){
-        const tr = document.createElement('tr'); tr.className = 'border-b border-slate-800/50';
+    for (const l of list){
+        const waiting = l.status === 'pendiente' || l.status === 'vencido';
+        const old = waiting && l.created_at && (Date.now() - new Date(l.created_at + 'Z').getTime()) > 24 * 3600 * 1000;
+        const tr = document.createElement('tr'); tr.className = 'border-b border-slate-800/50' + (old ? ' bg-rose-500/5' : '');
         const cells = [l.dni, l.name || '—', l.protocol, STATUS_LBL[l.status] || l.status, String(l.deliveries), l.push ? 'Sí' : 'No',
                        l.created_at ? new Date(l.created_at + 'Z').toLocaleDateString('es-AR') : ''];
-        for (const c of cells){ const td = document.createElement('td'); td.className = 'py-2 pr-3 text-slate-300'; td.textContent = c; tr.appendChild(td); }
+        cells.forEach((c, i) => { const td = document.createElement('td'); td.className = 'py-2 pr-3 ' + (old && i === 3 ? 'text-rose-300 font-semibold' : 'text-slate-300'); td.textContent = c; tr.appendChild(td); });
         const td = document.createElement('td'); td.className = 'py-2 text-right whitespace-nowrap';
         const a = document.createElement('a'); a.href = '/admin/chat/' + encodeURIComponent(l.thread_id); a.className = 'text-xs text-slate-400 hover:text-white underline mr-3'; a.textContent = 'Ver chat';
+        td.appendChild(a);
+        if (waiting){
+            const e = document.createElement('button'); e.className = 'text-xs text-amber-300 hover:text-amber-200 underline mr-3'; e.textContent = 'Corregir';
+            e.addEventListener('click', () => openEdit(l)); td.appendChild(e);
+        }
         const b = document.createElement('button'); b.className = 'text-xs text-red-400 hover:text-red-300 underline'; b.textContent = 'Desvincular';
         b.addEventListener('click', async () => {
             if (!confirm('¿Desvincular este paciente? Sus análisis dejan de verse en ese celular.')) return;
             await fetch('/api/admin/web_chat/links/' + l.id + '/revoke', {method: 'POST'}); loadLinks();
         });
-        td.appendChild(a); td.appendChild(b); tr.appendChild(td); body.appendChild(tr);
+        td.appendChild(b); tr.appendChild(td); body.appendChild(tr);
+    }
+}
+let EDITING = null;
+function openEdit(l){ EDITING = l; $('edDni').value = l.dni; $('edProto').value = l.protocol; $('edName').value = l.name || ''; $('edMsg').textContent = ''; $('editModal').classList.remove('hidden'); $('edDni').focus(); }
+function closeEdit(){ $('editModal').classList.add('hidden'); EDITING = null; }
+async function saveEdit(){
+    if (!EDITING) return;
+    $('edSave').disabled = true; $('edMsg').textContent = '';
+    const r = await fetch('/api/admin/web_chat/links/' + EDITING.id + '/edit', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dni: $('edDni').value, protocol: $('edProto').value, name: $('edName').value})});
+    const j = await r.json().catch(() => ({}));
+    $('edSave').disabled = false;
+    if (!r.ok){ $('edMsg').textContent = j.error || 'No se pudo guardar.'; return; }
+    closeEdit(); await loadLinks(); setTimeout(loadLinks, 6000);
+}
+async function loadAttention(){
+    const box = $('attList');
+    const r = await fetch('/api/admin/web_chat/attention'); if (!r.ok) return;
+    const j = await r.json();
+    if (!j.items.length){ box.innerHTML = '<div class="text-xs text-emerald-400">✓ Nadie está esperando.</div>'; return; }
+    box.innerHTML = '';
+    for (const it of j.items){
+        const d = document.createElement('div'); d.className = 'flex items-center gap-3 p-3 rounded-lg border border-rose-500/40 bg-rose-500/10';
+        d.innerHTML = '<div class="flex-1 min-w-0"><div class="text-sm font-semibold text-white"></div><div class="text-xs text-slate-400"></div></div><a class="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold">Atender</a><button type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold">Ya está</button>';
+        d.children[0].children[0].textContent = it.who; d.children[0].children[1].textContent = it.motivo || '';
+        d.children[1].href = '/admin/chat/' + encodeURIComponent(it.thread_id);
+        d.children[2].addEventListener('click', async () => { await fetch('/api/admin/web_chat/attention/' + it.id + '/done', {method: 'POST'}); loadAttention(); });
+        box.appendChild(d);
     }
 }
 function clearColor(){ $('wcColor').value = ''; $('wcColorPick').value = CFG.defaults.color; }
@@ -609,7 +731,8 @@ async function loadPilot(){
     const r = await fetch('/api/admin/web_chat/metrics?days=' + days); if (!r.ok) return;
     const j = await r.json(), m = j.metrics, t = m.totals;
     const kpis = [['Celulares que abrieron el chat', t.devices], ['Activos en 7 días', t.active_7d], ['Mensajes al bot (período)', t.messages],
-                  ['Análisis entregados (período)', t.deliveries], ['Costo de IA (período)', 'US$ ' + t.ai_cost_usd.toFixed(3) + (t.messages ? ' · US$ ' + t.ai_cost_per_msg_usd.toFixed(4) + '/msg' : '')], ['Avisos masivos enviados', t.broadcasts]];
+                  ['Análisis entregados (período)', t.deliveries], ['Costo de IA (período)', 'US$ ' + t.ai_cost_usd.toFixed(3) + (t.messages ? ' · US$ ' + t.ai_cost_per_msg_usd.toFixed(4) + '/msg' : '')], ['Avisos masivos enviados', t.broadcasts],
+                  ['Pidieron una persona (período)', t.handoffs + (t.handoffs_open ? ' · ' + t.handoffs_open + ' sin atender' : '')], ['Esperando su análisis hace +24 h', t.waiting_old]];
     $('pilotKpis').innerHTML = '';
     for (const [l, v] of kpis){ const d = document.createElement('div'); d.className = 'bg-slate-900/60 rounded-lg p-3 border border-slate-800'; d.innerHTML = '<div class="text-lg font-bold text-white"></div><div class="text-[11px] text-slate-500 leading-tight mt-1"></div>'; d.children[0].textContent = v; d.children[1].textContent = l; $('pilotKpis').appendChild(d); }
     $('pilotFunnel').innerHTML = '';
@@ -653,6 +776,7 @@ async function loadHealth(){
 }
 $('pilotDays').addEventListener('change', loadPilot);
 load();
+if (WC.atencion) setInterval(loadAttention, 10000);
 if (window.lucide) lucide.createIcons();
 </script>
 {% endblock %}

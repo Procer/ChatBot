@@ -120,7 +120,7 @@
                         <i data-lucide="search" class="w-4 h-4 shrink-0"></i> Búsquedas de Documentos
                     </a>
                     {% endif %}
-                    {% if not user or 'web_chat' in user.permissions %}
+                    {% if not user or 'web_chat' in user.permissions or 'web_chat_estado' in user.permissions or 'web_chat_atencion' in user.permissions or 'web_chat_pacientes' in user.permissions or 'web_chat_avisos' in user.permissions or 'web_chat_metricas' in user.permissions or 'web_chat_config' in user.permissions %}
                     <a href="/admin/web-chat" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/web-chat' %}active{% endif %}">
                         <i data-lucide="message-circle" class="w-4 h-4 shrink-0"></i> Chat Web (link / QR)
                     </a>
@@ -235,6 +235,100 @@
             backdrop.classList.toggle('hidden');
         }
     </script>
+    {% if user and ('web_chat' in user.permissions or 'web_chat_atencion' in user.permissions) %}
+    <!-- AVISO DE ATENCIÓN: pacientes del chat web que piden hablar con una persona -->
+    <style>
+        @keyframes attPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(244,63,94,.55); } 50% { box-shadow: 0 0 0 10px rgba(244,63,94,0); } }
+        @keyframes attShake { 0%,100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 30% { transform: rotate(12deg); } 45% { transform: rotate(-9deg); } 60% { transform: rotate(7deg); } 75% { transform: rotate(-3deg); } }
+        @keyframes attIn { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+        .att-card { animation: attIn .3s ease-out, attPulse 1.6s ease-in-out infinite; }
+        .att-bell { animation: attShake 1.2s ease-in-out infinite; transform-origin: 50% 0; }
+    </style>
+    <div id="att-stack" class="fixed top-4 right-4 z-[60] w-[min(92vw,360px)] space-y-2 pointer-events-none"></div>
+    <button id="att-sound" type="button" class="hidden fixed bottom-4 right-4 z-[60] px-3 py-2 rounded-full bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white shadow-lg" title="Sonido de los avisos de atención"></button>
+    <script>
+    (function () {
+        const stack = document.getElementById('att-stack'), soundBtn = document.getElementById('att-sound');
+        let known = new Set(), first = true, lastBeep = 0, ctx = null, stopped = false;
+        const baseTitle = document.title; let flash = null;
+        const muted = () => { try { return localStorage.getItem('attMuted') === '1'; } catch (_) { return false; } };
+        function unlock() {
+            try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); } catch (_) {}
+        }
+        ['click', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, unlock, { once: false, passive: true }));
+        function tone(freq, t0, dur) {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.value = freq; o.connect(g); g.connect(ctx.destination);
+            g.gain.setValueAtTime(0.0001, ctx.currentTime + t0);
+            g.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + t0 + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t0 + dur);
+            o.start(ctx.currentTime + t0); o.stop(ctx.currentTime + t0 + dur + 0.05);
+        }
+        function beep() {
+            if (muted()) return;
+            try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (_) {}
+            if (!ctx || ctx.state !== 'running') { soundBtn.textContent = '🔔 Tocá acá para activar el sonido'; soundBtn.classList.remove('hidden'); return; }
+            [0, 0.35, 0.7].forEach(t => { tone(880, t, 0.18); tone(1175, t + 0.17, 0.18); });
+        }
+        function ago(iso) {
+            const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+            return m < 1 ? 'recién' : (m < 60 ? 'hace ' + m + ' min' : 'hace ' + Math.round(m / 60) + ' h');
+        }
+        function render(items) {
+            stack.innerHTML = '';
+            for (const it of items) {
+                const c = document.createElement('div');
+                c.className = 'att-card pointer-events-auto bg-rose-950/95 border border-rose-500/60 rounded-xl p-3 text-white backdrop-blur';
+                c.innerHTML = '<div class="flex items-start gap-3"><div class="att-bell text-2xl leading-none">🔔</div><div class="min-w-0 flex-1">' +
+                    '<div class="text-sm font-bold">Un paciente pide hablar con una persona</div>' +
+                    '<div class="text-xs text-rose-200 mt-0.5 att-who"></div><div class="text-xs text-rose-100/80 mt-1 att-motivo"></div>' +
+                    '<div class="text-[11px] text-rose-300/70 mt-1 att-ago"></div>' +
+                    '<div class="flex gap-2 mt-2"><a class="att-go px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold">Atender</a>' +
+                    '<button type="button" class="att-done px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold">Ya está</button></div></div></div>';
+                c.querySelector('.att-who').textContent = it.who;
+                c.querySelector('.att-motivo').textContent = it.motivo || '';
+                c.querySelector('.att-ago').textContent = ago(it.at);
+                c.querySelector('.att-go').href = '/admin/chat/' + encodeURIComponent(it.thread_id);
+                c.querySelector('.att-done').addEventListener('click', async () => {
+                    c.remove(); known.delete(it.id);
+                    try { await fetch('/api/admin/web_chat/attention/' + it.id + '/done', { method: 'POST' }); } catch (_) {}
+                    poll();
+                });
+                stack.appendChild(c);
+            }
+        }
+        function setTitle(n) {
+            if (flash) { clearInterval(flash); flash = null; }
+            if (!n) { document.title = baseTitle; return; }
+            let on = false;
+            flash = setInterval(() => { on = !on; document.title = on ? '🔔 (' + n + ') Paciente espera' : baseTitle; }, 1000);
+        }
+        async function poll() {
+            if (stopped) return;
+            try {
+                const r = await fetch('/api/admin/web_chat/attention', { cache: 'no-store' });
+                if (r.status === 401 || r.status === 403) { stopped = true; return; }
+                if (!r.ok) return;
+                const j = await r.json();
+                const ids = new Set(j.items.map(i => i.id));
+                const fresh = j.items.filter(i => !known.has(i.id));
+                known = ids;
+                render(j.items); setTitle(j.count);
+                if (j.count && (fresh.length && !first || Date.now() - lastBeep > 60000 || first)) { lastBeep = Date.now(); beep(); }
+                first = false;
+            } catch (_) {}
+        }
+        soundBtn.addEventListener('click', () => {
+            try {
+                if (!ctx || ctx.state !== 'running') { unlock(); soundBtn.classList.add('hidden'); beep(); return; }
+                const m = !muted(); localStorage.setItem('attMuted', m ? '1' : '0');
+                soundBtn.textContent = m ? '🔕 Sonido apagado' : '🔔 Sonido activado';
+            } catch (_) {}
+        });
+        poll(); setInterval(poll, 8000);
+    })();
+    </script>
+    {% endif %}
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

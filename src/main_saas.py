@@ -188,7 +188,13 @@ DEFAULT_MENU_ITEMS = [
     {"key": "catalog", "label": "Catálogo de Productos", "icon": "shopping-bag", "section": "Operación"},
     {"key": "catalog_requests", "label": "Consultas y Pedidos", "icon": "shopping-cart", "section": "Operación"},
     {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
-    {"key": "web_chat", "label": "Chat Web (link / QR)", "icon": "message-circle", "section": "Operación"},
+    {"key": "web_chat", "label": "Chat Web: acceso completo (todo lo de abajo)", "icon": "message-circle", "section": "Operación"},
+    {"key": "web_chat_estado", "label": "Chat Web: link, QR y encendido", "icon": "qr-code", "section": "Operación"},
+    {"key": "web_chat_atencion", "label": "Chat Web: atención (pacientes que piden una persona)", "icon": "bell-ring", "section": "Operación"},
+    {"key": "web_chat_pacientes", "label": "Chat Web: pacientes vinculados (corregir / desvincular)", "icon": "users", "section": "Operación"},
+    {"key": "web_chat_avisos", "label": "Chat Web: avisos masivos", "icon": "megaphone", "section": "Operación"},
+    {"key": "web_chat_metricas", "label": "Chat Web: métricas del piloto", "icon": "bar-chart-3", "section": "Operación"},
+    {"key": "web_chat_config", "label": "Chat Web: apariencia, límites y resultados", "icon": "palette", "section": "Operación"},
     {"key": "gaps", "label": "Preguntas sin Respuesta", "icon": "help-circle", "section": "Cerebro"},
     {"key": "config_identidad", "label": "Config: Identidad (nombre, tono, System Prompt)", "icon": "bot", "section": "Configuración"},
     {"key": "config_bienvenida", "label": "Config: Mensaje de Bienvenida", "icon": "hand-metal", "section": "Configuración"},
@@ -201,6 +207,30 @@ DEFAULT_MENU_ITEMS = [
     {"key": "audit", "label": "Auditoría de Acciones", "icon": "shield", "section": "Seguridad"},
     {"key": "users", "label": "Gestión de Usuarios", "icon": "users", "section": "Seguridad"}
 ]
+
+WEB_CHAT_KEYS = ["web_chat", "web_chat_estado", "web_chat_atencion", "web_chat_pacientes",
+                 "web_chat_avisos", "web_chat_metricas", "web_chat_config"]
+
+def get_web_chat_perms(user_mock) -> dict:
+    """Permisos del panel de Chat Web, por sección. 'web_chat' (el permiso original) sigue dando
+    acceso a todo, para no romper usuarios ya configurados."""
+    perms = (user_mock or {}).get("permissions") or []
+    full = "web_chat" in perms
+    return {k.replace("web_chat_", ""): (full or k in perms) for k in WEB_CHAT_KEYS if k != "web_chat"}
+
+def web_chat_guard(request, db, current_user, section=None):
+    """(client_id, settings, error_response) para las APIs del Chat Web. section=None pide acceso a
+    cualquier sección; si no, exige el permiso de esa sección (estado/atencion/pacientes/avisos/metricas/config)."""
+    cid, _, user_mock = get_admin_context(request, current_user, db)
+    if cid is None:
+        return None, None, JSONResponse(status_code=401, content={"error": "No autorizado"})
+    wp = get_web_chat_perms(user_mock)
+    if not (wp.get(section) if section else any(wp.values())):
+        return None, None, JSONResponse(status_code=403, content={"error": "No tenés permiso para esta sección del Chat Web."})
+    settings = db.query(ClientSettings).filter_by(client_id=cid).first()
+    if not settings or not getattr(settings, 'feat_web_chat', False):
+        return None, None, JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    return cid, settings, None
 
 def get_user_lock(user_id: str) -> asyncio.Lock:
     if user_id not in user_locks:
@@ -258,7 +288,7 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_audit', True): active_modules.append("audit")
         if getattr(settings, 'feat_catalog', False): active_modules.extend(["catalog", "catalog_requests"])
         if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
-        if getattr(settings, 'feat_web_chat', False): active_modules.append("web_chat")
+        if getattr(settings, 'feat_web_chat', False): active_modules.extend(WEB_CHAT_KEYS)
     else:
         active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "audit",
             "config", "config_identidad", "config_bienvenida", "config_conocimiento",
@@ -323,6 +353,8 @@ def fallback_admin_redirect(user_mock):
         ("submissions", "/admin/submissions"), ("appointments", "/admin/appointments"),
         ("catalog", "/admin/catalog"), ("catalog_requests", "/admin/catalog-requests"),
         ("document_library", "/admin/document-library"), ("web_chat", "/admin/web-chat"),
+        ("web_chat_estado", "/admin/web-chat"), ("web_chat_atencion", "/admin/web-chat"), ("web_chat_pacientes", "/admin/web-chat"),
+        ("web_chat_avisos", "/admin/web-chat"), ("web_chat_metricas", "/admin/web-chat"), ("web_chat_config", "/admin/web-chat"),
         ("gaps", "/admin/gaps"), ("channels", "/admin/channels"), ("audit", "/admin/audit"),
         ("users", "/admin/users"),
     ]
@@ -779,8 +811,11 @@ async def send_chat_message(request: Request, thread_id: str, message: str = For
     else:
         pause = Pause(client_id=target_client_id, user_id=thread_id, paused_until=paused_until)
         db.add(pause)
+    # Si alguien de la recepción responde, el pedido de "quiero hablar con una persona" queda atendido
+    from src.database.models import Alert
+    db.query(Alert).filter_by(client_id=target_client_id, thread_id=thread_id, leida=False).update({"leida": True})
     db.commit()
-    
+
     return RedirectResponse(url=f"/admin/chat/{thread_id}", status_code=303)
 
 @app.post("/admin/chat/{thread_id}/send-file")
@@ -3362,22 +3397,22 @@ async def api_results_portal_save(payload: ResultsPortalPayload, request: Reques
 async def web_chat_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
-    if not has_menu_access(user_mock, "web_chat"): return fallback_admin_redirect(user_mock)
+    if not has_menu_access(user_mock, *WEB_CHAT_KEYS): return fallback_admin_redirect(user_mock)
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings or not getattr(settings, 'feat_web_chat', False):
         return RedirectResponse(url="/admin")
     return templates.TemplateResponse(request=request, name="admin/web_chat.html", context={
-        "user": user_mock, "settings": settings, "is_impersonating": is_impersonating, "active_section": "operacion"
+        "user": user_mock, "settings": settings, "is_impersonating": is_impersonating, "active_section": "operacion",
+        "wc_perms": get_web_chat_perms(user_mock)
     })
 
 @app.get("/api/admin/web_chat")
 async def api_web_chat_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from src.database.models import WebDevice, WebEvent, WebPushSub
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    target_client_id, settings, err = web_chat_guard(request, db, current_user)
+    if err: return err
     client = db.query(Client).filter_by(id=target_client_id).first()
-    if not settings or not client or not getattr(settings, 'feat_web_chat', False):
+    if not client:
         return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
     base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
     day_start = web_chat._day_start_utc()
@@ -3433,16 +3468,19 @@ class WebChatPayload(BaseModel):
 
 @app.post("/api/admin/web_chat")
 async def api_web_chat_save(payload: WebChatPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
-    if not settings or not getattr(settings, 'feat_web_chat', False):
-        return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    target_client_id, settings, err = web_chat_guard(request, db, current_user)
+    if err: return err
+    _, _, _um = get_admin_context(request, current_user, db)
+    wp = get_web_chat_perms(_um)
+    if wp["estado"]:
+        settings.web_chat_enabled = payload.enabled
+    if not wp["config"]:
+        db.commit()
+        return {"ok": True}
     color = payload.color.strip()
     if color and not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
         return JSONResponse(status_code=400, content={"error": "El color tiene que ser del estilo #0F766E"})
     buttons = [b.strip()[:60] for b in payload.buttons if b and b.strip()][:8]
-    settings.web_chat_enabled = payload.enabled
     settings.web_chat_title = payload.title.strip()[:100] or None
     settings.web_chat_subtitle = payload.subtitle.strip()[:100] or None
     settings.web_chat_welcome = payload.welcome.strip() or None
@@ -3474,14 +3512,8 @@ class BroadcastAudience(BaseModel):
     audience: str = "all"
     days: int = 30
 
-def _web_broadcast_ctx(request, db, current_user):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None:
-        return None, None, JSONResponse(status_code=401, content={"error": "No autorizado"})
-    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
-    if not settings or not getattr(settings, 'feat_web_chat', False):
-        return None, None, JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
-    return target_client_id, settings, None
+def _web_broadcast_ctx(request, db, current_user, section="avisos"):
+    return web_chat_guard(request, db, current_user, section)
 
 @app.get("/api/admin/web_chat/broadcasts")
 async def api_web_broadcasts(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -3572,14 +3604,14 @@ async def api_web_broadcast_cancel(bid: int, request: Request, db: Session = Dep
 @app.get("/api/admin/web_chat/metrics")
 async def api_web_chat_metrics(request: Request, days: int = 14, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from src import web_metrics
-    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user, "metricas")
     if err: return err
     return {"metrics": web_metrics.compute(db, cid, days), "checklist": web_metrics.checklist(db, cid, settings)}
 
 @app.get("/api/admin/web_chat/metrics.csv")
 async def api_web_chat_metrics_csv(request: Request, days: int = 14, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from src import web_metrics
-    cid, settings, err = _web_broadcast_ctx(request, db, current_user)
+    cid, settings, err = _web_broadcast_ctx(request, db, current_user, "metricas")
     if err: return err
     return Response(content=web_metrics.to_csv(web_metrics.compute(db, cid, days)), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="chat-web-metricas.csv"'})
@@ -3596,8 +3628,8 @@ async def api_web_chat_health(request: Request, db: Session = Depends(get_db), c
 async def api_web_chat_links(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from src.database.models import WebLink, WebDevice, WebDelivery, WebPushSub
     from sqlalchemy import func
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    target_client_id, _, err = web_chat_guard(request, db, current_user, "pacientes")
+    if err: return err
     rows = (db.query(WebLink, WebDevice).join(WebDevice, WebDevice.id == WebLink.device_id)
             .filter(WebLink.client_id == target_client_id, WebLink.status != "revocado")
             .order_by(WebLink.id.desc()).limit(200).all())
@@ -3613,22 +3645,99 @@ async def api_web_chat_links(request: Request, db: Session = Depends(get_db), cu
 async def api_web_chat_link_revoke(link_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from src.database.models import WebLink
     from src import web_results
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
+    target_client_id, _, err = web_chat_guard(request, db, current_user, "pacientes")
+    if err: return err
     link = db.query(WebLink).filter_by(id=link_id, client_id=target_client_id).first()
     if not link: return JSONResponse(status_code=404, content={"error": "No encontrado"})
     web_results.revoke_link(db, link)
+    return {"ok": True}
+
+@app.get("/api/admin/web_chat/topics")
+async def api_web_chat_topics(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Temas de la Base de Conocimiento del cliente (para armar los botones rápidos del chat)."""
+    from src.database.models import Knowledge
+    cid, _, err = web_chat_guard(request, db, current_user, "config")
+    if err: return err
+    rows = db.query(Knowledge.topic).filter(Knowledge.client_id == cid).order_by(Knowledge.topic).limit(500).all()
+    seen, topics = set(), []
+    for (t,) in rows:
+        t = (t or "").strip()
+        if t and t.lower() not in seen:
+            seen.add(t.lower()); topics.append(t)
+    return {"topics": topics}
+
+@app.get("/api/admin/web_chat/attention")
+async def api_web_chat_attention(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Pacientes del chat web que pidieron hablar con una persona y todavía no fueron atendidos (lo consulta el aviso del panel)."""
+    from src.database.models import Alert, WebDevice, WebLink
+    from src import web_results as wr
+    cid, _, err = web_chat_guard(request, db, current_user, "atencion")
+    if err: return err
+    rows = (db.query(Alert).filter(Alert.client_id == cid, Alert.leida == False, Alert.thread_id.like(web_chat.THREAD_PREFIX + "%"))
+            .order_by(Alert.id.desc()).limit(30).all())
+    items = []
+    for a in rows:
+        dev = db.query(WebDevice).filter_by(client_id=cid, public_id=a.thread_id[len(web_chat.THREAD_PREFIX):]).first()
+        link = (db.query(WebLink).filter(WebLink.device_id == dev.id, WebLink.status.in_(("verificado", "pendiente")))
+                .order_by(WebLink.id.desc()).first()) if dev else None
+        who = ((link.name + " · ") if link and link.name else "") + (f"DNI {wr.mask_dni(link.dni)}" if link else "Paciente sin vincular")
+        items.append({"id": a.id, "motivo": a.motivo, "who": who, "thread_id": a.thread_id,
+                      "at": a.fecha.isoformat() + "Z" if a.fecha else None})
+    return {"count": len(items), "items": items}
+
+@app.post("/api/admin/web_chat/attention/{alert_id}/done")
+async def api_web_chat_attention_done(alert_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import Alert
+    cid, _, err = web_chat_guard(request, db, current_user, "atencion")
+    if err: return err
+    db.query(Alert).filter_by(id=alert_id, client_id=cid).update({"leida": True})
+    db.commit()
+    return {"ok": True}
+
+class LinkEditPayload(BaseModel):
+    dni: str
+    protocol: str
+    name: str = ""
+
+@app.post("/api/admin/web_chat/links/{link_id}/edit")
+async def api_web_chat_link_edit(link_id: int, payload: LinkEditPayload, request: Request, background_tasks: BackgroundTasks,
+                                 db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Recepción corrige el DNI / protocolo de un vínculo que quedó pendiente (o vencido) por un error de tipeo:
+    se vuelve a buscar en Drive sin que el paciente haga nada."""
+    from src.database.models import WebLink
+    from src import web_results as wr
+    cid, settings, err = web_chat_guard(request, db, current_user, "pacientes")
+    if err: return err
+    link = db.query(WebLink).filter_by(id=link_id, client_id=cid).first()
+    if not link: return JSONResponse(status_code=404, content={"error": "No encontrado"})
+    if link.status not in ("pendiente", "vencido"):
+        return JSONResponse(status_code=409, content={"error": "Sólo se pueden corregir vínculos pendientes o vencidos."})
+    dni = web_chat.rp_normalize_dni(payload.dni)
+    protocol = wr.normalize_protocol(payload.protocol)
+    if not dni: return JSONResponse(status_code=400, content={"error": "El DNI no es válido (solo números, 6 a 9 dígitos)."})
+    if not protocol: return JSONResponse(status_code=400, content={"error": "El protocolo no es válido (letras y números, ej. A300044)."})
+    clash = db.query(WebLink).filter(WebLink.device_id == link.device_id, WebLink.dni == dni, WebLink.id != link.id,
+                                     WebLink.status.in_(("pendiente", "verificado"))).first()
+    if clash: return JSONResponse(status_code=409, content={"error": "Ese celular ya tiene vinculado ese DNI."})
+    old_dni = link.dni
+    link.dni, link.protocol = dni, protocol
+    if payload.name.strip(): link.name = payload.name.strip()[:60]
+    now = datetime.utcnow()
+    link.status, link.verified_at, link.last_check_at = "pendiente", None, None
+    link.pending_notice_at = now   # ya lo corrigió recepción: no hace falta el aviso de "revisá tus datos"
+    link.expires_at = now + timedelta(days=wr.PENDING_DAYS)
+    db.commit()
+    web_chat.add_event(db, cid, link.device_id, "sys", f"El laboratorio corrigió tus datos de vinculación (DNI {wr.mask_dni(dni)}, protocolo {protocol}). Estamos buscando tu análisis.")
+    logging.info(f"[WebChat] Cliente {cid}: {current_user.email if current_user else '?'} corrigió el vínculo {link.id} (DNI {wr.mask_dni(old_dni)} → {wr.mask_dni(dni)})")
+    background_tasks.add_task(asyncio.to_thread, wr.sync_links, cid, link.device_id, True, True)
     return {"ok": True}
 
 @app.post("/api/admin/web_chat/logo")
 async def api_web_chat_logo_upload(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Logo propio del chat (avatar y icono de la app instalada). Se re-guarda como PNG de hasta 512 px."""
     from PIL import Image
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
-    if not settings or not getattr(settings, 'feat_web_chat', False):
-        return JSONResponse(status_code=403, content={"error": "Módulo no habilitado"})
+    target_client_id, settings, err = web_chat_guard(request, db, current_user, "config")
+    if err: return err
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         return JSONResponse(status_code=400, content={"error": "La imagen pesa más de 5 MB"})
@@ -3649,10 +3758,8 @@ async def api_web_chat_logo_upload(request: Request, file: UploadFile = File(...
 
 @app.delete("/api/admin/web_chat/logo")
 async def api_web_chat_logo_delete(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    target_client_id, _, _ = get_admin_context(request, current_user, db)
-    if target_client_id is None: return JSONResponse(status_code=401, content={"error": "No autorizado"})
-    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
-    if not settings: return JSONResponse(status_code=404, content={"error": "Cliente sin configuración"})
+    target_client_id, settings, err = web_chat_guard(request, db, current_user, "config")
+    if err: return err
     settings.web_chat_logo = None
     db.commit()
     return {"ok": True}
@@ -4556,7 +4663,7 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
             settings = db_local.query(ClientSettings).filter_by(client_id=client_id).first()
             
             # --- Lógica de Bienvenida ---
-            if settings and settings.welcome_message_enabled and platform != "web":
+            if settings and settings.welcome_message_enabled:
                 last_bot_msg = db_local.query(Message).filter(
                     Message.client_id == client_id,
                     Message.thread_id == user_id,
@@ -4576,18 +4683,22 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                     welcome_media = settings.welcome_media_path
                     base_url = (settings.webhook_base_url or "").rstrip('/')
                     
-                    if welcome_media and base_url:
+                    if welcome_media and (base_url or platform == "web"):
                         media_path = welcome_media if welcome_media.startswith('/') else f"/{welcome_media}"
                         public_media_url = f"{base_url}{media_path}"
                         import os
                         filename = os.path.basename(media_path)
                         if platform == "whatsapp":
                             await send_whatsapp_file_saas(client_id, user_id, public_media_url, filename, welcome_text)
+                        elif platform == "web":
+                            await send_web_file_saas(client_id, user_id, media_path, filename, welcome_text)
                         else:
                             await send_telegram_file_saas(client_id, user_id, local_path=media_path.lstrip('/'), caption=welcome_text)
                     else:
                         if platform == "whatsapp":
                             await send_whatsapp_message_saas(client_id, user_id, welcome_text)
+                        elif platform == "web":
+                            await send_web_message_saas(client_id, user_id, welcome_text)
                         else:
                             await send_telegram_message_saas(client_id, user_id, welcome_text)
                     
