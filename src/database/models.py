@@ -196,6 +196,12 @@ class ClientSettings(Base):
     web_chat_daily_cap = Column(Integer, default=30, server_default="30")  # mensajes al bot por celular por dia; 0 = sin tope
     web_chat_global_daily_cap = Column(Integer, default=1000, server_default="1000")  # tope diario de todo el chat (interruptor de emergencia de costo); 0 = sin tope
 
+    # --- ¿EL BOT RESPONDE EN CADA CANAL? (distinto de "canal conectado": con el bot apagado los mensajes
+    # siguen entrando y se guardan para que una persona los conteste desde el panel) ---
+    bot_reply_whatsapp = Column(Boolean, default=True, server_default="1")
+    bot_reply_telegram = Column(Boolean, default=True, server_default="1")
+    bot_reply_web = Column(Boolean, default=True, server_default="1")
+
     client = relationship("Client", back_populates="settings")
 
 class User(Base):

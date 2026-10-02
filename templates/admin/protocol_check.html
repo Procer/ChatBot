@@ -1,0 +1,137 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Verificar protocolos | anka{% endblock %}
+{% block breadcrumb %}Operación{% endblock %}
+{% block section_title %}¿Está subido el protocolo?{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+    {% if not configured %}
+    <div class="bg-amber-500/10 border border-amber-500/30 p-6 rounded-2xl text-amber-200">
+        Todavía no está configurada la carpeta de resultados. Se configura en <a href="/admin/document-library" class="underline font-bold">Biblioteca de Documentos</a> → Portal “Mis Resultados”.
+    </div>
+    {% else %}
+
+    <!-- Una sola caja -->
+    <div class="bg-surface border border-slate-800 p-6 sm:p-8 rounded-2xl space-y-4">
+        <label for="q" class="block text-lg font-bold text-white">Escribí el DNI o el número de protocolo</label>
+        <div class="flex flex-col sm:flex-row gap-3">
+            <input id="q" type="text" inputmode="text" autocomplete="off" autofocus placeholder="Ej: 44930933  o  A395582"
+                   class="flex-1 bg-slate-950 border-2 border-slate-700 focus:border-brand-500 rounded-xl px-5 py-4 text-2xl text-white font-mono outline-none">
+            <button id="go" onclick="searchOne()" class="bg-brand-600 hover:bg-brand-500 text-white px-10 py-4 rounded-xl font-bold text-lg">Buscar</button>
+        </div>
+        <p class="text-sm text-slate-500">Se busca directo en la carpeta de Drive, en el momento.</p>
+    </div>
+
+    <!-- Resultado grande -->
+    <div id="one-result" class="hidden rounded-2xl p-6 sm:p-8 border-2"></div>
+
+    <!-- Estado en una línea -->
+    <div id="status-line" class="text-center text-sm text-slate-500"></div>
+
+    <!-- Varios a la vez (plegado) -->
+    <details class="bg-surface border border-slate-800 rounded-2xl">
+        <summary class="cursor-pointer select-none px-6 py-4 font-bold text-slate-300">Verificar varios a la vez</summary>
+        <div class="px-6 pb-6 space-y-4">
+            <p class="text-sm text-slate-500">Pegá una lista (uno por línea) y te digo cuáles están y cuáles faltan.</p>
+            <textarea id="items" rows="6" placeholder="A395582&#10;44.930.933&#10;A395600-045112233.pdf" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-mono text-sm outline-none focus:border-brand-500"></textarea>
+            <div class="flex items-center gap-4">
+                <button id="many-btn" onclick="searchMany()" class="bg-brand-600 hover:bg-brand-500 text-white px-6 py-3 rounded-xl font-bold">Verificar lista</button>
+                <button id="copy-btn" onclick="copyMissing()" class="hidden px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold">Copiar los que faltan</button>
+                <span id="many-msg" class="text-sm text-slate-500"></span>
+            </div>
+            <div id="many-summary" class="hidden rounded-xl p-4 font-bold"></div>
+            <div class="overflow-x-auto"><table class="w-full text-sm"><tbody id="many-body" class="divide-y divide-slate-800"></tbody></table></div>
+        </div>
+    </details>
+    {% endif %}
+</div>
+
+<script>
+const DAYS = {{ days }};
+const AR = {timeZone: 'America/Argentina/Buenos_Aires'};
+const fmt = iso => new Date(iso).toLocaleString('es-AR', {...AR, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+const fmtDay = iso => new Date(iso).toLocaleDateString('es-AR', {...AR, day: '2-digit', month: '2-digit'});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+
+async function check(items) {
+    const r = await fetch('/api/admin/protocol_check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({items})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'No se pudo verificar. Probá de nuevo.');
+    return d;
+}
+
+const fileLinks = ms => ms.map(m => `<div class="mt-2"><a href="/api/admin/protocol_check/file/${encodeURIComponent(m.id)}" target="_blank" rel="noopener" class="underline font-mono text-lg">${esc(m.name)}</a>
+    <span class="opacity-70"> · subido ${esc(fmt(m.at))}</span></div>`).join('');
+
+async function searchOne() {
+    const q = document.getElementById('q').value.trim(), box = document.getElementById('one-result'), btn = document.getElementById('go');
+    if (!q) return;
+    btn.disabled = true; box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-slate-700 text-slate-400'; box.textContent = 'Buscando…';
+    try {
+        const row = (await check(q)).rows[0];
+        if (row.status === 'ok') {
+            box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-emerald-500/50 bg-emerald-500/10 text-emerald-200';
+            box.innerHTML = `<div class="text-3xl font-bold">✔ Está subido</div><div class="mt-1 opacity-80">El paciente lo va a encontrar${row.matches.length > 1 ? ' (hay ' + row.matches.length + ' archivos)' : ''}.</div>${fileLinks(row.matches)}`;
+        } else if (row.status === 'old') {
+            box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-amber-500/50 bg-amber-500/10 text-amber-200';
+            box.innerHTML = `<div class="text-3xl font-bold">⚠ Está, pero es viejo</div><div class="mt-1 opacity-80">Tiene más de ${DAYS} días: el paciente ya no lo ve en el portal.</div>${fileLinks(row.matches)}`;
+        } else if (row.status === 'missing') {
+            box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-rose-500/50 bg-rose-500/10 text-rose-200';
+            box.innerHTML = `<div class="text-3xl font-bold">✘ No está subido</div><div class="mt-1 opacity-80">No hay ningún archivo con ese dato en la carpeta. Revisá el número o esperá a que se cargue.</div>`;
+        } else {
+            box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-slate-700 text-slate-300';
+            box.textContent = 'No entendí ese dato. Escribí el DNI (solo números) o el protocolo (ej: A395582).';
+        }
+    } catch (e) { box.className = 'rounded-2xl p-6 sm:p-8 border-2 border-rose-500/50 text-rose-200'; box.textContent = e.message; }
+    finally { btn.disabled = false; document.getElementById('q').select(); }
+}
+document.getElementById('q')?.addEventListener('keydown', e => { if (e.key === 'Enter') searchOne(); });
+
+let missingList = [];
+async function searchMany() {
+    const items = document.getElementById('items').value, msg = document.getElementById('many-msg'), btn = document.getElementById('many-btn');
+    if (!items.trim()) { msg.textContent = 'Pegá al menos uno.'; return; }
+    btn.disabled = true; msg.textContent = 'Verificando…';
+    try {
+        const d = await check(items), s = d.summary;
+        msg.textContent = '';
+        const bad = s.missing + s.old + s.invalid;
+        const sum = document.getElementById('many-summary');
+        sum.className = 'rounded-xl p-4 font-bold border ' + (bad ? 'bg-amber-500/10 text-amber-200 border-amber-500/30' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30');
+        sum.textContent = `${s.ok} de ${s.total} están subidos.` + (s.missing ? ` Faltan ${s.missing}.` : '') + (s.old ? ` ${s.old} son viejos (más de ${DAYS} días).` : '') + (s.invalid ? ` ${s.invalid} no se entienden.` : '');
+        missingList = d.rows.filter(r => r.status === 'missing').map(r => r.input);
+        document.getElementById('copy-btn').classList.toggle('hidden', !missingList.length);
+        const label = {ok: ['✔ Subido', 'text-emerald-400'], old: ['⚠ Viejo', 'text-amber-400'], missing: ['✘ Falta', 'text-rose-400'], invalid: ['? No se entiende', 'text-slate-500']};
+        document.getElementById('many-body').innerHTML = d.rows.map(r => {
+            const [t, c] = label[r.status];
+            return `<tr><td class="py-2 pr-4 font-mono text-slate-200">${esc(r.input)}</td><td class="py-2 pr-4 font-bold whitespace-nowrap ${c}">${t}</td>
+                <td class="py-2 text-slate-500">${r.matches.map(m => esc(m.name) + ' · ' + esc(fmt(m.at))).join('<br>') || ''}</td></tr>`;
+        }).join('');
+        sum.classList.remove('hidden');
+    } catch (e) { msg.textContent = e.message; }
+    finally { btn.disabled = false; }
+}
+
+async function copyMissing() {
+    try { await navigator.clipboard.writeText(missingList.join('\n')); document.getElementById('many-msg').textContent = 'Copiado.'; }
+    catch (e) { document.getElementById('many-msg').textContent = 'No se pudo copiar.'; }
+}
+
+(async function statusLine() {
+    {% if configured %}
+    const el = document.getElementById('status-line');
+    try {
+        const r = await fetch('/api/admin/protocol_check/summary'); const d = await r.json();
+        if (!r.ok) { el.textContent = d.error || ''; return; }
+        const last = d.last_upload, today = d.per_day[0].count;
+        if (!last) { el.innerHTML = '<span class="text-rose-400 font-bold">No hay protocolos en la carpeta.</span> Avisá a sistemas.'; return; }
+        const m = last.minutes_ago, ago = m < 1 ? 'hace instantes' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.floor(m / 60)} h` : `hace ${Math.floor(m / 1440)} días`;
+        el.innerHTML = `Hoy se subieron <b class="text-slate-300">${today}</b> · última subida <b class="text-slate-300">${ago}</b>` +
+            (d.odd_names.count ? ` · <span class="text-amber-400 font-bold">${d.odd_names.count} archivo(s) con nombre mal puesto: ${d.odd_names.examples.slice(0, 3).map(esc).join(', ')}</span>` : '');
+    } catch (e) { /* la línea de estado es opcional */ }
+    {% endif %}
+})();
+</script>
+{% endblock %}

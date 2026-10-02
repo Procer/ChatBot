@@ -188,6 +188,7 @@ DEFAULT_MENU_ITEMS = [
     {"key": "catalog", "label": "Catálogo de Productos", "icon": "shopping-bag", "section": "Operación"},
     {"key": "catalog_requests", "label": "Consultas y Pedidos", "icon": "shopping-cart", "section": "Operación"},
     {"key": "document_library", "label": "Biblioteca de Documentos", "icon": "library", "section": "Operación"},
+    {"key": "protocol_check", "label": "Verificar protocolos subidos", "icon": "file-check-2", "section": "Operación"},
     {"key": "web_chat", "label": "Chat Web: acceso completo (todo lo de abajo)", "icon": "message-circle", "section": "Operación"},
     {"key": "web_chat_estado", "label": "Chat Web: link, QR y encendido", "icon": "qr-code", "section": "Operación"},
     {"key": "web_chat_atencion", "label": "Chat Web: atención (pacientes que piden una persona)", "icon": "bell-ring", "section": "Operación"},
@@ -289,6 +290,7 @@ def get_admin_context(request: Request, current_user: User, db: Session):
         if getattr(settings, 'feat_catalog', False): active_modules.extend(["catalog", "catalog_requests"])
         if getattr(settings, 'feat_document_library', False): active_modules.append("document_library")
         if getattr(settings, 'feat_web_chat', False): active_modules.extend(WEB_CHAT_KEYS)
+        if getattr(settings, 'feat_document_library', False) or getattr(settings, 'feat_web_chat', False): active_modules.append("protocol_check")
     else:
         active_modules = ["dashboard", "analytics", "history", "contacts", "submissions", "appointments", "gaps", "channels", "audit",
             "config", "config_identidad", "config_bienvenida", "config_conocimiento",
@@ -352,7 +354,7 @@ def fallback_admin_redirect(user_mock):
         ("dashboard", "/admin"), ("history", "/admin/history"), ("contacts", "/admin/contacts"),
         ("submissions", "/admin/submissions"), ("appointments", "/admin/appointments"),
         ("catalog", "/admin/catalog"), ("catalog_requests", "/admin/catalog-requests"),
-        ("document_library", "/admin/document-library"), ("web_chat", "/admin/web-chat"),
+        ("document_library", "/admin/document-library"), ("protocol_check", "/admin/protocol-check"), ("web_chat", "/admin/web-chat"),
         ("web_chat_estado", "/admin/web-chat"), ("web_chat_atencion", "/admin/web-chat"), ("web_chat_pacientes", "/admin/web-chat"),
         ("web_chat_avisos", "/admin/web-chat"), ("web_chat_metricas", "/admin/web-chat"), ("web_chat_config", "/admin/web-chat"),
         ("gaps", "/admin/gaps"), ("channels", "/admin/channels"), ("audit", "/admin/audit"),
@@ -1562,9 +1564,13 @@ async def view_channels(request: Request, db: Session = Depends(get_db), current
         "test_mode_enabled": "1" if settings and settings.test_mode_enabled else "0",
         "test_numbers": settings.test_numbers if settings else "",
         "telegram_enabled": "1" if settings and settings.telegram_enabled else "0",
-        "telegram_token": settings.telegram_token if settings else ""
+        "telegram_token": settings.telegram_token if settings else "",
+        "bot_reply_whatsapp": "0" if settings and settings.bot_reply_whatsapp is False else "1",
+        "bot_reply_telegram": "0" if settings and settings.bot_reply_telegram is False else "1",
+        "bot_reply_web": "0" if settings and settings.bot_reply_web is False else "1",
+        "has_web_chat": bool(settings and settings.feat_web_chat),
     }
-    
+
     return templates.TemplateResponse(request=request, name="admin/channels.html", context={"config": config, "user": user_mock, "is_impersonating": is_impersonating})
 
 @app.get("/admin/config", response_class=HTMLResponse)
@@ -1852,6 +1858,10 @@ async def save_channels_config(
     test_numbers: str = Form(""),
     telegram_enabled: str = Form(None),
     telegram_token: str = Form(""),
+    bot_reply_whatsapp: str = Form(None),
+    bot_reply_telegram: str = Form(None),
+    bot_reply_web: str = Form(None),
+    bot_reply_web_present: str = Form(None),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     target_client_id, _, user_mock = get_admin_context(request, current_user, db)
@@ -1871,8 +1881,12 @@ async def save_channels_config(
     settings.test_numbers = test_numbers
     settings.telegram_enabled = (telegram_enabled == "1")
     settings.telegram_token = telegram_token
+    settings.bot_reply_whatsapp = (bot_reply_whatsapp == "1")
+    settings.bot_reply_telegram = (bot_reply_telegram == "1")
+    if bot_reply_web_present == "1":  # la tarjeta del chat web solo se muestra si el módulo está habilitado
+        settings.bot_reply_web = (bot_reply_web == "1")
     db.commit()
-    
+
     return RedirectResponse(url="/admin/channels?success=1", status_code=303)
 
 from typing import List
@@ -3392,6 +3406,85 @@ async def api_results_portal_save(payload: ResultsPortalPayload, request: Reques
     db.commit()
     return {"ok": True, "folder_name": settings.results_portal_folder_name}
 
+# ── VERIFICADOR DE PROTOCOLOS SUBIDOS (ver src/protocol_check.py) ─────────────────
+def _protocol_check_ctx(request: Request, db: Session, current_user: User):
+    """(client_id, settings, error_response) para las APIs del verificador."""
+    cid, _, user_mock = get_admin_context(request, current_user, db)
+    if cid is None:
+        return None, None, JSONResponse(status_code=401, content={"error": "No autorizado"})
+    if not has_menu_access(user_mock, "protocol_check"):
+        return None, None, JSONResponse(status_code=403, content={"error": "No tenés permiso para esta sección."})
+    settings = db.query(ClientSettings).filter_by(client_id=cid).first()
+    if not settings or not settings.gdrive_service_account_json_encrypted or not settings.results_portal_folder_id:
+        return None, None, JSONResponse(status_code=400, content={
+            "error": "Todavía no está configurada la carpeta de resultados. Se configura en Biblioteca de Documentos → Portal “Mis Resultados”."})
+    return cid, settings, None
+
+@app.get("/admin/protocol-check", response_class=HTMLResponse)
+async def protocol_check_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.results_portal import get_portal_settings
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "protocol_check"): return fallback_admin_redirect(user_mock)
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    cfg = get_portal_settings(settings)
+    return templates.TemplateResponse(request=request, name="admin/protocol_check.html", context={
+        "user": user_mock, "is_impersonating": is_impersonating, "active_section": "operacion",
+        "folder_name": cfg["folder_name"], "days": cfg["days"], "portal_on": cfg["enabled"],
+        "configured": bool(cfg["folder_id"] and settings and settings.gdrive_service_account_json_encrypted),
+    })
+
+@app.get("/api/admin/protocol_check/summary")
+async def api_protocol_check_summary(request: Request, refresh: int = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import protocol_check as pc
+    from src.results_portal import get_portal_settings
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    days = get_portal_settings(settings)["days"]
+    try:
+        files = await asyncio.to_thread(pc.list_folder_files, cid, settings.results_portal_folder_id, bool(refresh))
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error leyendo la carpeta (client_id={cid}): {e}")
+        return JSONResponse(status_code=502, content={"error": "No se pudo leer la carpeta de Drive. Probá de nuevo en un momento."})
+    return {**pc.summarize(files, days), "days": days}
+
+class ProtocolCheckPayload(BaseModel):
+    items: str = ""
+
+@app.post("/api/admin/protocol_check")
+async def api_protocol_check(payload: ProtocolCheckPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import protocol_check as pc
+    from src.results_portal import get_portal_settings
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    if not payload.items.strip():
+        return JSONResponse(status_code=400, content={"error": "Pegá al menos un DNI o número de protocolo."})
+    days = get_portal_settings(settings)["days"]
+    try:
+        files = await asyncio.to_thread(pc.list_folder_files, cid, settings.results_portal_folder_id, True)
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error leyendo la carpeta (client_id={cid}): {e}")
+        return JSONResponse(status_code=502, content={"error": "No se pudo leer la carpeta de Drive. Probá de nuevo en un momento."})
+    rows, summary = pc.check_items(files, payload.items, days)
+    return {"rows": rows, "summary": summary, "days": days}
+
+@app.get("/api/admin/protocol_check/file/{file_id}")
+async def api_protocol_check_file(file_id: str, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.results_portal import fetch_result_file
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    try:
+        found = await asyncio.to_thread(fetch_result_file, cid, settings.results_portal_folder_id, file_id)
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error abriendo archivo (client_id={cid}): {e}")
+        found = None
+    if not found:
+        return HTMLResponse("<h1>No se encontró el archivo.</h1>", status_code=404)
+    content, filename, mimetype = found
+    safe_name = re.sub(r'[^A-Za-z0-9 ._-]', '', filename) or "protocolo.pdf"
+    return Response(content=content, media_type=mimetype, headers={
+        "Content-Disposition": f'inline; filename="{safe_name}"', "Cache-Control": "private, no-store"})
+
 # ── CHAT WEB: panel del cliente (ver src/web_chat.py) ─────────────────────────────
 @app.get("/admin/web-chat", response_class=HTMLResponse)
 async def web_chat_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -4527,6 +4620,33 @@ async def process_bot_response(client_id: int, user_id: str, user_text: str, pla
                 return
         except Exception as pe:
             logging.error(f"[SaaS Pause] Error chequeando pausa: {pe}")
+
+        # --- Interruptor por canal: "el bot responde en este canal". Con el canal en silencio el mensaje
+        # se guarda igual (una persona lo ve y contesta desde el panel) pero el bot no responde.
+        try:
+            from src.database.models import ClientSettings, Alert
+            db_ch = SessionLocal()
+            try:
+                ch_settings = db_ch.query(ClientSettings).filter_by(client_id=client_id).first()
+                flag = {"whatsapp": "bot_reply_whatsapp", "telegram": "bot_reply_telegram", "web": "bot_reply_web"}.get(platform)
+                bot_muted = bool(ch_settings and flag and getattr(ch_settings, flag) is False)
+                if bot_muted and platform == "web":
+                    # el chat web siempre muestra algo (si no, queda "escribiendo...") y avisa al panel una sola vez
+                    if not db_ch.query(Alert).filter_by(client_id=client_id, thread_id=str(user_id), leida=False).first():
+                        db_ch.add(Alert(client_id=client_id, motivo="Escribió por el chat web (el bot está apagado en este canal)", thread_id=str(user_id)[:100]))
+                        db_ch.commit()
+            finally:
+                db_ch.close()
+            if bot_muted:
+                logging.info(f"[SaaS Process] Bot apagado en el canal {platform} (cliente {client_id}): mensaje de {user_id} guardado sin responder.")
+                log_message(client_id, user_id, "user", user_text, whatsapp_id=whatsapp_message_id)
+                if platform == "web":
+                    notice = "Por ahora este chat no responde automáticamente. Dejanos tu consulta y te contestamos a la brevedad."
+                    await send_web_message_saas(client_id, user_id, notice)
+                    log_message(client_id, user_id, "bot", notice)
+                return
+        except Exception as ce:
+            logging.error(f"[SaaS Channel] Error chequeando interruptor de canal: {ce}")
 
         # --- Modo Prueba: si está activo, ignorar a cualquiera que no esté en test_numbers ---
         try:

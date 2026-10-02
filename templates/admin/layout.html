@@ -120,6 +120,11 @@
                         <i data-lucide="search" class="w-4 h-4 shrink-0"></i> Búsquedas de Documentos
                     </a>
                     {% endif %}
+                    {% if not user or 'protocol_check' in user.permissions %}
+                    <a href="/admin/protocol-check" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/protocol-check' %}active{% endif %}">
+                        <i data-lucide="file-check-2" class="w-4 h-4 shrink-0"></i> Verificar protocolos
+                    </a>
+                    {% endif %}
                     {% if not user or 'web_chat' in user.permissions or 'web_chat_estado' in user.permissions or 'web_chat_atencion' in user.permissions or 'web_chat_pacientes' in user.permissions or 'web_chat_avisos' in user.permissions or 'web_chat_metricas' in user.permissions or 'web_chat_config' in user.permissions %}
                     <a href="/admin/web-chat" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/web-chat' %}active{% endif %}">
                         <i data-lucide="message-circle" class="w-4 h-4 shrink-0"></i> Chat Web (link / QR)

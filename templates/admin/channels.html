@@ -22,6 +22,42 @@
         </div>
         {% endif %}
 
+        <!-- ¿El bot responde en cada canal? -->
+        <div class="bg-surface border border-slate-800 p-8 rounded-2xl shadow-sm">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center text-brand-500">
+                    <i data-lucide="bot" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-white">¿Dónde responde el bot?</h3>
+                    <p class="text-base text-slate-500">Si apagás un canal, los mensajes siguen llegando y se guardan para que los contestes vos desde el panel, pero el bot no responde.</p>
+                </div>
+            </div>
+            <div class="divide-y divide-slate-800">
+                {% set reply_rows = [('bot_reply_whatsapp', 'WhatsApp', 'message-circle'), ('bot_reply_telegram', 'Telegram', 'send')] %}
+                {% for key, label, icon in reply_rows %}
+                <div class="flex items-center justify-between py-4">
+                    <div class="flex items-center gap-3 text-slate-200 font-semibold"><i data-lucide="{{ icon }}" class="w-4 h-4 text-slate-500"></i> {{ label }}</div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="{{ key }}" value="1" {% if config[key] == '1' %}checked{% endif %} class="sr-only peer">
+                        <div class="w-12 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                    </label>
+                </div>
+                {% endfor %}
+                {% if config.has_web_chat %}
+                <div class="flex items-center justify-between py-4">
+                    <div class="flex items-center gap-3 text-slate-200 font-semibold"><i data-lucide="globe" class="w-4 h-4 text-slate-500"></i> Chat web</div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="hidden" name="bot_reply_web_present" value="1">
+                        <input type="checkbox" name="bot_reply_web" value="1" {% if config.bot_reply_web == '1' %}checked{% endif %} class="sr-only peer">
+                        <div class="w-12 h-6 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
+                    </label>
+                </div>
+                {% endif %}
+            </div>
+            <p class="text-[12px] text-slate-600 italic mt-3">Se aplica al tocar “Guardar Configuración”. Un canal desconectado (más abajo) tampoco recibe respuestas, sin importar este interruptor.</p>
+        </div>
+
         <!-- URL Pública -->
         <div class="bg-surface border border-slate-800 p-8 rounded-2xl shadow-sm">
             <div class="flex items-center gap-4 mb-8">
