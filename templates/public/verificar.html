@@ -40,16 +40,17 @@
   .old { background:var(--warn-bg); border-color:var(--warn); color:var(--warn); }
   .missing,.invalid { background:var(--bad-bg); border-color:var(--bad); color:var(--bad); }
   .res small { display:block; color:var(--ink); opacity:.85; font-size:16px; margin-top:6px; }
-  .pdfs { margin-top:14px; }
-  .pdfbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
-  .pdfbar button { font:inherit; font-size:20px; font-weight:700; min-width:48px; height:46px; padding:0 14px; border:0; border-radius:12px; background:var(--brand); color:var(--brand-ink); cursor:pointer; }
-  .pdfbar .zl { min-width:56px; text-align:center; font-weight:700; color:var(--ink); }
-  .pdfbar .zfit, .pdfbar .zfull { font-size:15px; }
-  .pdfbar .zfull { margin-left:auto; }
-  .pdfview { overflow:auto; -webkit-overflow-scrolling:touch; max-height:75vh; border-radius:8px; }
-  .pdfview canvas { display:block; margin:0 auto 10px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.18); }
-  .pdfs.full { position:fixed; inset:0; z-index:50; margin:0; padding:10px 12px; background:var(--bg); display:flex; flex-direction:column; }
-  .pdfs.full .pdfview { max-height:none; flex:1; }
+  .pdfs { margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:12px; box-shadow:0 8px 28px rgba(15,30,50,.08); }
+  .pdfbar { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+  .pdfbar button { font:inherit; font-size:22px; font-weight:700; min-width:48px; height:46px; padding:0 14px; border:0; border-radius:12px; background:var(--brand); color:var(--brand-ink); cursor:pointer; }
+  .pdfbar .zl { min-width:54px; text-align:center; font-weight:700; color:var(--ink); font-size:17px; }
+  .pdfbar .zfit { font-size:15px; background:transparent; color:var(--brand); border:2px solid var(--brand); }
+  .pdfbar .zfull { margin-left:auto; font-size:20px; }
+  .pdfview { overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; border-radius:8px; touch-action:pan-x pan-y pinch-zoom; }
+  .pdfview .pages { width:max-content; min-width:100%; }
+  .pdfview canvas { display:block; margin:0 auto 10px; background:#fff; box-shadow:0 1px 8px rgba(0,0,0,.15); }
+  .pdfs.full { position:fixed; inset:0; z-index:50; margin:0; border-radius:0; border:0; padding:10px 12px; background:var(--bg); display:flex; flex-direction:column; }
+  .pdfs.full .pdfview { overflow:auto; flex:1; }
   .pdfmsg { color:var(--ink); opacity:.8; font-size:16px; text-align:center; padding:12px; }
   a.pdf { display:block; margin-top:10px; text-align:center; text-decoration:none; font-weight:700; font-size:19px; padding:13px; border-radius:13px; background:var(--brand); color:var(--brand-ink); }
   .foot { color:var(--muted); font-size:14px; text-align:center; margin-top:22px; }
@@ -88,6 +89,7 @@
     </form>
     <div id="res" class="res" role="status" aria-live="polite"></div>
   </div>
+  <div id="pdfZone"></div>
   <p class="foot">Uso exclusivo de profesionales. Cada consulta y cada PDF abierto queda registrado.</p>
 </div>
 
@@ -107,7 +109,7 @@ function enter(name) {
 }
 function leave() {
   $('who').classList.add('hidden'); $('checkCard').classList.add('hidden'); $('loginCard').classList.remove('hidden');
-  $('res').style.display = 'none'; $('p').value = ''; $('u').focus();
+  clearPdf(); $('res').style.display = 'none'; $('p').value = ''; $('u').focus();
 }
 $('lf').addEventListener('submit', async e => {
   e.preventDefault(); $('lgo').disabled = true; $('lerr').textContent = '';
@@ -135,17 +137,43 @@ function loadPdfjs() {
   });
   return pdfjsPromise;
 }
-const ZOOM_DEFAULT = 1.6, ZOOM_MIN = 0.8, ZOOM_MAX = 4;
-let pdfDocs = [], zoom = ZOOM_DEFAULT, holderEl = null, renderTok = 0;
-async function renderPdfs() {
-  const tok = ++renderTok, view = holderEl.querySelector('.pdfview'), full = holderEl.classList.contains('full');
-  const baseW = Math.max((full ? window.innerWidth : box.clientWidth) - 24, 280), width = Math.round(baseW * zoom), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  const frag = document.createDocumentFragment();
+const ZOOM_MIN = 1, ZOOM_MAX = 4;
+let pdfDocs = [], zoom = 1, holderEl = null, renderTok = 0, crop = {x0: 0, x1: 1};
+
+// Recorta los márgenes en blanco a los costados: el contenido ocupa todo el ancho de la pantalla (más grande, sin que se tape nada)
+async function measureCrop() {
+  let x0 = 1, x1 = 0;
   for (const doc of pdfDocs) {
     for (let n = 1; n <= doc.numPages; n++) {
-      const page = await doc.getPage(n), base = page.getViewport({scale: 1});
-      const vp = page.getViewport({scale: (width / base.width) * dpr}), cv = document.createElement('canvas');
-      cv.width = vp.width; cv.height = vp.height; cv.style.width = width + 'px'; cv.style.height = (vp.height / dpr) + 'px';
+      const page = await doc.getPage(n), vp = page.getViewport({scale: 500 / page.getViewport({scale: 1}).width});
+      const cv = document.createElement('canvas'); cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+      const ctx = cv.getContext('2d', {willReadFrequently: true}); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+      await page.render({canvasContext: ctx, viewport: vp}).promise;
+      const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      for (let y = 0; y < cv.height; y += 2) {
+        const row = y * cv.width * 4;
+        for (let x = 0; x < cv.width; x++) {
+          const i = row + x * 4;
+          const r = d[i], g = d[i + 1], b = d[i + 2];  // sólo texto/líneas oscuros y grises: las franjas de color de fondo no cuentan
+          if (r < 150 && g < 150 && b < 150 && Math.abs(r - g) < 40 && Math.abs(g - b) < 40) { if (x < x0 * cv.width) x0 = x / cv.width; if (x > x1 * cv.width) x1 = x / cv.width; }
+        }
+      }
+    }
+  }
+  if (x1 <= x0 || x1 - x0 < 0.4) return {x0: 0, x1: 1};
+  return {x0: Math.max(0, x0 - 0.03), x1: Math.min(1, x1 + 0.03)};
+}
+
+async function renderPdfs() {
+  const tok = ++renderTok, view = holderEl.querySelector('.pdfview'), full = holderEl.classList.contains('full');
+  const viewW = Math.max(Math.floor(view.clientWidth || (full ? window.innerWidth - 24 : 320)), 240);
+  const width = Math.round(viewW * zoom), dpr = Math.min(window.devicePixelRatio || 1, 2.5), frac = crop.x1 - crop.x0;
+  const pageW = width / frac, frag = document.createElement('div'); frag.className = 'pages';
+  for (const doc of pdfDocs) {
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n), base = page.getViewport({scale: 1}), sc = (pageW / base.width) * dpr;
+      const vp = page.getViewport({scale: sc, offsetX: -crop.x0 * pageW * dpr}), cv = document.createElement('canvas');
+      cv.width = Math.round(width * dpr); cv.height = Math.round(vp.height); cv.style.width = width + 'px'; cv.style.height = (vp.height / dpr) + 'px';
       await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
       if (tok !== renderTok) return;
       frag.appendChild(cv);
@@ -156,22 +184,23 @@ async function renderPdfs() {
 }
 function setZoom(z) { zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100)); renderPdfs(); }
 function toggleFull() {
-  holderEl.classList.toggle('full'); document.body.style.overflow = holderEl.classList.contains('full') ? 'hidden' : '';
-  holderEl.querySelector('.zfull').textContent = holderEl.classList.contains('full') ? '✕ Cerrar' : '⛶ Pantalla completa';
+  const on = holderEl.classList.toggle('full'); document.body.style.overflow = on ? 'hidden' : '';
+  holderEl.querySelector('.zfull').textContent = on ? '✕' : '⛶';
   renderPdfs();
 }
+function clearPdf() { pdfRun++; renderTok++; pdfDocs = []; $('pdfZone').innerHTML = ''; document.body.style.overflow = ''; }
 async function showPdfs(matches) {
-  const run = ++pdfRun; pdfDocs = []; zoom = ZOOM_DEFAULT; document.body.style.overflow = '';
+  const run = ++pdfRun; pdfDocs = []; zoom = 1; document.body.style.overflow = '';
   const holder = holderEl = document.createElement('div');
   holder.className = 'pdfs';
-  holder.innerHTML = '<div class="pdfbar"><button type="button" class="zm">−</button><span class="zl">160%</span><button type="button" class="zp">+</button>' +
-    '<button type="button" class="zfit">Ajustar</button><button type="button" class="zfull">⛶ Pantalla completa</button></div>' +
+  holder.innerHTML = '<div class="pdfbar"><button type="button" class="zm" aria-label="Achicar">−</button><span class="zl">100%</span><button type="button" class="zp" aria-label="Agrandar">+</button>' +
+    '<button type="button" class="zfit">Ajustar</button><button type="button" class="zfull" aria-label="Pantalla completa">⛶</button></div>' +
     '<div class="pdfview"><div class="pdfmsg">Cargando el protocolo…</div></div>';
-  holder.querySelector('.zm').onclick = () => setZoom(zoom - 0.3);
-  holder.querySelector('.zp').onclick = () => setZoom(zoom + 0.3);
+  holder.querySelector('.zm').onclick = () => setZoom(zoom - 0.5);
+  holder.querySelector('.zp').onclick = () => setZoom(zoom + 0.5);
   holder.querySelector('.zfit').onclick = () => setZoom(1);
   holder.querySelector('.zfull').onclick = toggleFull;
-  box.appendChild(holder);
+  $('pdfZone').innerHTML = ''; $('pdfZone').appendChild(holder);
   try {
     const lib = await loadPdfjs();
     for (const m of matches) {
@@ -181,13 +210,15 @@ async function showPdfs(matches) {
       pdfDocs.push(await lib.getDocument({data: new Uint8Array(await r.arrayBuffer())}).promise);
       if (run !== pdfRun) return;
     }
+    crop = await measureCrop();
+    if (run !== pdfRun) return;
     await renderPdfs();
   } catch (err) { if (run === pdfRun) holder.querySelector('.pdfview').innerHTML = '<div class="pdfmsg">No se pudo mostrar el PDF. Probá de nuevo.</div>'; }
 }
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
   const v = $('q').value.trim(); if (!v) return;
-  pdfRun++; $('go').disabled = true; show('', 'Buscando…');
+  clearPdf(); $('go').disabled = true; show('', 'Buscando…');
   try {
     const r = await post(BASE, {items: v});
     const d = await r.json();
