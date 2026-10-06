@@ -61,103 +61,44 @@
         <!-- Navegación -->
         <nav class="flex-1 py-4 overflow-y-auto custom-scrollbar">
             
-            <!-- PRINCIPAL -->
+            {% macro nav_link(href, icon, label, active) -%}
+            <a href="{{ href }}" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if active %}active{% endif %}">
+                <i data-lucide="{{ icon }}" class="w-4 h-4 shrink-0"></i> {{ label }}
+            </a>
+            {%- endmacro %}
+            {% set p = request.url.path %}
+            {% set wc_op = (not user) or ('web_chat' in user.permissions) or ('web_chat_atencion' in user.permissions) or ('web_chat_pacientes' in user.permissions) or ('web_chat_avisos' in user.permissions) or ('web_chat_metricas' in user.permissions) %}
+            {% set wc_cfg = (not user) or ('web_chat' in user.permissions) or ('web_chat_estado' in user.permissions) or ('web_chat_config' in user.permissions) %}
+            {% set has_any_config = not user or 'config' in user.permissions or 'config_identidad' in user.permissions or 'config_bienvenida' in user.permissions or 'config_conocimiento' in user.permissions or 'config_seguimiento' in user.permissions or 'config_empresa' in user.permissions or 'config_avanzado' in user.permissions or 'config_pagos' in user.permissions %}
+
+            <!-- OPERACIÓN: lo que el personal usa todos los días -->
             <div class="px-3 mb-3">
-                <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Principal</p>
+                <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Operación diaria</p>
                 <div class="space-y-0.5">
-                    {% if not user or 'dashboard' in user.permissions %}
-                    <a href="/admin" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin' %}active{% endif %}">
-                        <i data-lucide="layout-dashboard" class="w-4 h-4 shrink-0"></i> Dashboard
-                    </a>
-                    {% endif %}
-                    {% if not user or 'history' in user.permissions %}
-                    <a href="/admin/history" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if '/chat' in request.url.path or '/history' in request.url.path %}active{% endif %}">
-                        <i data-lucide="message-square" class="w-4 h-4 shrink-0"></i> Historial de Chats
-                    </a>
-                    {% endif %}
-                    {% if not user or 'analytics' in user.permissions %}
-                    <a href="/admin/analytics" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/analytics' %}active{% endif %}">
-                        <i data-lucide="bar-chart-3" class="w-4 h-4 shrink-0"></i> Estadísticas
-                    </a>
-                    {% endif %}
+                    {% if not user or 'dashboard' in user.permissions %}{{ nav_link('/admin', 'layout-dashboard', 'Dashboard', p == '/admin') }}{% endif %}
+                    {% if not user or 'history' in user.permissions %}{{ nav_link('/admin/history', 'message-square', 'Historial de Chats', '/chat' in p or '/history' in p) }}{% endif %}
+                    {% if wc_op %}{{ nav_link('/admin/web-chat', 'message-circle', 'Chat Web: atención', p == '/admin/web-chat') }}{% endif %}
+                    {% if not user or 'submissions' in user.permissions %}{{ nav_link('/admin/submissions', 'clipboard-list', 'Trámites Recibidos', p == '/admin/submissions') }}{% endif %}
+                    {% if not user or 'contacts' in user.permissions %}{{ nav_link('/admin/contacts', 'users-2', 'Contactos / Nómina', p == '/admin/contacts') }}{% endif %}
+                    {% if not user or 'appointments' in user.permissions %}{{ nav_link('/admin/appointments', 'calendar', 'Turnos', p == '/admin/appointments') }}{% endif %}
+                    {% if not user or 'catalog' in user.permissions or 'catalog_requests' in user.permissions %}{{ nav_link('/admin/catalog-requests', 'shopping-cart', 'Consultas y Pedidos', p == '/admin/catalog-requests') }}{% endif %}
+                    {% if not user or 'analytics' in user.permissions %}{{ nav_link('/admin/analytics', 'bar-chart-3', 'Estadísticas', p == '/admin/analytics') }}{% endif %}
+                    {% if not user or 'gaps' in user.permissions %}{{ nav_link('/admin/gaps', 'help-circle', 'Preguntas sin Respuesta', p == '/admin/gaps') }}{% endif %}
+                    {% if not user or 'document_library' in user.permissions %}{{ nav_link('/admin/document-library-logs', 'search', 'Búsquedas de Documentos', p == '/admin/document-library-logs') }}{% endif %}
                 </div>
             </div>
 
-            <!-- GESTIÓN -->
-            <div class="px-3 mb-3">
-                <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Gestión</p>
-                <div class="space-y-0.5">
-                    {% if not user or 'submissions' in user.permissions %}
-                    <a href="/admin/submissions" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/submissions' %}active{% endif %}">
-                        <i data-lucide="clipboard-list" class="w-4 h-4 shrink-0"></i> Trámites Recibidos
-                    </a>
-                    {% endif %}
-                    {% if not user or 'contacts' in user.permissions %}
-                    <a href="/admin/contacts" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/contacts' %}active{% endif %}">
-                        <i data-lucide="users-2" class="w-4 h-4 shrink-0"></i> Contactos / Nómina
-                    </a>
-                    {% endif %}
-                    {% if not user or 'appointments' in user.permissions %}
-                    <a href="/admin/appointments" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/appointments' %}active{% endif %}">
-                        <i data-lucide="calendar" class="w-4 h-4 shrink-0"></i> Turnos
-                    </a>
-                    {% endif %}
-                    {% if not user or 'catalog' in user.permissions %}
-                    <a href="/admin/catalog" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/catalog' %}active{% endif %}">
-                        <i data-lucide="shopping-bag" class="w-4 h-4 shrink-0"></i> Catálogo / Precios
-                    </a>
-                    {% endif %}
-                    {% if not user or 'catalog' in user.permissions or 'catalog_requests' in user.permissions %}
-                    <a href="/admin/catalog-requests" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/catalog-requests' %}active{% endif %}">
-                        <i data-lucide="shopping-cart" class="w-4 h-4 shrink-0"></i> Consultas y Pedidos
-                    </a>
-                    {% endif %}
-                    {% if not user or 'document_library' in user.permissions %}
-                    <a href="/admin/document-library" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/document-library' %}active{% endif %}">
-                        <i data-lucide="library" class="w-4 h-4 shrink-0"></i> Biblioteca de Documentos
-                    </a>
-                    <a href="/admin/document-library-logs" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/document-library-logs' %}active{% endif %}">
-                        <i data-lucide="search" class="w-4 h-4 shrink-0"></i> Búsquedas de Documentos
-                    </a>
-                    {% endif %}
-                    {% if not user or 'protocol_check' in user.permissions %}
-                    <a href="/admin/protocol-check" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/protocol-check' %}active{% endif %}">
-                        <i data-lucide="file-check-2" class="w-4 h-4 shrink-0"></i> Verificar protocolos
-                    </a>
-                    {% endif %}
-                    {% if not user or 'web_chat' in user.permissions or 'web_chat_estado' in user.permissions or 'web_chat_atencion' in user.permissions or 'web_chat_pacientes' in user.permissions or 'web_chat_avisos' in user.permissions or 'web_chat_metricas' in user.permissions or 'web_chat_config' in user.permissions %}
-                    <a href="/admin/web-chat" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/web-chat' %}active{% endif %}">
-                        <i data-lucide="message-circle" class="w-4 h-4 shrink-0"></i> Chat Web (link / QR)
-                    </a>
-                    {% endif %}
-                    {% if not user or 'gaps' in user.permissions %}
-                    <a href="/admin/gaps" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/gaps' %}active{% endif %}">
-                        <i data-lucide="help-circle" class="w-4 h-4 shrink-0"></i> Preguntas sin Respuesta
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- SISTEMA -->
+            <!-- CONFIGURACIÓN: puesta a punto del sistema -->
             <div class="px-3">
-                <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Sistema</p>
+                <p class="text-[10px] font-bold text-slate-600 uppercase tracking-widest px-3 mb-2">Configuración</p>
                 <div class="space-y-0.5">
-                    {% if not user or 'channels' in user.permissions %}
-                    <a href="/admin/channels" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/channels' %}active{% endif %}">
-                        <i data-lucide="share-2" class="w-4 h-4 shrink-0"></i> Conectividad
-                    </a>
-                    {% endif %}
-                    {% set has_any_config = not user or 'config' in user.permissions or 'config_identidad' in user.permissions or 'config_bienvenida' in user.permissions or 'config_conocimiento' in user.permissions or 'config_seguimiento' in user.permissions or 'config_empresa' in user.permissions or 'config_avanzado' in user.permissions or 'config_pagos' in user.permissions %}
-                    {% if has_any_config %}
-                    <a href="/admin/config" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/config' %}active{% endif %}">
-                        <i data-lucide="brain-circuit" class="w-4 h-4 shrink-0"></i> Entrenamiento IA
-                    </a>
-                    {% endif %}
-                    {% if not user or 'audit' in user.permissions %}
-                    <a href="/admin/audit" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800/50 transition-all {% if request.url.path == '/admin/audit' %}active{% endif %}">
-                        <i data-lucide="shield" class="w-4 h-4 shrink-0"></i> Auditoría
-                    </a>
-                    {% endif %}
+                    {% if has_any_config %}{{ nav_link('/admin/config', 'brain-circuit', 'Entrenamiento IA', p == '/admin/config') }}{% endif %}
+                    {% if not user or 'catalog' in user.permissions %}{{ nav_link('/admin/catalog', 'shopping-bag', 'Catálogo / Precios', p == '/admin/catalog') }}{% endif %}
+                    {% if not user or 'document_library' in user.permissions %}{{ nav_link('/admin/document-library', 'library', 'Biblioteca de Documentos', p == '/admin/document-library') }}{% endif %}
+                    {% if not user or 'protocol_check' in user.permissions %}{{ nav_link('/admin/protocol-check', 'file-check-2', 'Verificar protocolos', p == '/admin/protocol-check') }}{% endif %}
+                    {% if wc_cfg %}{{ nav_link('/admin/web-chat/config', 'sliders-horizontal', 'Chat Web: configuración', p == '/admin/web-chat/config') }}{% endif %}
+                    {% if not user or 'channels' in user.permissions %}{{ nav_link('/admin/channels', 'share-2', 'Conectividad', p == '/admin/channels') }}{% endif %}
+                    {% if not user or 'audit' in user.permissions %}{{ nav_link('/admin/audit', 'shield', 'Auditoría', p == '/admin/audit') }}{% endif %}
                 </div>
             </div>
         </nav>

@@ -28,15 +28,16 @@
 <div class="h-full flex flex-col p-6 max-w-[1100px] mx-auto w-full animate-fade-in overflow-y-auto custom-scrollbar">
     <div class="mb-6">
         <h1 class="text-2xl font-bold text-white flex items-center gap-2">
-            <i data-lucide="message-circle" class="w-6 h-6 text-brand-500"></i> Chat Web
+            <i data-lucide="message-circle" class="w-6 h-6 text-brand-500"></i> {{ 'Configuración del Chat Web' if view == 'cfg' else 'Chat Web: atención diaria' }}
         </h1>
         <p class="text-slate-400 text-sm mt-1">
-            Un link (y un QR) que abre el chat a pantalla completa en el celular, sin instalar nada. Responde con el mismo cerebro y los mismos Conocimientos que WhatsApp.
+            {% if view == 'cfg' %}Encendido, link / QR, apariencia, límites y entrega de resultados. Lo de todos los días (atención, pacientes, avisos) está en <a href="/admin/web-chat" class="text-brand-500 underline">Chat Web → Atención</a>.
+            {% else %}Pacientes que piden una persona, pacientes vinculados, avisos masivos y métricas. Para encenderlo o personalizarlo: <a href="/admin/web-chat/config" class="text-brand-500 underline">Configuración del Chat Web</a>.{% endif %}
         </p>
     </div>
 
     <!-- Guia: como funciona y como configurarlo -->
-    <details class="group bg-panel rounded-xl border border-slate-800/50 overflow-hidden mb-6" open>
+    <details data-view="cfg" class="group bg-panel rounded-xl border border-slate-800/50 overflow-hidden mb-6" open>
         <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none text-sm font-bold text-white list-none">
             <i data-lucide="help-circle" class="w-4 h-4 text-brand-500"></i>
             ¿Cómo funciona el Chat Web y cómo se configura? (leer antes de encenderlo)
@@ -130,14 +131,14 @@
     </details>
 
     <!-- Atencion: pacientes que piden una persona -->
-    <div data-perm="atencion" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="attBox">
+    <div data-view="op" data-perm="atencion" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="attBox">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4 text-rose-400"></i> Atención: pacientes que piden una persona</h2>
         <p class="text-xs text-slate-500 mb-3">Cuando el bot no puede resolver algo (o el paciente pide hablar con alguien) aparece acá y <b class="text-slate-300">en cualquier pantalla del panel</b> con aviso visual y sonido. Tocá <b class="text-slate-300">Atender</b> para abrir la conversación: al responder, el bot se pausa 2 horas y el aviso se cierra solo.</p>
         <div id="attList" class="space-y-2"><div class="text-xs text-slate-500">Cargando…</div></div>
     </div>
 
     <!-- Estado + link -->
-    <div data-perm="estado" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-view="cfg" data-perm="estado" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <div class="flex flex-col md:flex-row md:items-center gap-4 justify-between">
             <label class="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" id="wcEnabled" class="w-5 h-5 rounded text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-700">
@@ -163,7 +164,7 @@
     </div>
 
     <!-- Piloto: metricas, checklist e instructivo -->
-    <div data-perm="metricas" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="pilotBox">
+    <div data-view="op" data-perm="metricas" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="pilotBox">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
             <h2 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-500"></i> Piloto en recepción: cómo va</h2>
             <div class="flex items-center gap-2">
@@ -211,7 +212,7 @@
     </div>
 
     <!-- Apariencia y textos -->
-    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-view="cfg" data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i data-lucide="palette" class="w-4 h-4 text-brand-500"></i> Apariencia y textos</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -261,7 +262,7 @@
     </div>
 
     <!-- Limites -->
-    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-view="cfg" data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="shield" class="w-4 h-4 text-brand-500"></i> Límites (cuidan el costo de IA)</h2>
         <p class="text-xs text-slate-500 mb-3">Como el link es público, cualquiera con el enlace puede escribir. Estos topes evitan gastos por abuso. 0 = sin tope. Cuando un paciente llega al tope de mensajes, el chat le avisa que vuelva mañana (o que llame, si cargaste el teléfono de la empresa); no ve ningún error.</p>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -293,7 +294,7 @@
     </div>
 
     <!-- Resultados de analisis dentro del chat -->
-    <div data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-view="cfg" data-perm="config" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="file-check" class="w-4 h-4 text-brand-500"></i> Resultados de análisis dentro del chat</h2>
         <p class="text-xs text-slate-500 mb-3">El paciente vincula su celular con <b>DNI + número de protocolo</b> (el del papel) y sus PDFs aparecen dentro del chat: los ve, baja o comparte ahí mismo. Usa la carpeta de PROTOCOLOS del portal “Mis Resultados” (archivos <code>PROTOCOLO-DNI.pdf</code>).</p>
         <label class="flex items-center gap-3 cursor-pointer mb-2">
@@ -306,7 +307,7 @@
         <p class="text-xs text-slate-500 mt-2">Seguridad: sin el protocolo del papel nadie puede ver los análisis de un DNI. Máximo 5 intentos por celular por hora. Los PDFs no se copian: se traen de Drive en el momento y solo los ve el celular vinculado.</p>
     </div>
 
-    <div data-perm="pacientes" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
+    <div data-view="op" data-perm="pacientes" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i> Pacientes vinculados</h2>
         <p class="text-xs text-slate-500 mb-3"><b class="text-slate-300">Verificado:</b> ya se encontró su archivo en PROTOCOLOS y ve sus análisis. <b class="text-slate-300">Pendiente:</b> cargó DNI y protocolo pero todavía no hay un archivo con ambos (espera hasta 10 días). <b class="text-slate-300">Venció:</b> pasaron 10 días sin encontrarlo (se marca cuando el paciente vuelve a abrir el chat). <b class="text-slate-300">Avisos “Sí”:</b> ese celular puede recibir notificaciones. <b class="text-slate-300">Desvincular</b> borra sus tarjetas del chat y le quita el acceso a los PDFs.</p>
         <label class="flex items-center gap-2 text-xs text-slate-400 mb-3 cursor-pointer"><input type="checkbox" id="wcOnlyPending" class="w-4 h-4 rounded bg-slate-800 border-slate-700"> Mostrar sólo los que están esperando (pendientes o vencidos)</label>
@@ -322,7 +323,7 @@
     </div>
 
     <!-- Avisos masivos -->
-    <div data-perm="avisos" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="bcBox">
+    <div data-view="op" data-perm="avisos" class="bg-panel rounded-xl border border-slate-800/50 p-4 mb-6" id="bcBox">
         <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-2"><i data-lucide="megaphone" class="w-4 h-4 text-brand-500"></i> Avisos masivos</h2>
         <p class="text-xs text-slate-500 mb-3">Una notificación al celular de quienes aceptaron recibir <b>“Novedades”</b> (es un permiso aparte del de sus análisis). <span class="text-amber-400/90">No incluyas datos de salud ni nombres: la notificación se ve con la pantalla bloqueada.</span></p>
         <div id="bcSummary" class="text-xs text-slate-400 mb-4"></div>
@@ -390,7 +391,7 @@
         </div>
     </div>
 
-    <div data-perm="estado,config" class="flex items-center gap-3 mb-10">
+    <div data-view="cfg" data-perm="estado,config" class="flex items-center gap-3 mb-10">
         <button onclick="saveCfg()" class="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-bold">Guardar</button>
         <span id="wcMsg" class="text-sm"></span>
     </div>
@@ -468,9 +469,11 @@ let CFG = null;
 const $ = id => document.getElementById(id);
 const WC = {{ wc_perms | tojson }};
 // Cada sección se muestra sólo si el usuario tiene ese permiso (el servidor además lo exige en cada API; se oculta, no se borra, para no romper el resto del script)
+const VIEW = {{ view | tojson }};
 document.querySelectorAll('[data-perm]').forEach(el => {
-    if (!el.dataset.perm.split(',').some(k => WC[k])) el.style.display = 'none';
+    if (!el.dataset.perm.split(',').some(k => WC[k]) || el.dataset.view !== VIEW) el.style.display = 'none';
 });
+if (VIEW !== 'cfg') { const g = document.querySelector('details[data-view]'); if (g) g.style.display = 'none'; }
 
 function drawQr(target, url, cell){
     try {

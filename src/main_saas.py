@@ -3487,6 +3487,7 @@ async def api_protocol_check_file(file_id: str, request: Request, db: Session = 
 
 # ── CHAT WEB: panel del cliente (ver src/web_chat.py) ─────────────────────────────
 @app.get("/admin/web-chat", response_class=HTMLResponse)
+@app.get("/admin/web-chat/config", response_class=HTMLResponse)
 async def web_chat_panel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
     if target_client_id is None: return RedirectResponse(url="/admin/login")
@@ -3494,9 +3495,16 @@ async def web_chat_panel(request: Request, db: Session = Depends(get_db), curren
     settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
     if not settings or not getattr(settings, 'feat_web_chat', False):
         return RedirectResponse(url="/admin")
+    perms = get_web_chat_perms(user_mock)
+    view = "cfg" if request.url.path.endswith("/config") else "op"
+    # Si la vista pedida no tiene nada para este usuario, mandarlo a la otra
+    if view == "cfg" and not (perms.get("estado") or perms.get("config")):
+        return RedirectResponse(url="/admin/web-chat")
+    if view == "op" and not any(perms.get(k) for k in ("atencion", "pacientes", "avisos", "metricas")):
+        return RedirectResponse(url="/admin/web-chat/config")
     return templates.TemplateResponse(request=request, name="admin/web_chat.html", context={
         "user": user_mock, "settings": settings, "is_impersonating": is_impersonating, "active_section": "operacion",
-        "wc_perms": get_web_chat_perms(user_mock)
+        "wc_perms": perms, "view": view
     })
 
 @app.get("/api/admin/web_chat")
