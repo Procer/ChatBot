@@ -40,7 +40,16 @@
   .old { background:var(--warn-bg); border-color:var(--warn); color:var(--warn); }
   .missing,.invalid { background:var(--bad-bg); border-color:var(--bad); color:var(--bad); }
   .res small { display:block; color:var(--ink); opacity:.85; font-size:16px; margin-top:6px; }
-  .pdfs { margin-top:14px; } .pdfdoc canvas { display:block; max-width:100%; margin:0 auto 10px; background:#fff; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,.18); }
+  .pdfs { margin-top:14px; }
+  .pdfbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .pdfbar button { font:inherit; font-size:20px; font-weight:700; min-width:48px; height:46px; padding:0 14px; border:0; border-radius:12px; background:var(--brand); color:var(--brand-ink); cursor:pointer; }
+  .pdfbar .zl { min-width:56px; text-align:center; font-weight:700; color:var(--ink); }
+  .pdfbar .zfit, .pdfbar .zfull { font-size:15px; }
+  .pdfbar .zfull { margin-left:auto; }
+  .pdfview { overflow:auto; -webkit-overflow-scrolling:touch; max-height:75vh; border-radius:8px; }
+  .pdfview canvas { display:block; margin:0 auto 10px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.18); }
+  .pdfs.full { position:fixed; inset:0; z-index:50; margin:0; padding:10px 12px; background:var(--bg); display:flex; flex-direction:column; }
+  .pdfs.full .pdfview { max-height:none; flex:1; }
   .pdfmsg { color:var(--ink); opacity:.8; font-size:16px; text-align:center; padding:12px; }
   a.pdf { display:block; margin-top:10px; text-align:center; text-decoration:none; font-weight:700; font-size:19px; padding:13px; border-radius:13px; background:var(--brand); color:var(--brand-ink); }
   .foot { color:var(--muted); font-size:14px; text-align:center; margin-top:22px; }
@@ -126,33 +135,54 @@ function loadPdfjs() {
   });
   return pdfjsPromise;
 }
+const ZOOM_DEFAULT = 1.6, ZOOM_MIN = 0.8, ZOOM_MAX = 4;
+let pdfDocs = [], zoom = ZOOM_DEFAULT, holderEl = null, renderTok = 0;
+async function renderPdfs() {
+  const tok = ++renderTok, view = holderEl.querySelector('.pdfview'), full = holderEl.classList.contains('full');
+  const baseW = Math.max((full ? window.innerWidth : box.clientWidth) - 24, 280), width = Math.round(baseW * zoom), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const frag = document.createDocumentFragment();
+  for (const doc of pdfDocs) {
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n), base = page.getViewport({scale: 1});
+      const vp = page.getViewport({scale: (width / base.width) * dpr}), cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height; cv.style.width = width + 'px'; cv.style.height = (vp.height / dpr) + 'px';
+      await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+      if (tok !== renderTok) return;
+      frag.appendChild(cv);
+    }
+  }
+  view.innerHTML = ''; view.appendChild(frag);
+  holderEl.querySelector('.zl').textContent = Math.round(zoom * 100) + '%';
+}
+function setZoom(z) { zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100)); renderPdfs(); }
+function toggleFull() {
+  holderEl.classList.toggle('full'); document.body.style.overflow = holderEl.classList.contains('full') ? 'hidden' : '';
+  holderEl.querySelector('.zfull').textContent = holderEl.classList.contains('full') ? '✕ Cerrar' : '⛶ Pantalla completa';
+  renderPdfs();
+}
 async function showPdfs(matches) {
-  const run = ++pdfRun, holder = document.createElement('div');
-  holder.className = 'pdfs'; holder.innerHTML = '<div class="pdfmsg">Cargando el protocolo…</div>';
+  const run = ++pdfRun; pdfDocs = []; zoom = ZOOM_DEFAULT; document.body.style.overflow = '';
+  const holder = holderEl = document.createElement('div');
+  holder.className = 'pdfs';
+  holder.innerHTML = '<div class="pdfbar"><button type="button" class="zm">−</button><span class="zl">160%</span><button type="button" class="zp">+</button>' +
+    '<button type="button" class="zfit">Ajustar</button><button type="button" class="zfull">⛶ Pantalla completa</button></div>' +
+    '<div class="pdfview"><div class="pdfmsg">Cargando el protocolo…</div></div>';
+  holder.querySelector('.zm').onclick = () => setZoom(zoom - 0.3);
+  holder.querySelector('.zp').onclick = () => setZoom(zoom + 0.3);
+  holder.querySelector('.zfit').onclick = () => setZoom(1);
+  holder.querySelector('.zfull').onclick = toggleFull;
   box.appendChild(holder);
   try {
     const lib = await loadPdfjs();
-    const parts = [];
     for (const m of matches) {
       const r = await fetch(BASE + '/file/' + encodeURIComponent(m.id));
       if (r.status === 401) { leave(); $('lerr').textContent = 'Tu sesión venció. Volvé a ingresar.'; return; }
       if (!r.ok) throw new Error('archivo');
-      const doc = await lib.getDocument({data: new Uint8Array(await r.arrayBuffer())}).promise;
+      pdfDocs.push(await lib.getDocument({data: new Uint8Array(await r.arrayBuffer())}).promise);
       if (run !== pdfRun) return;
-      const wrap = document.createElement('div'); wrap.className = 'pdfdoc';
-      const width = Math.min(holder.clientWidth || 520, 900), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-      for (let n = 1; n <= doc.numPages; n++) {
-        const page = await doc.getPage(n), base = page.getViewport({scale: 1}), scale = width / base.width;
-        const vp = page.getViewport({scale: scale * dpr}), cv = document.createElement('canvas');
-        cv.width = vp.width; cv.height = vp.height; cv.style.width = width + 'px'; cv.style.height = (vp.height / dpr) + 'px';
-        await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
-        wrap.appendChild(cv);
-      }
-      parts.push(wrap);
     }
-    if (run !== pdfRun) return;
-    holder.innerHTML = ''; parts.forEach(p => holder.appendChild(p));
-  } catch (err) { if (run === pdfRun) holder.innerHTML = '<div class="pdfmsg">No se pudo mostrar el PDF. Probá de nuevo.</div>'; }
+    await renderPdfs();
+  } catch (err) { if (run === pdfRun) holder.querySelector('.pdfview').innerHTML = '<div class="pdfmsg">No se pudo mostrar el PDF. Probá de nuevo.</div>'; }
 }
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
