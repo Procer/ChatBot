@@ -16,7 +16,7 @@
     <!-- Link -->
     <div class="bg-surface border border-slate-800 p-6 rounded-2xl space-y-3">
         <h2 class="font-bold text-slate-200 text-lg">Link para pasar a los doctores</h2>
-        <p class="text-sm text-slate-500">Es una página con la imagen del laboratorio, pensada para el celular. Cada doctor entra con su usuario y contraseña (los creás abajo) y comprueba si un protocolo ya está cargado. No ve datos del paciente ni el PDF.</p>
+        <p class="text-sm text-slate-500">Es una página con la imagen del laboratorio, pensada para el celular. Cada doctor entra con su usuario y contraseña (los creás abajo) y comprueba si un protocolo ya está cargado y puede abrir el PDF. Cada consulta y cada PDF abierto queda registrado.</p>
         <div id="lk-none" class="hidden"><button onclick="linkAction('generate')" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-3 rounded-xl font-bold">Crear link</button></div>
         <div id="lk-on" class="hidden space-y-3">
             <div class="flex flex-col sm:flex-row gap-2">
@@ -37,7 +37,7 @@
         <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Doctores</div><div id="t-doctors" class="text-3xl font-bold text-white mt-1">–</div></div>
         <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Ingresos</div><div class="text-3xl font-bold text-white mt-1"><span id="t-logins">–</span></div><div class="text-xs text-slate-500">últimos 7 días: <b id="t-logins7" class="text-slate-300">–</b></div></div>
         <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Comprobaciones</div><div class="text-3xl font-bold text-white mt-1"><span id="t-checks">–</span></div><div class="text-xs text-slate-500">últimos 7 días: <b id="t-checks7" class="text-slate-300">–</b></div></div>
-        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Estaban cargados</div><div class="text-3xl font-bold text-emerald-400 mt-1" id="t-found">–</div><div class="text-xs text-slate-500">todavía no: <b id="t-missing" class="text-rose-400">–</b></div></div>
+        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Estaban cargados</div><div class="text-3xl font-bold text-emerald-400 mt-1" id="t-found">–</div><div class="text-xs text-slate-500">todavía no: <b id="t-missing" class="text-rose-400">–</b> · PDF abiertos: <b id="t-views" class="text-slate-300">–</b></div></div>
     </div>
 
     <!-- Doctores -->
@@ -91,13 +91,13 @@ async function copyLink() {
 function render(d) {
     const t = d.totals;
     $('t-doctors').textContent = t.doctors; $('t-logins').textContent = t.logins; $('t-logins7').textContent = t.logins_7d;
-    $('t-checks').textContent = t.checks; $('t-checks7').textContent = t.checks_7d; $('t-found').textContent = t.found; $('t-missing').textContent = t.missing;
+    $('t-checks').textContent = t.checks; $('t-checks7').textContent = t.checks_7d; $('t-found').textContent = t.found; $('t-missing').textContent = t.missing; $('t-views').textContent = t.views;
     $('docs-empty').classList.toggle('hidden', d.doctors.length > 0);
     $('docs').innerHTML = d.doctors.map(x => `<tr class="${x.active ? '' : 'opacity-50'}">
         <td class="py-3 pr-3 text-slate-200 font-bold">${esc(x.name || x.username)}${x.active ? '' : ' <span class="text-xs text-rose-400">(desactivado)</span>'}</td>
         <td class="py-3 pr-3 font-mono text-slate-400">${esc(x.username)}</td>
         <td class="py-3 pr-3 text-right text-slate-200">${x.logins}<div class="text-[11px] text-slate-500">7 días: ${x.logins_7d}</div></td>
-        <td class="py-3 pr-3 text-right text-slate-200">${x.checks}<div class="text-[11px] text-slate-500">7 días: ${x.checks_7d} · <span class="text-emerald-400">${x.found} ✔</span> <span class="text-rose-400">${x.missing} ✘</span></div></td>
+        <td class="py-3 pr-3 text-right text-slate-200">${x.checks}<div class="text-[11px] text-slate-500">7 días: ${x.checks_7d} · <span class="text-emerald-400">${x.found} ✔</span> <span class="text-rose-400">${x.missing} ✘</span> · PDF abiertos: ${x.views}</div></td>
         <td class="py-3 pr-3 text-slate-400 whitespace-nowrap">${esc(fmt(x.last_login))}</td>
         <td class="py-3 text-right whitespace-nowrap text-xs">
             <button onclick="newPass(${x.id})" class="text-slate-400 underline mr-3">Nueva contraseña</button>

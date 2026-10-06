@@ -89,13 +89,15 @@ def stats(db: Session, client_id: int):
     rows7 = db.query(E.doctor_id, E.kind, func.count()).filter(E.client_id == client_id, E.at > week) \
         .group_by(E.doctor_id, E.kind).all()
     ev7 = {(d, k): c for d, k, c in rows7}
-    blank = {"logins": 0, "checks": 0, "found": 0, "missing": 0, "last_login": None, "last_check": None}
+    blank = {"logins": 0, "views": 0, "checks": 0, "found": 0, "missing": 0, "last_login": None, "last_check": None}
     by = {}
     for did, kind, status, cnt, last in rows:
         r = by.setdefault(did, dict(blank))
         if kind == "login":
             r["logins"] += cnt
             r["last_login"] = max(r["last_login"] or last, last)
+        elif kind == "view":
+            r["views"] += cnt
         else:
             r["checks"] += cnt
             r["last_check"] = max(r["last_check"] or last, last)
@@ -107,9 +109,9 @@ def stats(db: Session, client_id: int):
     for d in doctors:
         r = by.get(d.id, blank)
         out.append({"id": d.id, "username": d.username, "name": d.name or "", "active": bool(d.active),
-                    "logins": r["logins"], "checks": r["checks"], "found": r["found"], "missing": r["missing"],
+                    "logins": r["logins"], "views": r["views"], "checks": r["checks"], "found": r["found"], "missing": r["missing"],
                     "logins_7d": ev7.get((d.id, "login"), 0), "checks_7d": ev7.get((d.id, "check"), 0),
                     "last_login": _iso(r["last_login"]), "last_check": _iso(r["last_check"])})
-    totals = {k: sum(x[k] for x in out) for k in ("logins", "checks", "logins_7d", "checks_7d", "found", "missing")}
+    totals = {k: sum(x[k] for x in out) for k in ("logins", "views", "checks", "logins_7d", "checks_7d", "found", "missing")}
     totals["doctors"] = len(out)
     return {"doctors": out, "totals": totals}

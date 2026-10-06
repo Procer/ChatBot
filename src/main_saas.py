@@ -3542,6 +3542,31 @@ async def protocol_check_public_logout(token: str):
     resp.delete_cookie(pd.COOKIE, path="/")
     return resp
 
+@app.get("/api/public/verificar/{token}/file/{file_id}")
+async def protocol_check_public_file(token: str, file_id: str, request: Request, db: Session = Depends(get_db)):
+    from src.results_portal import fetch_result_file, check_rate_limit
+    from src import protocol_doctors as pd
+    client, settings = _pc_public_ctx(db, token)
+    if not client:
+        return HTMLResponse("<h1>Página no encontrada</h1>", status_code=404)
+    doctor = pd.doctor_from_cookie(db, client.id, request.cookies.get(pd.COOKIE))
+    if not doctor:
+        return HTMLResponse("<body style='font-family:sans-serif;padding:2rem'>Tu sesión venció. Volvé a la página e ingresá de nuevo.</body>", status_code=401)
+    if not check_rate_limit(client.id, _public_client_ip(request)):
+        return HTMLResponse("Demasiadas consultas seguidas. Esperá un minuto.", status_code=429)
+    try:
+        found = await asyncio.to_thread(fetch_result_file, client.id, settings.results_portal_folder_id, file_id)
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error abriendo PDF desde página pública (client_id={client.id}): {e}")
+        found = None
+    if not found:
+        return HTMLResponse("<h1>No se encontró el archivo.</h1>", status_code=404)
+    content, filename, mimetype = found
+    pd.add_event(db, client.id, doctor.id, "view")
+    safe_name = re.sub(r'[^A-Za-z0-9 ._-]', '', filename) or "protocolo.pdf"
+    return Response(content=content, media_type=mimetype, headers={
+        "Content-Disposition": f'inline; filename="{safe_name}"', "Cache-Control": "private, no-store"})
+
 @app.post("/api/public/verificar/{token}")
 async def protocol_check_public_api(token: str, payload: ProtocolCheckPayload, request: Request, db: Session = Depends(get_db)):
     from src import protocol_check as pc
@@ -3567,9 +3592,9 @@ async def protocol_check_public_api(token: str, payload: ProtocolCheckPayload, r
         return JSONResponse(status_code=502, content={"error": "No se pudo consultar la carpeta. Probá de nuevo en un momento."})
     for r in rows:  # una comprobación por dato consultado (para los indicadores)
         pd.add_event(db, client.id, doctor.id, "check", r["status"])
-    # Sólo estado, protocolo y fecha: sin nombre de archivo (lleva el DNI) ni descarga del PDF
+    # Se devuelve estado, protocolo, fecha e id (para abrir el PDF por la ruta autenticada de abajo); no el nombre del archivo
     safe = [{"input": r["input"], "status": r["status"],
-             "matches": [{"protocolo": m["protocolo"], "at": m["at"]} for m in r["matches"]]} for r in rows]
+             "matches": [{"id": m["id"], "protocolo": m["protocolo"], "at": m["at"]} for m in r["matches"]]} for r in rows]
     return {"rows": safe, "summary": summary, "days": days}
 
 # ── Administración de médicos (usuarios + indicadores de uso) ─────────────────────
