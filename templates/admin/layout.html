@@ -97,6 +97,7 @@
                     {% if not user or 'document_library' in user.permissions %}{{ nav_link('/admin/document-library', 'library', 'Biblioteca de Documentos', p == '/admin/document-library') }}{% endif %}
                     {% if not user or 'protocol_check' in user.permissions %}{{ nav_link('/admin/protocol-check', 'file-check-2', 'Verificar protocolos', p == '/admin/protocol-check') }}{% endif %}
                     {% if wc_cfg %}{{ nav_link('/admin/web-chat/config', 'sliders-horizontal', 'Chat Web: configuración', p == '/admin/web-chat/config') }}{% endif %}
+                    {% if not user or 'protocol_check' in user.permissions %}{{ nav_link('/admin/protocol-check/doctors', 'user-round-check', 'Acceso de doctores', p == '/admin/protocol-check/doctors') }}{% endif %}
                     {% if not user or 'channels' in user.permissions %}{{ nav_link('/admin/channels', 'share-2', 'Conectividad', p == '/admin/channels') }}{% endif %}
                     {% if not user or 'audit' in user.permissions %}{{ nav_link('/admin/audit', 'shield', 'Auditoría', p == '/admin/audit') }}{% endif %}
                 </div>

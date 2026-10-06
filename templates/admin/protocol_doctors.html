@@ -1,0 +1,133 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Acceso de doctores | anka{% endblock %}
+{% block breadcrumb %}Configuración{% endblock %}
+{% block section_title %}Acceso de doctores{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+    {% if not configured %}
+    <div class="bg-amber-500/10 border border-amber-500/30 p-6 rounded-2xl text-amber-200">
+        Primero hay que configurar la carpeta de resultados en <a href="/admin/document-library" class="underline font-bold">Biblioteca de Documentos</a> → Portal “Mis Resultados”.
+    </div>
+    {% else %}
+
+    <!-- Link -->
+    <div class="bg-surface border border-slate-800 p-6 rounded-2xl space-y-3">
+        <h2 class="font-bold text-slate-200 text-lg">Link para pasar a los doctores</h2>
+        <p class="text-sm text-slate-500">Es una página con la imagen del laboratorio, pensada para el celular. Cada doctor entra con su usuario y contraseña (los creás abajo) y comprueba si un protocolo ya está cargado. No ve datos del paciente ni el PDF.</p>
+        <div id="lk-none" class="hidden"><button onclick="linkAction('generate')" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-3 rounded-xl font-bold">Crear link</button></div>
+        <div id="lk-on" class="hidden space-y-3">
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input id="lk-url" readonly class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 font-mono text-sm">
+                <button onclick="copyLink()" class="px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold">Copiar link</button>
+                <a id="lk-open" target="_blank" rel="noopener" class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold text-center">Abrir</a>
+            </div>
+            <div class="flex gap-4 text-xs">
+                <button onclick="if(confirm('El link actual dejará de funcionar. ¿Generar uno nuevo?')) linkAction('generate')" class="text-slate-400 underline">Generar uno nuevo (anula el anterior)</button>
+                <button onclick="if(confirm('¿Desactivar el link? Nadie podrá entrar.')) linkAction('disable')" class="text-rose-400 underline">Desactivar</button>
+            </div>
+        </div>
+        <span id="lk-msg" class="text-sm text-slate-500"></span>
+    </div>
+
+    <!-- Indicadores -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Doctores</div><div id="t-doctors" class="text-3xl font-bold text-white mt-1">–</div></div>
+        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Ingresos</div><div class="text-3xl font-bold text-white mt-1"><span id="t-logins">–</span></div><div class="text-xs text-slate-500">últimos 7 días: <b id="t-logins7" class="text-slate-300">–</b></div></div>
+        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Comprobaciones</div><div class="text-3xl font-bold text-white mt-1"><span id="t-checks">–</span></div><div class="text-xs text-slate-500">últimos 7 días: <b id="t-checks7" class="text-slate-300">–</b></div></div>
+        <div class="bg-surface border border-slate-800 rounded-2xl p-4"><div class="text-xs text-slate-500 uppercase tracking-wider font-bold">Estaban cargados</div><div class="text-3xl font-bold text-emerald-400 mt-1" id="t-found">–</div><div class="text-xs text-slate-500">todavía no: <b id="t-missing" class="text-rose-400">–</b></div></div>
+    </div>
+
+    <!-- Doctores -->
+    <div class="bg-surface border border-slate-800 p-6 rounded-2xl space-y-4">
+        <h2 class="font-bold text-slate-200 text-lg">Doctores con acceso</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs uppercase tracking-wider text-slate-500">
+                    <th class="py-2 pr-3">Doctor</th><th class="py-2 pr-3">Usuario</th><th class="py-2 pr-3 text-right">Ingresos</th>
+                    <th class="py-2 pr-3 text-right">Comprobó</th><th class="py-2 pr-3">Último ingreso</th><th class="py-2"></th></tr></thead>
+                <tbody id="docs" class="divide-y divide-slate-800"></tbody>
+            </table>
+        </div>
+        <p id="docs-empty" class="hidden text-sm text-slate-500">Todavía no hay doctores. Creá el primero abajo.</p>
+
+        <form onsubmit="return addDoctor(event)" class="grid grid-cols-1 md:grid-cols-4 gap-2 pt-2 border-t border-slate-800">
+            <input id="n-name" placeholder="Nombre (ej: Dra. Pérez)" class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 text-sm">
+            <input id="n-user" placeholder="Usuario (ej: dra.perez)" autocapitalize="none" class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 text-sm">
+            <input id="n-pass" placeholder="Contraseña (mín. 6)" class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 text-sm font-mono">
+            <button class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl text-sm font-bold">Agregar doctor</button>
+        </form>
+        <div id="d-msg" class="text-sm text-slate-500"></div>
+        <p class="text-xs text-slate-600">La contraseña se guarda cifrada: no se puede volver a ver. Si un doctor la olvida, usá “Nueva contraseña”.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const AR = {timeZone: 'America/Argentina/Buenos_Aires'};
+const fmt = iso => iso ? new Date(iso).toLocaleString('es-AR', {...AR, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : 'nunca';
+const $ = id => document.getElementById(id);
+const say = t => { $('d-msg').textContent = t || ''; };
+
+function renderLink(d) {
+    $('lk-none').classList.toggle('hidden', !!d.url);
+    $('lk-on').classList.toggle('hidden', !d.url);
+    if (d.url) { $('lk-url').value = d.url; $('lk-open').href = d.url; }
+}
+async function linkAction(action) {
+    const r = await fetch('/api/admin/protocol_check/link?action=' + action, {method: 'POST'});
+    const d = await r.json();
+    if (r.ok) renderLink(d); else $('lk-msg').textContent = d.error || 'No se pudo.';
+}
+async function copyLink() {
+    const el = $('lk-url');
+    try { await navigator.clipboard.writeText(el.value); $('lk-msg').textContent = '✔ Link copiado, ya podés pegarlo en WhatsApp o mail.'; }
+    catch (e) { el.select(); $('lk-msg').textContent = 'Seleccionado: copialo con Ctrl+C.'; }
+}
+
+function render(d) {
+    const t = d.totals;
+    $('t-doctors').textContent = t.doctors; $('t-logins').textContent = t.logins; $('t-logins7').textContent = t.logins_7d;
+    $('t-checks').textContent = t.checks; $('t-checks7').textContent = t.checks_7d; $('t-found').textContent = t.found; $('t-missing').textContent = t.missing;
+    $('docs-empty').classList.toggle('hidden', d.doctors.length > 0);
+    $('docs').innerHTML = d.doctors.map(x => `<tr class="${x.active ? '' : 'opacity-50'}">
+        <td class="py-3 pr-3 text-slate-200 font-bold">${esc(x.name || x.username)}${x.active ? '' : ' <span class="text-xs text-rose-400">(desactivado)</span>'}</td>
+        <td class="py-3 pr-3 font-mono text-slate-400">${esc(x.username)}</td>
+        <td class="py-3 pr-3 text-right text-slate-200">${x.logins}<div class="text-[11px] text-slate-500">7 días: ${x.logins_7d}</div></td>
+        <td class="py-3 pr-3 text-right text-slate-200">${x.checks}<div class="text-[11px] text-slate-500">7 días: ${x.checks_7d} · <span class="text-emerald-400">${x.found} ✔</span> <span class="text-rose-400">${x.missing} ✘</span></div></td>
+        <td class="py-3 pr-3 text-slate-400 whitespace-nowrap">${esc(fmt(x.last_login))}</td>
+        <td class="py-3 text-right whitespace-nowrap text-xs">
+            <button onclick="newPass(${x.id})" class="text-slate-400 underline mr-3">Nueva contraseña</button>
+            <button onclick="toggleDoc(${x.id})" class="text-slate-400 underline mr-3">${x.active ? 'Desactivar' : 'Activar'}</button>
+            <button onclick="delDoc(${x.id}, '${esc(x.name || x.username).replace(/'/g, '')}')" class="text-rose-400 underline">Eliminar</button>
+        </td></tr>`).join('');
+}
+async function api(url, method, body) {
+    const r = await fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined});
+    const d = await r.json();
+    if (!r.ok) { say(d.error || 'No se pudo.'); return null; }
+    say(''); render(d); return d;
+}
+async function addDoctor(e) {
+    e.preventDefault();
+    const d = await api('/api/admin/protocol_check/doctors', 'POST', {name: $('n-name').value, username: $('n-user').value, password: $('n-pass').value});
+    if (d) { say('✔ Doctor agregado. Pasale el link, su usuario y su contraseña.'); $('n-name').value = $('n-user').value = $('n-pass').value = ''; }
+    return false;
+}
+async function newPass(id) {
+    const p = prompt('Nueva contraseña (mínimo 6 caracteres):');
+    if (p === null) return;
+    if (await api('/api/admin/protocol_check/doctors/' + id + '/password', 'POST', {password: p})) say('✔ Contraseña cambiada.');
+}
+const toggleDoc = id => api('/api/admin/protocol_check/doctors/' + id + '/toggle', 'POST');
+function delDoc(id, name) { if (confirm('¿Eliminar a ' + name + ' y su historial de uso?')) api('/api/admin/protocol_check/doctors/' + id, 'DELETE'); }
+
+{% if configured %}
+fetch('/api/admin/protocol_check/link').then(r => r.json()).then(renderLink);
+fetch('/api/admin/protocol_check/doctors').then(r => r.json()).then(render);
+{% endif %}
+</script>
+{% endblock %}

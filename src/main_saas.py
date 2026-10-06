@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 import uvicorn
 from dotenv import load_dotenv
@@ -3472,7 +3473,7 @@ async def api_protocol_check(payload: ProtocolCheckPayload, request: Request, db
         return JSONResponse(status_code=502, content={"error": "No se pudo leer la carpeta de Drive. Probá de nuevo en un momento."})
     return {"rows": rows, "summary": summary, "days": days}
 
-# ── Link público para médicos: /verificar/<token> (sin login, sólo dice si está subido) ─────
+# ── Página pública para médicos: /verificar/<token> (usuario + contraseña; sólo dice si está subido) ─────
 def _pc_public_ctx(db: Session, token: str):
     """(client, settings) del link de médicos, o (None, None) si el token no existe / está desactivado."""
     if not token or len(token) < 16:
@@ -3483,26 +3484,78 @@ def _pc_public_ctx(db: Session, token: str):
     client = db.query(Client).filter_by(id=settings.client_id).first()
     return (client, settings) if client else (None, None)
 
+def _pc_brand(client, settings):
+    """Color y logo del laboratorio (los mismos del chat web) + color de texto legible sobre ese color."""
+    from src import web_chat
+    cfg = web_chat.get_config(client, settings)
+    c = cfg["color"].lstrip("#")
+    r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+    ink = "#0b1220" if (0.299 * r + 0.587 * g + 0.114 * b) > 160 else "#ffffff"
+    return {"color": cfg["color"], "ink": ink, "logo": cfg["logo"]}
+
 @app.get("/verificar/{token}", response_class=HTMLResponse)
 async def protocol_check_public_page(token: str, request: Request, db: Session = Depends(get_db)):
     from src.results_portal import get_portal_settings
+    from src import protocol_doctors as pd
     client, settings = _pc_public_ctx(db, token)
     if not client:
         return HTMLResponse("<h1>Página no encontrada</h1>", status_code=404)
-    return templates.TemplateResponse(request=request, name="public/verificar.html", context={
+    doctor = pd.doctor_from_cookie(db, client.id, request.cookies.get(pd.COOKIE))
+    resp = templates.TemplateResponse(request=request, name="public/verificar.html", context={
         "token": token, "business_name": client.business_name, "days": get_portal_settings(settings)["days"],
+        "brand": _pc_brand(client, settings), "doctor_name": (doctor.name or doctor.username) if doctor else None,
+        "phone": (settings.company_phone or "").strip(),
     })
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+class ProtocolDoctorLoginPayload(BaseModel):
+    username: str = ""
+    password: str = ""
+
+@app.post("/api/public/verificar/{token}/login")
+async def protocol_check_public_login(token: str, payload: ProtocolDoctorLoginPayload, request: Request, db: Session = Depends(get_db)):
+    from src.database.models import ProtocolDoctor
+    from src import protocol_doctors as pd
+    client, settings = _pc_public_ctx(db, token)
+    if not client:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    ip = _public_client_ip(request)
+    if not pd.login_allowed(ip):
+        return JSONResponse(status_code=429, content={"error": "Demasiados intentos. Esperá unos minutos."})
+    user = (payload.username or "").strip().lower()
+    d = db.query(ProtocolDoctor).filter(ProtocolDoctor.client_id == client.id, func.lower(ProtocolDoctor.username) == user).first()
+    ok = bool(d and d.active and pd.verify_password(payload.password or "", d.password_hash))
+    if not ok:
+        pd.register_failure(ip)
+        return JSONResponse(status_code=401, content={"error": "Usuario o contraseña incorrectos."})
+    pd.add_event(db, client.id, d.id, "login")
+    resp = JSONResponse({"ok": True, "name": d.name or d.username})
+    resp.set_cookie(pd.COOKIE, pd.make_cookie(client.id, d.id), max_age=pd.SESSION_DAYS * 86400, httponly=True,
+                    secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https", samesite="lax", path="/")
+    return resp
+
+@app.post("/api/public/verificar/{token}/logout")
+async def protocol_check_public_logout(token: str):
+    from src import protocol_doctors as pd
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(pd.COOKIE, path="/")
+    return resp
 
 @app.post("/api/public/verificar/{token}")
 async def protocol_check_public_api(token: str, payload: ProtocolCheckPayload, request: Request, db: Session = Depends(get_db)):
     from src import protocol_check as pc
+    from src import protocol_doctors as pd
     from src.results_portal import get_portal_settings, check_rate_limit
     client, settings = _pc_public_ctx(db, token)
     if not client:
         return JSONResponse(status_code=404, content={"error": "not_found"})
+    doctor = pd.doctor_from_cookie(db, client.id, request.cookies.get(pd.COOKIE))
+    if not doctor:
+        return JSONResponse(status_code=401, content={"error": "Tu sesión venció. Volvé a ingresar."})
     if not check_rate_limit(client.id, _public_client_ip(request)):
         return JSONResponse(status_code=429, content={"error": "Demasiadas búsquedas seguidas. Esperá un minuto."})
-    items = "\n".join((payload.items or "").splitlines()[:20])  # el link público sólo verifica de a pocos
+    items = "\n".join((payload.items or "").splitlines()[:20])  # la página pública sólo verifica de a pocos
     if not items.strip():
         return JSONResponse(status_code=400, content={"error": "Escribí un DNI o un número de protocolo."})
     days = get_portal_settings(settings)["days"]
@@ -3510,12 +3563,97 @@ async def protocol_check_public_api(token: str, payload: ProtocolCheckPayload, r
         files = await asyncio.to_thread(pc.list_folder_files, client.id, settings.results_portal_folder_id, False)
         rows, summary = await asyncio.to_thread(pc.check_text, client.id, settings.results_portal_folder_id, files, items, days)
     except Exception as e:
-        logging.error(f"[ProtocolCheck] Error en link público (client_id={client.id}): {e}")
+        logging.error(f"[ProtocolCheck] Error en página pública (client_id={client.id}): {e}")
         return JSONResponse(status_code=502, content={"error": "No se pudo consultar la carpeta. Probá de nuevo en un momento."})
+    for r in rows:  # una comprobación por dato consultado (para los indicadores)
+        pd.add_event(db, client.id, doctor.id, "check", r["status"])
     # Sólo estado, protocolo y fecha: sin nombre de archivo (lleva el DNI) ni descarga del PDF
     safe = [{"input": r["input"], "status": r["status"],
              "matches": [{"protocolo": m["protocolo"], "at": m["at"]} for m in r["matches"]]} for r in rows]
     return {"rows": safe, "summary": summary, "days": days}
+
+# ── Administración de médicos (usuarios + indicadores de uso) ─────────────────────
+@app.get("/admin/protocol-check/doctors", response_class=HTMLResponse)
+async def protocol_check_doctors_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_client_id, is_impersonating, user_mock = get_admin_context(request, current_user, db)
+    if target_client_id is None: return RedirectResponse(url="/admin/login")
+    if not has_menu_access(user_mock, "protocol_check"): return fallback_admin_redirect(user_mock)
+    settings = db.query(ClientSettings).filter_by(client_id=target_client_id).first()
+    return templates.TemplateResponse(request=request, name="admin/protocol_doctors.html", context={
+        "user": user_mock, "is_impersonating": is_impersonating, "active_section": "configuracion",
+        "configured": bool(settings and settings.results_portal_folder_id and settings.gdrive_service_account_json_encrypted),
+    })
+
+@app.get("/api/admin/protocol_check/doctors")
+async def api_pc_doctors_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import protocol_doctors as pd
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    return pd.stats(db, cid)
+
+class ProtocolDoctorPayload(BaseModel):
+    username: str = ""
+    name: str = ""
+    password: str = ""
+
+def _pc_doctor_or_404(db: Session, cid: int, doctor_id: int):
+    from src.database.models import ProtocolDoctor
+    return db.query(ProtocolDoctor).filter_by(id=doctor_id, client_id=cid).first()
+
+@app.post("/api/admin/protocol_check/doctors")
+async def api_pc_doctors_create(payload: ProtocolDoctorPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import ProtocolDoctor
+    from src import protocol_doctors as pd
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    username = re.sub(r"\s+", "", payload.username or "").lower()
+    if not re.fullmatch(r"[a-z0-9._-]{3,40}", username):
+        return JSONResponse(status_code=400, content={"error": "El usuario debe tener entre 3 y 40 letras, números, punto o guion (sin espacios)."})
+    if len(payload.password or "") < 6:
+        return JSONResponse(status_code=400, content={"error": "La contraseña debe tener al menos 6 caracteres."})
+    if db.query(ProtocolDoctor).filter(ProtocolDoctor.client_id == cid, func.lower(ProtocolDoctor.username) == username).first():
+        return JSONResponse(status_code=400, content={"error": "Ya existe un usuario con ese nombre."})
+    db.add(ProtocolDoctor(client_id=cid, username=username, name=(payload.name or "").strip()[:120] or None,
+                          password_hash=pd.hash_password(payload.password), active=True))
+    db.commit()
+    return pd.stats(db, cid)
+
+@app.post("/api/admin/protocol_check/doctors/{doctor_id}/password")
+async def api_pc_doctors_password(doctor_id: int, payload: ProtocolDoctorPayload, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import protocol_doctors as pd
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    d = _pc_doctor_or_404(db, cid, doctor_id)
+    if not d: return JSONResponse(status_code=404, content={"error": "No existe."})
+    if len(payload.password or "") < 6:
+        return JSONResponse(status_code=400, content={"error": "La contraseña debe tener al menos 6 caracteres."})
+    d.password_hash = pd.hash_password(payload.password)
+    db.commit()
+    return pd.stats(db, cid)
+
+@app.post("/api/admin/protocol_check/doctors/{doctor_id}/toggle")
+async def api_pc_doctors_toggle(doctor_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src import protocol_doctors as pd
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    d = _pc_doctor_or_404(db, cid, doctor_id)
+    if not d: return JSONResponse(status_code=404, content={"error": "No existe."})
+    d.active = not d.active
+    db.commit()
+    return pd.stats(db, cid)
+
+@app.delete("/api/admin/protocol_check/doctors/{doctor_id}")
+async def api_pc_doctors_delete(doctor_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.database.models import ProtocolDoctorEvent
+    from src import protocol_doctors as pd
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    d = _pc_doctor_or_404(db, cid, doctor_id)
+    if not d: return JSONResponse(status_code=404, content={"error": "No existe."})
+    db.query(ProtocolDoctorEvent).filter_by(doctor_id=d.id).delete()
+    db.delete(d)
+    db.commit()
+    return pd.stats(db, cid)
 
 @app.get("/api/admin/protocol_check/link")
 async def api_protocol_check_link_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

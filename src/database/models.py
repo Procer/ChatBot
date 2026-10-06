@@ -822,3 +822,26 @@ class ClientPayment(Base):
     payment_method = Column(String(100), nullable=True)
     notes = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProtocolDoctor(Base):
+    """Medico con usuario y contrasena propios para la pagina publica de verificacion de protocolos."""
+    __tablename__ = "data_protocol_doctors"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("adm_clients.id"), nullable=False, index=True)
+    username = Column(String(60), nullable=False)
+    name = Column(String(120), nullable=True)
+    password_hash = Column(String(200), nullable=False)  # "salt$pbkdf2-sha256"
+    active = Column(Boolean, default=True, server_default="1")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProtocolDoctorEvent(Base):
+    """Un ingreso (login) o una comprobacion (check; status = ok/old/missing/invalid) de un medico."""
+    __tablename__ = "data_protocol_doctor_events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, nullable=False, index=True)
+    doctor_id = Column(Integer, ForeignKey("data_protocol_doctors.id"), nullable=False, index=True)
+    kind = Column(String(10), nullable=False)
+    status = Column(String(10), nullable=True)
+    at = Column(DateTime, default=datetime.utcnow, index=True)

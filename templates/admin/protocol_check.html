@@ -27,24 +27,11 @@
     <!-- Resultado grande -->
     <div id="one-result" class="hidden rounded-2xl p-6 sm:p-8 border-2"></div>
 
-    <!-- Link para los doctores -->
-    <div class="bg-surface border border-slate-800 p-6 rounded-2xl space-y-3">
-        <h2 class="font-bold text-slate-200">Link para los doctores</h2>
-        <p class="text-sm text-slate-500">Una página sin usuario ni contraseña, pensada para el celular: escriben DNI o protocolo y ven si está cargado (no ven datos del paciente ni el PDF). Pasales el link o ponelo en favoritos.</p>
-        <div id="lk-none" class="hidden"><button onclick="linkAction('generate')" class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-3 rounded-xl font-bold">Crear link para doctores</button></div>
-        <div id="lk-on" class="hidden space-y-3">
-            <div class="flex flex-col sm:flex-row gap-2">
-                <input id="lk-url" readonly class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 font-mono text-sm">
-                <button onclick="copyLink()" class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold">Copiar</button>
-                <a id="lk-open" target="_blank" rel="noopener" class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold text-center">Abrir</a>
-            </div>
-            <div class="flex gap-4 text-xs">
-                <button onclick="if(confirm('El link actual dejará de funcionar. ¿Generar uno nuevo?')) linkAction('generate')" class="text-slate-400 underline">Generar uno nuevo (anula el anterior)</button>
-                <button onclick="if(confirm('¿Desactivar el link? Nadie podrá usarlo.')) linkAction('disable')" class="text-rose-400 underline">Desactivar</button>
-            </div>
-        </div>
-        <span id="lk-msg" class="text-sm text-slate-500"></span>
-    </div>
+    <!-- Acceso de doctores -->
+    <a href="/admin/protocol-check/doctors" class="block bg-surface border border-slate-800 hover:border-brand-500/50 p-5 rounded-2xl transition-colors">
+        <div class="font-bold text-slate-200">Link y usuarios para los doctores →</div>
+        <div class="text-sm text-slate-500">Copiá el link, creá usuarios y mirá cuántas veces ingresó y comprobó cada uno.</div>
+    </a>
 
     <!-- Estado en una línea -->
     <div id="status-line" class="text-center text-sm text-slate-500"></div>
@@ -137,23 +124,6 @@ async function copyMissing() {
     try { await navigator.clipboard.writeText(missingList.join('\n')); document.getElementById('many-msg').textContent = 'Copiado.'; }
     catch (e) { document.getElementById('many-msg').textContent = 'No se pudo copiar.'; }
 }
-
-function renderLink(d) {
-    document.getElementById('lk-none').classList.toggle('hidden', !!d.url);
-    document.getElementById('lk-on').classList.toggle('hidden', !d.url);
-    if (d.url) { document.getElementById('lk-url').value = d.url; document.getElementById('lk-open').href = d.url; }
-}
-async function linkAction(action) {
-    const r = await fetch('/api/admin/protocol_check/link?action=' + action, {method: 'POST'});
-    const d = await r.json();
-    if (r.ok) renderLink(d); else document.getElementById('lk-msg').textContent = d.error || 'No se pudo.';
-}
-async function copyLink() {
-    const el = document.getElementById('lk-url');
-    try { await navigator.clipboard.writeText(el.value); document.getElementById('lk-msg').textContent = 'Copiado.'; }
-    catch (e) { el.select(); document.getElementById('lk-msg').textContent = 'Seleccionado: copialo con Ctrl+C.'; }
-}
-{% if configured %}fetch('/api/admin/protocol_check/link').then(r => r.json()).then(renderLink).catch(() => {});{% endif %}
 
 (async function statusLine() {
     {% if configured %}
