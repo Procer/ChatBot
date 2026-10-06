@@ -40,6 +40,8 @@
   .old { background:var(--warn-bg); border-color:var(--warn); color:var(--warn); }
   .missing,.invalid { background:var(--bad-bg); border-color:var(--bad); color:var(--bad); }
   .res small { display:block; color:var(--ink); opacity:.85; font-size:16px; margin-top:6px; }
+  .pdfs { margin-top:14px; } .pdfdoc canvas { display:block; max-width:100%; margin:0 auto 10px; background:#fff; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,.18); }
+  .pdfmsg { color:var(--ink); opacity:.8; font-size:16px; text-align:center; padding:12px; }
   a.pdf { display:block; margin-top:10px; text-align:center; text-decoration:none; font-weight:700; font-size:19px; padding:13px; border-radius:13px; background:var(--brand); color:var(--brand-ink); }
   .foot { color:var(--muted); font-size:14px; text-align:center; margin-top:22px; }
   .hidden { display:none !important; }
@@ -111,22 +113,63 @@ $('logout').addEventListener('click', async () => { try { await post(BASE + '/lo
 
 const box = $('res');
 function show(cls, html) { box.className = 'res ' + cls; box.style.display = 'block'; box.innerHTML = html; }
+// Visor del PDF dentro de la misma página (pdf.js: funciona igual en iPhone, Android y PC)
+const PDFJS = '/static/vendor/pdfjs/';
+let pdfjsPromise = null, pdfRun = 0;
+function loadPdfjs() {
+  if (pdfjsPromise) return pdfjsPromise;
+  pdfjsPromise = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = PDFJS + 'pdf.min.js';
+    s.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; res(pdfjsLib); };
+    s.onerror = () => { pdfjsPromise = null; rej(new Error('visor')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsPromise;
+}
+async function showPdfs(matches) {
+  const run = ++pdfRun, holder = document.createElement('div');
+  holder.className = 'pdfs'; holder.innerHTML = '<div class="pdfmsg">Cargando el protocolo…</div>';
+  box.appendChild(holder);
+  try {
+    const lib = await loadPdfjs();
+    const parts = [];
+    for (const m of matches) {
+      const r = await fetch(BASE + '/file/' + encodeURIComponent(m.id));
+      if (r.status === 401) { leave(); $('lerr').textContent = 'Tu sesión venció. Volvé a ingresar.'; return; }
+      if (!r.ok) throw new Error('archivo');
+      const doc = await lib.getDocument({data: new Uint8Array(await r.arrayBuffer())}).promise;
+      if (run !== pdfRun) return;
+      const wrap = document.createElement('div'); wrap.className = 'pdfdoc';
+      const width = Math.min(holder.clientWidth || 520, 900), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n), base = page.getViewport({scale: 1}), scale = width / base.width;
+        const vp = page.getViewport({scale: scale * dpr}), cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height; cv.style.width = width + 'px'; cv.style.height = (vp.height / dpr) + 'px';
+        await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+        wrap.appendChild(cv);
+      }
+      parts.push(wrap);
+    }
+    if (run !== pdfRun) return;
+    holder.innerHTML = ''; parts.forEach(p => holder.appendChild(p));
+  } catch (err) { if (run === pdfRun) holder.innerHTML = '<div class="pdfmsg">No se pudo mostrar el PDF. Probá de nuevo.</div>'; }
+}
 $('f').addEventListener('submit', async e => {
   e.preventDefault();
   const v = $('q').value.trim(); if (!v) return;
-  $('go').disabled = true; show('', 'Buscando…');
+  pdfRun++; $('go').disabled = true; show('', 'Buscando…');
   try {
     const r = await post(BASE, {items: v});
     const d = await r.json();
     if (r.status === 401) { box.style.display = 'none'; leave(); $('lerr').textContent = d.error || ''; return; }
     if (!r.ok) { show('missing', esc(d.error || 'No se pudo consultar. Probá de nuevo.')); return; }
     const row = d.rows[0]; if (!row) { show('invalid', 'Escribí un DNI o un protocolo.'); return; }
-    const list = row.matches.map(m => `<small>Protocolo <b>${esc(m.protocolo || '-')}</b> · cargado ${esc(fmt(m.at))}</small>
-      <a class="pdf" href="${BASE}/file/${encodeURIComponent(m.id)}" target="_blank" rel="noopener">📄 Ver el PDF</a>`).join('');
+    const list = row.matches.map(m => `<small>Protocolo <b>${esc(m.protocolo || '-')}</b> · cargado ${esc(fmt(m.at))}</small>`).join('');
     if (row.status === 'ok') show('ok', `<b class="big">✔ Está cargado</b>${list}`);
     else if (row.status === 'old') show('old', `<b class="big">⚠ Está, pero es antiguo</b><small>Tiene más de ${DAYS} días; el paciente ya no lo ve en el portal.</small>${list}`);
     else if (row.status === 'missing') show('missing', `<b class="big">✘ Todavía no está cargado</b><small>No hay ningún archivo con ese dato. Revisá el número o consultá más tarde.</small>`);
     else show('invalid', `<b class="big">No entendí el dato</b><small>Escribí el DNI (solo números) o el protocolo (ej: A395582).</small>`);
+    if (row.matches.length) showPdfs(row.matches.slice(0, 3));
   } catch (err) { show('missing', 'No se pudo consultar. Probá de nuevo.'); }
   finally { $('go').disabled = false; $('q').select(); }
 });
