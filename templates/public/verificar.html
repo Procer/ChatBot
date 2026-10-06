@@ -55,6 +55,25 @@
   a.pdf { display:block; margin-top:10px; text-align:center; text-decoration:none; font-weight:700; font-size:19px; padding:13px; border-radius:13px; background:var(--brand); color:var(--brand-ink); }
   .foot { color:var(--muted); font-size:14px; text-align:center; margin-top:22px; }
   .hidden { display:none !important; }
+
+  /* Notebook / pantalla ancha: panel de búsqueda a la izquierda y el protocolo grande a la derecha */
+  @media (min-width: 900px) {
+    .top .in { max-width:1240px; padding:0 24px; }
+    .top { padding:26px 24px 60px; }
+    .wrap { max-width:560px; }
+    .wrap.in { max-width:1240px; padding:0 24px 40px; display:grid; grid-template-columns:400px minmax(0, 1fr); gap:0 24px; grid-template-rows:auto 1fr; align-items:start; }
+    .wrap.in #checkCard { grid-column:1; grid-row:1; }
+    .wrap.in #pdfZone { grid-column:2; grid-row:1 / span 2; position:sticky; top:16px; }
+    .wrap.in .foot { grid-column:1; grid-row:2; text-align:left; }
+    #pdfZone:empty { display:block; min-height:340px; border:2px dashed var(--line); border-radius:20px; background:var(--card); }
+    #pdfZone:empty::before { content:"Acá se va a mostrar el protocolo"; display:grid; place-items:center; height:340px; color:var(--muted); font-size:18px; }
+    .pdfs { margin-top:0; padding:14px; }
+    .pdfview { overflow:auto; max-height:calc(100vh - 150px); }
+    .pdfview canvas { margin-bottom:14px; }
+    .pdfs.full .pdfview { max-height:none; }
+    .pdfbar button:hover, button.go:hover { filter:brightness(1.08); }
+    .res b.big { font-size:30px; }
+  }
 </style>
 </head>
 <body>
@@ -64,7 +83,7 @@
   <div class="who {{ '' if doctor_name else 'hidden' }}" id="who"><span id="whoName">{{ doctor_name or '' }}</span><button type="button" id="logout">Salir</button></div>
 </div></div>
 
-<div class="wrap">
+<div class="wrap {{ 'in' if doctor_name }}" id="wrap">
   <!-- Ingreso -->
   <div class="card {{ 'hidden' if doctor_name }}" id="loginCard">
     <h2>Ingresá con tu usuario</h2>
@@ -104,11 +123,11 @@ const $ = id => document.getElementById(id);
 const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})});
 
 function enter(name) {
-  $('whoName').textContent = name; $('who').classList.remove('hidden');
+  $('wrap').classList.add('in'); $('whoName').textContent = name; $('who').classList.remove('hidden');
   $('loginCard').classList.add('hidden'); $('checkCard').classList.remove('hidden'); $('q').focus();
 }
 function leave() {
-  $('who').classList.add('hidden'); $('checkCard').classList.add('hidden'); $('loginCard').classList.remove('hidden');
+  $('wrap').classList.remove('in'); $('who').classList.add('hidden'); $('checkCard').classList.add('hidden'); $('loginCard').classList.remove('hidden');
   clearPdf(); $('res').style.display = 'none'; $('p').value = ''; $('u').focus();
 }
 $('lf').addEventListener('submit', async e => {
