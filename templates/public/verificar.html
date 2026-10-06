@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Verificar protocolo | {{ business_name }}</title>
+<style>
+  :root { --bg:#f3f6fa; --card:#fff; --ink:#14213a; --muted:#52607a; --line:#d6deea; --accent:#1a5fa8; --accent-ink:#fff;
+          --ok:#17804a; --ok-bg:#e6f6ed; --warn:#9a5b00; --warn-bg:#fff4e0; --bad:#b3261e; --bad-bg:#fdeceb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b1322; --card:#121c30; --ink:#eef3fb; --muted:#a9b6cc; --line:#26344f;
+          --accent:#5aa0e8; --accent-ink:#081120; --ok:#4cc585; --ok-bg:#10281c; --warn:#f0b458; --warn-bg:#2a2010; --bad:#ff8a80; --bad-bg:#2e1514; } }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--ink); }
+  body { font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:19px; line-height:1.45; }
+  .wrap { max-width:640px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:24px; margin:0 0 4px; } .sub { color:var(--muted); font-size:16px; margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:18px; }
+  label { display:block; font-weight:700; margin-bottom:8px; }
+  input { width:100%; font:inherit; font-size:26px; padding:14px 16px; border:3px solid var(--line); border-radius:14px; background:var(--bg); color:var(--ink); letter-spacing:.05em; font-weight:700; }
+  input:focus { outline:none; border-color:var(--accent); }
+  button { width:100%; margin-top:12px; font:inherit; font-size:22px; font-weight:700; padding:14px; border:0; border-radius:14px; background:var(--accent); color:var(--accent-ink); cursor:pointer; }
+  button:disabled { opacity:.6; }
+  .res { margin-top:16px; border-radius:16px; padding:18px; border:2px solid var(--line); display:none; }
+  .res b.big { display:block; font-size:28px; }
+  .ok { background:var(--ok-bg); border-color:var(--ok); color:var(--ok); }
+  .old { background:var(--warn-bg); border-color:var(--warn); color:var(--warn); }
+  .missing,.invalid { background:var(--bad-bg); border-color:var(--bad); color:var(--bad); }
+  .res small { display:block; color:var(--ink); opacity:.85; font-size:17px; margin-top:6px; }
+  .foot { color:var(--muted); font-size:14px; text-align:center; margin-top:24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>¿Está el protocolo?</h1>
+  <p class="sub">{{ business_name }} · consulta rápida para profesionales</p>
+  <div class="card">
+    <form id="f" autocomplete="off">
+      <label for="q">DNI o número de protocolo</label>
+      <input id="q" inputmode="text" placeholder="44930933  o  A395582" autofocus>
+      <button id="go" type="submit">Buscar</button>
+    </form>
+  </div>
+  <div id="res" class="res" role="status" aria-live="polite"></div>
+  <p class="foot">Sólo informa si el informe ya está cargado. No muestra datos del paciente.</p>
+</div>
+<script>
+const DAYS = {{ days }};
+const TOKEN = {{ token | tojson }};
+const AR = {timeZone:'America/Argentina/Buenos_Aires'};
+const fmt = iso => new Date(iso).toLocaleString('es-AR', {...AR, day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const box = document.getElementById('res'), q = document.getElementById('q'), go = document.getElementById('go');
+function show(cls, html) { box.className = 'res ' + cls; box.style.display = 'block'; box.innerHTML = html; }
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const v = q.value.trim(); if (!v) return;
+  go.disabled = true; show('', 'Buscando…');
+  try {
+    const r = await fetch('/api/public/verificar/' + encodeURIComponent(TOKEN), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items:v})});
+    const d = await r.json();
+    if (!r.ok) { show('missing', esc(d.error || 'No se pudo consultar. Probá de nuevo.')); return; }
+    const row = d.rows[0]; if (!row) { show('invalid', 'Escribí un DNI o un protocolo.'); return; }
+    const list = row.matches.map(m => `<small>Protocolo <b>${esc(m.protocolo || '-')}</b> · cargado ${esc(fmt(m.at))}</small>`).join('');
+    if (row.status === 'ok') show('ok', `<b class="big">✔ Está cargado</b>${list}`);
+    else if (row.status === 'old') show('old', `<b class="big">⚠ Está, pero es antiguo</b><small>Tiene más de ${DAYS} días; el paciente ya no lo ve en el portal.</small>${list}`);
+    else if (row.status === 'missing') show('missing', `<b class="big">✘ Todavía no está cargado</b><small>No hay ningún archivo con ese dato. Revisá el número o consultá más tarde.</small>`);
+    else show('invalid', `<b class="big">No entendí el dato</b><small>Escribí el DNI (solo números) o el protocolo (ej: A395582).</small>`);
+  } catch (err) { show('missing', 'No se pudo consultar. Probá de nuevo.'); }
+  finally { go.disabled = false; q.select(); }
+});
+</script>
+</body>
+</html>

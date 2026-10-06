@@ -174,6 +174,7 @@ class ClientSettings(Base):
     results_portal_days = Column(Integer, default=30, server_default="30")  # solo se muestran archivos subidos en los últimos N días
     results_portal_phone = Column(String(50), nullable=True)  # "¿No lo encontrás? Llamanos"; vacío = company_phone
     results_portal_welcome = Column(Text, nullable=True)
+    protocol_check_token = Column(String(64), nullable=True)  # link público para médicos (/verificar/<token>); NULL = desactivado
 
     # --- CHAT WEB (ver src/web_chat.py) ---
     feat_web_chat = Column(Boolean, default=False, server_default="0")  # modulo habilitado por el super admin

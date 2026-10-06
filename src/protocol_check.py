@@ -145,3 +145,61 @@ def check_items(files, text: str, days: int, now: datetime = None):
     summary = {s: sum(1 for r in rows if r["status"] == s) for s in ("ok", "old", "missing", "invalid")}
     summary["total"] = len(rows)
     return rows, summary
+
+
+def _terms_for(line: str):
+    """Textos a buscar en Drive (name contains) para una línea: DNI con ceros de relleno, o el protocolo."""
+    c = _classify(line)
+    if not c:
+        return []
+    kind, val = c
+    if kind == "dni":
+        return sorted({val, val.zfill(8), val.zfill(9), val.zfill(10)})
+    if kind == "proto":
+        return [val]
+    return [val[0]]
+
+
+def search_files(client_id: int, folder_id: str, terms, max_results: int = 200):
+    """Búsqueda directa en Drive, SIN límite de antigüedad (la lectura cacheada sólo cubre LOOKBACK_DAYS).
+    Mismo formato que list_folder_files."""
+    terms = [t for t in terms if re.fullmatch(r"[A-Za-z0-9]{3,20}", t or "")]
+    if not terms:
+        return []
+    service = get_drive_service(client_id)
+    if not service:
+        raise RuntimeError("Drive no configurado para el cliente")
+    names = " or ".join(f"name contains '{t}'" for t in terms)
+    q = f"'{folder_id}' in parents and trashed = false and ({names})"
+    resp = service.files().list(
+        q=q, fields="files(id, name, createdTime, mimeType)", orderBy="createdTime desc", pageSize=min(max_results, 1000),
+        supportsAllDrives=True, includeItemsFromAllDrives=True,
+    ).execute()
+    out = []
+    for f in resp.get("files", []):
+        if f.get("mimeType") == "application/vnd.google-apps.folder":
+            continue
+        parsed = parse_result_filename(f.get("name"))
+        out.append({"id": f["id"], "name": f.get("name") or "", "created": _parse_iso(f["createdTime"]),
+                    "protocolo": parsed[0] if parsed else None, "dni": parsed[1] if parsed else None})
+    return out
+
+
+MAX_DIRECT_LOOKUPS = 40
+
+
+def check_text(client_id: int, folder_id: str, files, text: str, days: int):
+    """check_items + segunda pasada: lo que no aparece entre los archivos recientes se busca directo en
+    Drive (protocolos de hace meses o años). Sólo después de eso se informa 'missing'."""
+    rows, summary = check_items(files, text, days)
+    missing = [r for r in rows if r["status"] == "missing"][:MAX_DIRECT_LOOKUPS]
+    if not missing:
+        return rows, summary
+    known = {f["id"] for f in files}
+    extra = []
+    for r in missing:
+        for f in search_files(client_id, folder_id, _terms_for(r["input"])):
+            if f["id"] not in known:
+                known.add(f["id"])
+                extra.append(f)
+    return check_items(list(files) + extra, text, days) if extra else (rows, summary)

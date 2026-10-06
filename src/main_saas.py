@@ -3465,8 +3465,75 @@ async def api_protocol_check(payload: ProtocolCheckPayload, request: Request, db
     except Exception as e:
         logging.error(f"[ProtocolCheck] Error leyendo la carpeta (client_id={cid}): {e}")
         return JSONResponse(status_code=502, content={"error": "No se pudo leer la carpeta de Drive. Probá de nuevo en un momento."})
-    rows, summary = pc.check_items(files, payload.items, days)
+    try:
+        rows, summary = await asyncio.to_thread(pc.check_text, cid, settings.results_portal_folder_id, files, payload.items, days)
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error en la búsqueda directa (client_id={cid}): {e}")
+        return JSONResponse(status_code=502, content={"error": "No se pudo leer la carpeta de Drive. Probá de nuevo en un momento."})
     return {"rows": rows, "summary": summary, "days": days}
+
+# ── Link público para médicos: /verificar/<token> (sin login, sólo dice si está subido) ─────
+def _pc_public_ctx(db: Session, token: str):
+    """(client, settings) del link de médicos, o (None, None) si el token no existe / está desactivado."""
+    if not token or len(token) < 16:
+        return None, None
+    settings = db.query(ClientSettings).filter(ClientSettings.protocol_check_token == token).first()
+    if not settings or not settings.results_portal_folder_id or not settings.gdrive_service_account_json_encrypted:
+        return None, None
+    client = db.query(Client).filter_by(id=settings.client_id).first()
+    return (client, settings) if client else (None, None)
+
+@app.get("/verificar/{token}", response_class=HTMLResponse)
+async def protocol_check_public_page(token: str, request: Request, db: Session = Depends(get_db)):
+    from src.results_portal import get_portal_settings
+    client, settings = _pc_public_ctx(db, token)
+    if not client:
+        return HTMLResponse("<h1>Página no encontrada</h1>", status_code=404)
+    return templates.TemplateResponse(request=request, name="public/verificar.html", context={
+        "token": token, "business_name": client.business_name, "days": get_portal_settings(settings)["days"],
+    })
+
+@app.post("/api/public/verificar/{token}")
+async def protocol_check_public_api(token: str, payload: ProtocolCheckPayload, request: Request, db: Session = Depends(get_db)):
+    from src import protocol_check as pc
+    from src.results_portal import get_portal_settings, check_rate_limit
+    client, settings = _pc_public_ctx(db, token)
+    if not client:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    if not check_rate_limit(client.id, _public_client_ip(request)):
+        return JSONResponse(status_code=429, content={"error": "Demasiadas búsquedas seguidas. Esperá un minuto."})
+    items = "\n".join((payload.items or "").splitlines()[:20])  # el link público sólo verifica de a pocos
+    if not items.strip():
+        return JSONResponse(status_code=400, content={"error": "Escribí un DNI o un número de protocolo."})
+    days = get_portal_settings(settings)["days"]
+    try:
+        files = await asyncio.to_thread(pc.list_folder_files, client.id, settings.results_portal_folder_id, False)
+        rows, summary = await asyncio.to_thread(pc.check_text, client.id, settings.results_portal_folder_id, files, items, days)
+    except Exception as e:
+        logging.error(f"[ProtocolCheck] Error en link público (client_id={client.id}): {e}")
+        return JSONResponse(status_code=502, content={"error": "No se pudo consultar la carpeta. Probá de nuevo en un momento."})
+    # Sólo estado, protocolo y fecha: sin nombre de archivo (lleva el DNI) ni descarga del PDF
+    safe = [{"input": r["input"], "status": r["status"],
+             "matches": [{"protocolo": m["protocolo"], "at": m["at"]} for m in r["matches"]]} for r in rows]
+    return {"rows": safe, "summary": summary, "days": days}
+
+@app.get("/api/admin/protocol_check/link")
+async def api_protocol_check_link_get(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    t = settings.protocol_check_token
+    base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    return {"url": f"{base}/verificar/{t}" if t else None}
+
+@app.post("/api/admin/protocol_check/link")
+async def api_protocol_check_link_set(request: Request, action: str = "generate", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """action=generate crea o REGENERA el link (el anterior deja de funcionar); action=disable lo apaga."""
+    import secrets
+    cid, settings, err = _protocol_check_ctx(request, db, current_user)
+    if err: return err
+    settings.protocol_check_token = secrets.token_urlsafe(18) if action == "generate" else None
+    db.commit()
+    return await api_protocol_check_link_get(request, db, current_user)
 
 @app.get("/api/admin/protocol_check/file/{file_id}")
 async def api_protocol_check_file(file_id: str, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
